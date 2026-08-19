@@ -1,0 +1,215 @@
+// Quicky Dating App — Prisma schema
+// SQLite-backed. Enums are simulated as String with documented allowed values.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  phone         String    @unique
+  email         String?
+  name          String?
+  age           Int?
+  dateOfBirth   DateTime?
+  // gender: "male" | "female" | "nonbinary" | "other"
+  gender        String?
+  // lookingFor: "men" | "women" | "everyone"
+  lookingFor    String?
+  bio           String?
+  city          String?
+  lat           Float?
+  lng           Float?
+  // JSON-encoded array of interest tag strings, e.g. '["hiking","coffee","techno"]'
+  interests     String?
+  // JSON-encoded array of prompt objects, e.g. '[{"prompt":"My ideal Sunday...","answer":"..."}]'
+  prompts       String?
+  voiceIntroUrl String?
+  isVerified    Boolean   @default(false)
+  isPremium     Boolean   @default(false)
+  premiumTier   String?
+  premiumUntil  DateTime?
+  quickyScore   Int       @default(0)
+  onboardedAt   DateTime?
+  lastActiveAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  photos           Photo[]
+  sentSwipes       Swipe[]  @relation("FromUser")
+  receivedSwipes   Swipe[]  @relation("ToUser")
+  matchesA         Match[]  @relation("UserA")
+  matchesB         Match[]  @relation("UserB")
+  sentMessages     Message[]
+  quickySends      QuickyEvent[] @relation("SenderQuicky")
+  quickyReceives   QuickyEvent[] @relation("RecipientQuicky")
+  gameSessionsA    GameSession[] @relation("UserA_GS")
+  gameSessionsB    GameSession[] @relation("UserB_GS")
+  subscriptions    Subscription[]
+  reportsFiled     Report[] @relation("Reporter")
+  reportsAgainst   Report[] @relation("Reported")
+  blockedBy        Block[]  @relation("Blocker")
+  blockedUsers     Block[]  @relation("Blocked")
+  sessions         Session[]
+}
+
+model Photo {
+  id        String   @id @default(cuid())
+  userId    String
+  url       String
+  position  Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Swipe {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  // type: "like" | "superlike" | "pass"
+  type       String
+  createdAt  DateTime @default(now())
+  fromUser   User @relation("FromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
+  @@unique([fromUserId, toUserId])
+}
+
+model Match {
+  id            String    @id @default(cuid())
+  userAId       String
+  userBId       String
+  // status: "active" | "unmatched" | "archived"
+  status        String    @default("active")
+  createdAt     DateTime  @default(now())
+  lastMessageAt DateTime?
+  userA         User       @relation("UserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB         User       @relation("UserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  gameSessions  GameSession[]
+}
+
+model Message {
+  id                 String    @id @default(cuid())
+  matchId            String
+  senderId           String
+  // type: "text" | "image" | "video" | "quicky" | "system"
+  type               String
+  text               String?
+  mediaUrl           String?
+  quickyDuration     Int?
+  quickyOpenedAt     DateTime?
+  quickyExpiresAt    DateTime?
+  screenshotFlagged  Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  match              Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  sender             User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+model QuickyEvent {
+  id          String   @id @default(cuid())
+  senderId    String
+  recipientId String
+  messageId   String?
+  // eventType: "sent" | "opened" | "replay" | "screenshot" | "streak_milestone"
+  eventType   String
+  pointsAwarded Int?
+  createdAt   DateTime @default(now())
+  sender      User @relation("SenderQuicky", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User @relation("RecipientQuicky", fields: [recipientId], references: [id], onDelete: Cascade)
+}
+
+model GameSession {
+  id             String    @id @default(cuid())
+  matchId        String
+  userAId        String
+  userBId        String
+  // gameType: "truth_or_dare" | "never_have_i_ever" | "would_you_rather" | "icebreaker_roulette" | "two_truths_lie"
+  gameType       String
+  // status: "active" | "ended"
+  status         String    @default("active")
+  currentTurn     Int       @default(0)
+  currentPlayerId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  match          Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userA          User       @relation("UserA_GS", fields: [userAId], references: [id], onDelete: Cascade)
+  userB          User       @relation("UserB_GS", fields: [userBId], references: [id], onDelete: Cascade)
+  turns          GameTurn[]
+}
+
+model GameTurn {
+  id             String   @id @default(cuid())
+  sessionId      String
+  playerId       String
+  // deck: "flirty" | "deep" | "funny" | "spicy"
+  promptDeck     String?
+  promptText     String
+  // choice: "truth" | "dare" | "yes" | "no" | "option_a" | "option_b"
+  choice         String?
+  answerText     String?
+  answerMediaUrl  String?
+  skipped        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  session        GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id         String   @id @default(cuid())
+  userId     String
+  // plan: "weekly" | "monthly" | "quarterly" | "annual"
+  plan       String
+  // status: "active" | "cancelled" | "expired"
+  status     String   @default("active")
+  startedAt  DateTime @default(now())
+  expiresAt  DateTime
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id            String   @id @default(cuid())
+  reporterId    String
+  reportedId    String
+  // category: "harassment" | "spam" | "fake" | "inappropriate" | "underage" | "other"
+  category      String
+  details       String?
+  screenshotUrl String?
+  // status: "pending" | "reviewing" | "resolved"
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+  reporter      User @relation("Reporter", fields: [reporterId], references: [id])
+  reported      User @relation("Reported", fields: [reportedId], references: [id])
+}
+
+model Block {
+  id         String   @id @default(cuid())
+  blockerId  String
+  blockedId  String
+  createdAt  DateTime @default(now())
+  blocker    User @relation("Blocker", fields: [blockerId], references: [id])
+  blocked    User @relation("Blocked", fields: [blockedId], references: [id])
+  @@unique([blockerId, blockedId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OtpCode {
+  id         String   @id @default(cuid())
+  phone      String
+  code       String
+  expiresAt  DateTime
+  consumed   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
