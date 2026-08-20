@@ -52,3 +52,19 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Quicky-specific exclusions
+# SQLite database (regenerated via `bun run db:push` + seed script)
+/db/
+# User-uploaded media (photos, quicky) — runtime-generated
+/public/uploads/
+# Original uploaded PRD + my screenshots (not part of source)
+/upload/
+/download/
+# Agent worklog
+worklog.md
+# Generation script logs
+scripts/*.log
+# Z.ai dev scripts
+/.zscripts/
+.z-ai-config
