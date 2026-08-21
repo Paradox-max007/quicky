@@ -27,7 +27,7 @@ export async function GET() {
       city: full.city,
       interests: full.interests ? JSON.parse(full.interests) : [],
       prompts: full.prompts ? JSON.parse(full.prompts) : [],
-      photos: full.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary })),
+      photos: full.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary, isPrivate: p.isPrivate, position: p.position })),
       isPremium: full.isPremium,
       isVerified: full.isVerified,
       quickyScore: full.quickyScore,

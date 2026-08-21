@@ -1,13 +1,16 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from 'framer-motion'
 import { useQuickyStore, DiscoveryCandidate } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles } from 'lucide-react'
+import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getScoreTier } from '@/lib/quicky/constants'
+
+// Free users can see this many photos per card before the "upgrade" gate
+const FREE_PHOTO_LIMIT = 3
 
 export function DiscoveryFeed() {
   const user = useQuickyStore((s) => s.user)
@@ -20,6 +23,7 @@ export function DiscoveryFeed() {
   const [limits, setLimits] = useState<{ likes: number | 'unlimited'; superLikes: number; quicky: number | 'unlimited'; isPremium: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [topKey, setTopKey] = useState(0) // force remount of top card
+  const [swiping, setSwiping] = useState(false) // prevent double-swipe
 
   const refresh = async () => {
     setLoading(true)
@@ -39,6 +43,7 @@ export function DiscoveryFeed() {
   }, [])
 
   const handleSwipe = async (candidate: DiscoveryCandidate, type: 'like' | 'superlike' | 'pass') => {
+    if (swiping) return false
     // Check limits before sending
     if (type === 'like' && limits && limits.likes !== 'unlimited' && limits.likes <= 0) {
       showPaywall({ kind: 'likes' })
@@ -49,6 +54,7 @@ export function DiscoveryFeed() {
       return false
     }
 
+    setSwiping(true)
     try {
       const res = await api.swipe(candidate.id, type)
       if (res.error === 'like_limit' || res.paywall === 'likes') {
@@ -61,7 +67,6 @@ export function DiscoveryFeed() {
       }
       if (res.limits) setLimits(res.limits)
       if (res.match) {
-        // Find partner info
         const partner = candidate
         showMatchCelebration({
           matchId: res.match.id,
@@ -79,6 +84,8 @@ export function DiscoveryFeed() {
       }
       toast.error(e.message ?? 'Swipe failed')
       return false
+    } finally {
+      setSwiping(false)
     }
   }
 
@@ -95,14 +102,20 @@ export function DiscoveryFeed() {
     }
   }
 
+  const advanceQueue = useCallback(() => {
+    setQueue((q) => q.slice(1))
+    setTopKey((k) => k + 1)
+  }, [])
+
   const top = queue[0]
   const next1 = queue[1]
   const next2 = queue[2]
+  const viewerIsPremium = user?.isPremium ?? false
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white relative">
       {/* Top bar with logo + score */}
-      <header className="shrink-0 px-5 pt-2 pb-3 flex items-center justify-between">
+      <header className="shrink-0 px-5 pt-3 pb-3 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <span className="text-xl font-bold tracking-tight">Quicky</span>
           <span className="w-1.5 h-1.5 rounded-full bg-[#FF2D55]" />
@@ -127,7 +140,7 @@ export function DiscoveryFeed() {
         {!loading && queue.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8">
             <Sparkles className="w-12 h-12 text-white/20 mb-3" />
-            <h2 className="text-xl font-bold">You’re all caught up</h2>
+            <h2 className="text-xl font-bold">You're all caught up</h2>
             <p className="text-white/50 text-sm mt-1">Check back later for more people in your area.</p>
             <button onClick={refresh} className="mt-4 bg-coral-gradient rounded-full px-4 py-2 text-sm font-medium">
               Refresh
@@ -144,6 +157,8 @@ export function DiscoveryFeed() {
                 candidate={next2}
                 style={{ transform: 'scale(0.9) translateY(16px)', opacity: 0.4 }}
                 interactive={false}
+                viewerIsPremium={viewerIsPremium}
+                showPaywall={() => showPaywall({ kind: 'generic' })}
               />
             )}
             {next1 && (
@@ -152,19 +167,20 @@ export function DiscoveryFeed() {
                 candidate={next1}
                 style={{ transform: 'scale(0.95) translateY(8px)', opacity: 0.7 }}
                 interactive={false}
+                viewerIsPremium={viewerIsPremium}
+                showPaywall={() => showPaywall({ kind: 'generic' })}
               />
             )}
             {/* Top interactive card */}
             <SwipeCardWrapper
               key={`top-${top.id}-${topKey}`}
               candidate={top}
+              viewerIsPremium={viewerIsPremium}
+              showPaywall={() => showPaywall({ kind: 'generic' })}
               onSwipe={async (dir) => {
                 const type = dir === 'right' ? 'like' : dir === 'left' ? 'pass' : 'superlike'
                 const ok = await handleSwipe(top, type as 'like' | 'superlike' | 'pass')
-                if (ok) {
-                  setQueue((q) => q.slice(1))
-                  setTopKey((k) => k + 1)
-                }
+                if (ok) advanceQueue()
               }}
             />
           </div>
@@ -173,7 +189,7 @@ export function DiscoveryFeed() {
 
       {/* Action buttons */}
       {queue.length > 0 && (
-        <div className="shrink-0 px-6 py-4 flex items-center justify-center gap-3 safe-area-bottom">
+        <div className="shrink-0 px-6 py-4 flex items-center justify-center gap-3">
           <ActionButton
             onClick={rewind}
             size="sm"
@@ -182,36 +198,21 @@ export function DiscoveryFeed() {
             label="Rewind"
           />
           <ActionButton
-            onClick={() => handleSwipe(top, 'pass').then((ok) => {
-              if (ok) {
-                setQueue((q) => q.slice(1))
-                setTopKey((k) => k + 1)
-              }
-            })}
+            onClick={() => handleSwipe(top, 'pass').then((ok) => { if (ok) advanceQueue() })}
             size="lg"
             color="white"
             icon={<X className="w-7 h-7" strokeWidth={3} />}
             label="Pass"
           />
           <ActionButton
-            onClick={() => handleSwipe(top, 'superlike').then((ok) => {
-              if (ok) {
-                setQueue((q) => q.slice(1))
-                setTopKey((k) => k + 1)
-              }
-            })}
+            onClick={() => handleSwipe(top, 'superlike').then((ok) => { if (ok) advanceQueue() })}
             size="sm"
             color="blue"
             icon={<Star className="w-5 h-5" fill="currentColor" />}
             label="Super Like"
           />
           <ActionButton
-            onClick={() => handleSwipe(top, 'like').then((ok) => {
-              if (ok) {
-                setQueue((q) => q.slice(1))
-                setTopKey((k) => k + 1)
-              }
-            })}
+            onClick={() => handleSwipe(top, 'like').then((ok) => { if (ok) advanceQueue() })}
             size="lg"
             color="coral"
             icon={<Heart className="w-7 h-7" fill="currentColor" strokeWidth={0} />}
@@ -289,57 +290,132 @@ function CardLayout({
   candidate,
   style,
   interactive,
+  viewerIsPremium,
+  showPaywall,
 }: {
   candidate: DiscoveryCandidate
   style?: React.CSSProperties
   interactive?: boolean
+  viewerIsPremium: boolean
+  showPaywall: () => void
 }) {
   const [photoIdx, setPhotoIdx] = useState(0)
   const tier = getScoreTier(candidate.quickyScore)
-  const photo = candidate.photos[photoIdx]
   const total = candidate.photos.length
+  const visibleLimit = viewerIsPremium ? total : Math.min(total, FREE_PHOTO_LIMIT)
+  const photo = candidate.photos[photoIdx]
+  const isLocked = photoIdx >= visibleLimit
 
+  // Touch-based swipe detection (separate from card-drag swipe)
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!interactive) return
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!interactive || touchStartX.current === null || touchStartY.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
+    // Only register as horizontal swipe if horizontal is dominant
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+
+    e.stopPropagation()
+    if (dx > 0) {
+      // swipe right on image → go previous
+      setPhotoIdx((i) => Math.max(0, i - 1))
+    } else {
+      // swipe left on image → go next
+      const next = photoIdx + 1
+      if (next >= visibleLimit && !viewerIsPremium && next < total) {
+        showPaywall()
+      } else {
+        setPhotoIdx((i) => Math.min(total - 1, i + 1))
+      }
+    }
+    touchStartX.current = null
+    touchStartY.current = null
+  }
+
+  // Click tap zones (desktop / non-touch)
   const cyclePhoto = (e: React.MouseEvent, dir: 'left' | 'right') => {
     e.stopPropagation()
-    if (dir === 'left') setPhotoIdx((i) => (i - 1 + total) % total)
-    else setPhotoIdx((i) => (i + 1) % total)
+    if (dir === 'left') {
+      setPhotoIdx((i) => Math.max(0, i - 1))
+    } else {
+      const next = photoIdx + 1
+      if (next >= visibleLimit && !viewerIsPremium && next < total) {
+        showPaywall()
+      } else {
+        setPhotoIdx((i) => Math.min(total - 1, i + 1))
+      }
+    }
   }
 
   return (
     <div
       className="absolute inset-x-4 top-0 bottom-0 rounded-3xl overflow-hidden bg-[#1A1A2E] border border-white/5 shadow-2xl"
       style={style}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
-      {photo ? (
+      {photo && !isLocked ? (
         <img src={photo.url} alt={candidate.name ?? 'Photo'} className="w-full h-full object-cover" />
+      ) : isLocked ? (
+        // Blurred lock overlay
+        <div className="w-full h-full relative">
+          <img src={candidate.photos[visibleLimit - 1]?.url} alt="" className="w-full h-full object-cover blur-xl scale-110" />
+          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center">
+              <Lock className="w-7 h-7 text-white/80" />
+            </div>
+            <p className="text-white font-semibold text-sm">Premium photos locked</p>
+            <p className="text-white/60 text-xs">Upgrade to see all {total} photos</p>
+          </div>
+        </div>
       ) : (
         <div className="w-full h-full flex items-center justify-center text-white/20">
           <Sparkles className="w-12 h-12" />
         </div>
       )}
+
       {/* Gradient overlay */}
       <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-      {/* Photo pagination */}
+
+      {/* Photo pagination dots */}
       {total > 1 && (
         <div className="absolute top-2 left-2 right-2 flex gap-1">
           {Array.from({ length: total }).map((_, i) => (
             <div
               key={i}
               className={cn(
-                'h-1 flex-1 rounded-full',
-                i === photoIdx ? 'bg-white' : 'bg-white/30'
+                'h-1 flex-1 rounded-full transition-all',
+                i === photoIdx ? 'bg-white' : i < visibleLimit ? 'bg-white/30' : 'bg-white/10'
               )}
             />
           ))}
         </div>
       )}
-      {/* Tap zones for photo cycle */}
-      {interactive && (
+
+      {/* Premium lock badge if limited */}
+      {!viewerIsPremium && total > FREE_PHOTO_LIMIT && (
+        <div className="absolute top-5 right-3 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
+          <Lock className="w-2.5 h-2.5 text-[#F5C570]" />
+          <span className="text-[10px] text-[#F5C570] font-semibold">{total - visibleLimit} locked</span>
+        </div>
+      )}
+
+      {/* Tap zones for photo cycle (desktop) */}
+      {interactive && !isLocked && (
         <>
           <button className="absolute left-0 top-0 bottom-0 w-1/3" onClick={(e) => cyclePhoto(e, 'left')} aria-label="Previous photo" />
           <button className="absolute right-0 top-0 bottom-0 w-1/3" onClick={(e) => cyclePhoto(e, 'right')} aria-label="Next photo" />
         </>
       )}
+
       {/* Info */}
       <div className="absolute bottom-0 left-0 right-0 p-4">
         <div className="flex items-end justify-between gap-2">
@@ -399,51 +475,64 @@ function CardLayout({
 function SwipeCardWrapper({
   candidate,
   onSwipe,
+  viewerIsPremium,
+  showPaywall,
 }: {
   candidate: DiscoveryCandidate
   onSwipe: (dir: 'left' | 'right' | 'up') => void
+  viewerIsPremium: boolean
+  showPaywall: () => void
 }) {
   const x = useMotionValue(0)
   const y = useMotionValue(0)
-  const [exitX, setExitX] = useState(0)
-  const [exitY, setExitY] = useState(0)
+  const [gone, setGone] = useState(false)
 
-  const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15])
-  const likeOpacity = useTransform(x, [0, 60, 120], [0, 0.5, 1])
-  const passOpacity = useTransform(x, [-120, -60, 0], [1, 0.5, 0])
-  const superOpacity = useTransform(y, [-120, -60, 0], [1, 0.5, 0])
+  const rotate = useTransform(x, [-200, 0, 200], [-18, 0, 18])
+  const likeOpacity = useTransform(x, [0, 60, 120], [0, 0.6, 1])
+  const passOpacity = useTransform(x, [-120, -60, 0], [1, 0.6, 0])
+  const superOpacity = useTransform(y, [-120, -60, 0], [1, 0.6, 0])
 
   const handleDragEnd = (_: any, info: PanInfo) => {
-    const threshold = 100
-    const velocity = 500
+    const threshold = 80
+    const velocity = 400
     if (info.offset.x > threshold || info.velocity.x > velocity) {
-      setExitX(200)
+      setGone(true)
+      x.set(500)
       onSwipe('right')
     } else if (info.offset.x < -threshold || info.velocity.x < -velocity) {
-      setExitX(-200)
+      setGone(true)
+      x.set(-500)
       onSwipe('left')
     } else if (info.offset.y < -threshold || info.velocity.y < -velocity) {
-      setExitY(-200)
+      setGone(true)
+      y.set(-500)
       onSwipe('up')
     }
   }
 
   return (
     <motion.div
-      drag
-      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-      dragElastic={0.7}
+      drag={!gone}
+      dragConstraints={{ left: -30, right: 30, top: -30, bottom: 30 }}
+      dragElastic={0.12}
+      dragMomentum={false}
       onDragEnd={handleDragEnd}
       style={{ x, y, rotate }}
       whileTap={{ cursor: 'grabbing' }}
-      className="absolute inset-x-4 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+      animate={gone ? { opacity: 0, scale: 0.85, transition: { duration: 0.2 } } : {}}
+      className="absolute inset-x-4 top-0 bottom-0 cursor-grab active:cursor-grabbing touch-none"
     >
-      <CardLayout candidate={candidate} interactive />
+      <CardLayout
+        candidate={candidate}
+        interactive
+        viewerIsPremium={viewerIsPremium}
+        showPaywall={showPaywall}
+      />
 
       {/* LIKE indicator */}
       <motion.div
         style={{ opacity: likeOpacity }}
-        className="absolute top-8 left-6 -rotate-12"
+        className="absolute top-8 left-6 -rotate-12 pointer-events-none"
       >
         <span className="text-[#FF2D55] text-4xl font-extrabold border-4 border-[#FF2D55] rounded-xl px-3 py-1">
           LIKE
@@ -452,7 +541,7 @@ function SwipeCardWrapper({
       {/* PASS indicator */}
       <motion.div
         style={{ opacity: passOpacity }}
-        className="absolute top-8 right-6 rotate-12"
+        className="absolute top-8 right-6 rotate-12 pointer-events-none"
       >
         <span className="text-white text-4xl font-extrabold border-4 border-white rounded-xl px-3 py-1">
           NOPE
@@ -461,7 +550,7 @@ function SwipeCardWrapper({
       {/* SUPER LIKE indicator */}
       <motion.div
         style={{ opacity: superOpacity }}
-        className="absolute top-1/3 left-1/2 -translate-x-1/2"
+        className="absolute top-1/3 left-1/2 -translate-x-1/2 pointer-events-none"
       >
         <span className="text-[#B8A4FF] text-3xl font-extrabold border-4 border-[#B8A4FF] rounded-xl px-3 py-1">
           SUPER

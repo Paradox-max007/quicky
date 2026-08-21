@@ -1,10 +1,11 @@
 // Quicky — manage individual photo
-// PATCH   /api/quicky/auth/me/photos/[photoId]  { position?, isPrimary? }
+// PATCH   /api/quicky/auth/me/photos/[photoId]  { position?, isPrimary?, isPrivate? }
 // DELETE  /api/quicky/auth/me/photos/[photoId]
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import fs from 'fs'
+import path from 'path'
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ photoId: string }> }) {
   const me = await getCurrentUser()
@@ -22,6 +23,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ photoId: 
     data: {
       position: body.position ?? photo.position,
       isPrimary: body.isPrimary ?? photo.isPrimary,
+      isPrivate: body.isPrivate !== undefined ? Boolean(body.isPrivate) : photo.isPrivate,
     },
   })
 
@@ -35,6 +37,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ photoId: 
   return NextResponse.json({ ok: true, photo: updated })
 }
 
+
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ photoId: string }> }) {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -47,7 +50,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ photoId
 
   // Try to delete the file too
   if (photo.url?.startsWith('/uploads/')) {
-    const fullPath = `/home/z/my-project/public${photo.url}`
+    const fullPath = path.join(process.cwd(), 'public', photo.url)
     try { fs.unlinkSync(fullPath) } catch {}
   }
 

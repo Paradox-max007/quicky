@@ -22,11 +22,16 @@ async function jsonFetch<T = any>(input: string, init?: RequestInit): Promise<T>
   return data as T
 }
 
-function uploadFile(file: File, kind: 'photo' | 'quicky' | 'voice' = 'photo') {
+async function uploadFile(file: File, kind: 'photo' | 'quicky' | 'voice' = 'photo'): Promise<{ ok: boolean; url: string; filename?: string; kind?: string }> {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('kind', kind)
-  return fetch('/api/quicky/upload', { method: 'POST', body: fd, credentials: 'include' }).then((r) => r.json())
+  const res = await fetch('/api/quicky/upload', { method: 'POST', body: fd, credentials: 'include' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.error || `Upload failed (${res.status})`)
+  }
+  return data
 }
 
 export const api = {
@@ -48,14 +53,14 @@ export const api = {
       jsonFetch('/api/quicky/onboarding', { method: 'PATCH', body: JSON.stringify(data) }),
   },
   photos: {
-    add: (url: string, position?: number, isPrimary?: boolean) =>
+    add: (url: string, position?: number, isPrimary?: boolean, isPrivate?: boolean) =>
       jsonFetch('/api/quicky/auth/me/photos', {
         method: 'POST',
-        body: JSON.stringify({ url, position, isPrimary }),
+        body: JSON.stringify({ url, position, isPrimary, isPrivate }),
       }),
     delete: (id: string) =>
       jsonFetch(`/api/quicky/auth/me/photos/${id}`, { method: 'DELETE' }),
-    update: (id: string, data: { position?: number; isPrimary?: boolean }) =>
+    update: (id: string, data: { position?: number; isPrimary?: boolean; isPrivate?: boolean }) =>
       jsonFetch(`/api/quicky/auth/me/photos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   },
   discovery: () =>
@@ -63,7 +68,7 @@ export const api = {
       '/api/quicky/discovery'
     ),
   swipe: (toUserId: string, type: 'like' | 'superlike' | 'pass' | 'rewind') =>
-    jsonFetch<{ ok: boolean; match?: { id: string; partnerId: string } | null; error?: string; paywall?: string }>(
+    jsonFetch<{ ok: boolean; match?: { id: string; partnerId: string } | null; error?: string; paywall?: string; limits?: any }>(
       '/api/quicky/swipe',
       { method: 'POST', body: JSON.stringify({ toUserId, type }) }
     ),

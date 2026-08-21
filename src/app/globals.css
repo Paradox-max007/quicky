@@ -153,6 +153,13 @@
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+  /* Safe area insets for native mobile (Capacitor) */
+  .safe-area-top { padding-top: env(safe-area-inset-top, 0px); }
+  .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .safe-area-x { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  .mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
+
+
   /* Coral glow for primary CTA / quicky bubble */
   .glow-coral {
     box-shadow: 0 0 24px -2px rgba(255, 45, 85, 0.55), 0 0 60px -10px rgba(255, 45, 85, 0.35);

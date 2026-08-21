@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Quicky</string>
+    <string name="title_activity_main">Quicky</string>
+    <string name="package_name">com.quicky.app</string>
+    <string name="custom_url_scheme">com.quicky.app</string>
+</resources>

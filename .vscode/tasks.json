@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Dev Server (Next.js)",
+      "type": "shell",
+      "command": "bun run dev",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Starting.*",
+          "endsPattern": ".*Ready.*"
+        }
+      }
+    },
+    {
+      "label": "Run on Android Device",
+      "type": "shell",
+      "command": "$env:ANDROID_HOME = \"$env:LOCALAPPDATA\\Android\\Sdk\"; $env:JAVA_HOME = \"C:\\Program Files\\Android\\Android Studio\\jbr\"; $env:PATH = \"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools;$env:JAVA_HOME\\bin;$env:PATH\"; bunx cap run android",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Sync Capacitor Assets",
+      "type": "shell",
+      "command": "bun run cap:sync",
+      "problemMatcher": []
+    },
+    {
+      "label": "Check Connected Android Devices",
+      "type": "shell",
+      "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools\\adb.exe\" devices",
+      "problemMatcher": []
+    }
+  ]
+}

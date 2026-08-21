@@ -1,7 +1,7 @@
 // Quicky — manage user photos
-// POST   /api/quicky/auth/me/photos      { url, position?, isPrimary? }
+// POST   /api/quicky/auth/me/photos      { url, position?, isPrimary?, isPrivate? }
 // DELETE /api/quicky/auth/me/photos/[id]
-// PATCH  /api/quicky/auth/me/photos/[id] { position?, isPrimary? }
+// PATCH  /api/quicky/auth/me/photos/[id] { position?, isPrimary?, isPrivate? }
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
       url,
       position,
       isPrimary: body.isPrimary ?? count === 0,
+      isPrivate: body.isPrivate ?? false,
     },
   })
 
@@ -36,3 +37,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, photo })
 }
+

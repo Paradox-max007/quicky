@@ -153,8 +153,8 @@ export const PROFILE_PROMPTS = [
 
 // Helper: get score tier for a given score
 export function getScoreTier(score: number) {
-  let current = QUICKY.tiers[0]
-  let next: typeof current | null = null
+  let current: (typeof QUICKY.tiers)[number] = QUICKY.tiers[0]
+  let next: (typeof QUICKY.tiers)[number] | null = null
   for (let i = 0; i < QUICKY.tiers.length; i++) {
     const t = QUICKY.tiers[i]
     if (score >= t.min) {

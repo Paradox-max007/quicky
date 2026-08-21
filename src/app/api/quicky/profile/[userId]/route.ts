@@ -15,6 +15,22 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
   })
   if (!u) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Check if there's an active mutual match between viewer and profile owner
+  const mutualMatch = me.id !== userId
+    ? await db.match.findFirst({
+        where: {
+          status: 'active',
+          OR: [
+            { userAId: me.id, userBId: userId },
+            { userAId: userId, userBId: me.id },
+          ],
+        },
+      })
+    : true // viewing own profile — see everything
+
+  // Filter private photos unless mutual match or own profile
+  const photos = u.photos.filter((p) => !p.isPrivate || mutualMatch)
+
   return NextResponse.json({
     profile: {
       id: u.id,
@@ -26,7 +42,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
       city: u.city,
       interests: u.interests ? JSON.parse(u.interests) : [],
       prompts: u.prompts ? JSON.parse(u.prompts) : [],
-      photos: u.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary })),
+      photos: photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary, isPrivate: p.isPrivate })),
+      hasPrivatePhotos: u.photos.some((p) => p.isPrivate) && !mutualMatch,
       isPremium: u.isPremium,
       isVerified: u.isVerified,
       quickyScore: u.quickyScore,

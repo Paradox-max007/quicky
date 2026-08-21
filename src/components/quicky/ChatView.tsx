@@ -272,7 +272,7 @@ export function ChatView() {
       <AnimatePresence>
         {showActions && (
           <>
-            <div
+            <motion.div
               className="absolute inset-0 bg-black/60 z-40"
               onClick={() => setShowActions(false)}
               initial={{ opacity: 0 }}

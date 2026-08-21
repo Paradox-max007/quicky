@@ -1,16 +1,47 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { QuickyBrand } from './brand'
+import { isNative, initStatusBar, hideSplashScreen } from '@/lib/capacitor'
 
 /**
  * PhoneFrame — wraps the app in a portrait phone shell on desktop,
- * goes full-screen on mobile.
+ * goes full-screen on mobile AND in Capacitor native apps.
  *
- * - Desktop: centered 390x844 card with notch indicator + side buttons
- * - Mobile: full viewport
+ * - Desktop (web): centered 390x844 card with notch indicator + side buttons
+ * - Mobile browser (web): full viewport
+ * - Capacitor native (Android/iOS): full viewport, initialises StatusBar + SplashScreen
  */
 export function PhoneFrame({ children }: { children: ReactNode }) {
+  const [native, setNative] = useState(false)
+
+  useEffect(() => {
+    if (isNative()) {
+      setNative(true)
+      initStatusBar()
+      hideSplashScreen()
+    }
+  }, [])
+
+  // ─── Capacitor native: pure full-screen, safe-area aware ────────────────
+  if (native) {
+    return (
+      <div
+        className="w-full overflow-hidden bg-[#0F0F14] text-white flex flex-col"
+        style={{ height: '100dvh' }}
+      >
+        {/* Status-bar spacer — fills env(safe-area-inset-top) */}
+        <div className="shrink-0 safe-area-top" />
+        {/* App content — fills remaining space */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {children}
+        </div>
+        {/* Home indicator spacer — fills env(safe-area-inset-bottom) */}
+        <div className="shrink-0 safe-area-bottom" />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-black text-white relative overflow-hidden">
       {/* Ambient background gradient blobs */}
@@ -79,7 +110,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      {/* Mobile layout: full screen */}
+      {/* Mobile browser layout: full screen */}
       <div className="md:hidden w-full min-h-screen relative z-10">
         {children}
       </div>

@@ -154,7 +154,7 @@ export function PaywallModal() {
                     </div>
                     <div>
                       <p className="text-sm font-semibold">{p.label}</p>
-                      {p.saveText && <p className="text-xs text-[#F5C570]">{p.saveText}</p>}
+                      {'saveText' in p && p.saveText && <p className="text-xs text-[#F5C570]">{p.saveText}</p>}
                     </div>
                   </div>
                   <div className="text-right">

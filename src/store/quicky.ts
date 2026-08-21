@@ -25,7 +25,7 @@ export type QuickyUser = {
   city?: string | null
   interests?: string[]
   prompts?: { prompt: string; answer: string }[]
-  photos?: { id: string; url: string; isPrimary: boolean }[]
+  photos?: { id: string; url: string; isPrimary: boolean; isPrivate: boolean; position: number }[]
   isPremium: boolean
   isVerified: boolean
   quickyScore: number

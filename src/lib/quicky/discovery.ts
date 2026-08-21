@@ -112,7 +112,8 @@ export async function buildDiscoveryQueue(opts: {
         bio: u.bio,
         city: u.city,
         interests: theirInterests,
-        photos: u.photos.map((p) => ({ id: p.id, url: p.url })),
+        // In discovery, private photos are hidden (no mutual match yet)
+        photos: u.photos.filter((p) => !p.isPrivate).map((p) => ({ id: p.id, url: p.url })),
         isVerified: u.isVerified,
         isPremium: u.isPremium,
         quickyScore: u.quickyScore,

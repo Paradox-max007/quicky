@@ -1,13 +1,14 @@
 // Quicky Dating App — Prisma schema
-// SQLite-backed. Enums are simulated as String with documented allowed values.
+// PostgreSQL-backed (Supabase). Enums are simulated as String with documented allowed values.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -64,6 +65,7 @@ model Photo {
   url       String
   position  Int      @default(0)
   isPrimary Boolean  @default(false)
+  isPrivate Boolean  @default(false)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
