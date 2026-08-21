@@ -89,6 +89,8 @@ export const api = {
   matches: () => jsonFetch<{ matches: any[] }>('/api/quicky/matches'),
   likesYou: () =>
     jsonFetch<{ likes: any[]; isPremium: boolean; lockedCount: number }>('/api/quicky/likes-you'),
+  iLiked: () =>
+    jsonFetch<{ liked: any[]; count: number }>('/api/quicky/i-liked'),
   chat: {
     messages: (matchId: string) =>
       jsonFetch<{ match: any; me: { id: string; isPremium: boolean }; messages: any[] }>(
