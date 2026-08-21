@@ -46,6 +46,20 @@ export const api = {
         body: JSON.stringify({ phone, code }),
       }),
     me: () => jsonFetch<{ user: any | null }>('/api/quicky/auth/me'),
+    update: (data: {
+      name?: string
+      dateOfBirth?: string
+      gender?: string
+      lookingFor?: string
+      bio?: string
+      city?: string
+      interests?: string[]
+      prompts?: { prompt: string; answer: string }[]
+    }) =>
+      jsonFetch<{ ok: boolean; user: any }>('/api/quicky/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
     logout: () => jsonFetch('/api/quicky/auth/logout', { method: 'POST' }),
   },
   onboarding: {

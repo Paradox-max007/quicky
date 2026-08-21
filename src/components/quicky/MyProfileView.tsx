@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, LogOut, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react'
+import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, LogOut, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { cn } from '@/lib/utils'
 import { PhotoVerification } from './PhotoVerification'
@@ -80,25 +80,34 @@ function SortablePhoto({
         <X className="w-3.5 h-3.5 text-white" />
       </button>
 
-      {/* Private toggle (premium only) */}
-      {isPremium && (
-        <button
-          onClick={() => onTogglePrivate(photo.id, !photo.isPrivate)}
-          className={cn(
-            'absolute bottom-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
-            photo.isPrivate
-              ? 'bg-[#F5C570]/80 hover:bg-[#F5C570]'
-              : 'bg-black/60 hover:bg-black/80'
-          )}
-          aria-label={photo.isPrivate ? 'Make public' : 'Make private'}
-          title={photo.isPrivate ? 'Private — tap to make public' : 'Tap to make private'}
-        >
-          {photo.isPrivate
-            ? <Lock className="w-3 h-3 text-black" />
-            : <LockOpen className="w-3 h-3 text-white/70" />
-          }
-        </button>
-      )}
+      {/* Private toggle — visible to everyone.
+          Free users get routed to the Premium paywall on tap (handled by parent). */}
+      <button
+        onClick={() => onTogglePrivate(photo.id, !photo.isPrivate)}
+        className={cn(
+          'absolute bottom-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
+          photo.isPrivate
+            ? 'bg-[#F5C570]/90 hover:bg-[#F5C570]'
+            : isPremium
+              ? 'bg-black/60 hover:bg-black/80'
+              : 'bg-black/60 hover:bg-[#F5C570]/40'
+        )}
+        aria-label={photo.isPrivate ? 'Make public' : 'Make private'}
+        title={
+          photo.isPrivate
+            ? 'Private — tap to make public'
+            : isPremium
+              ? 'Tap to make private'
+              : 'Premium feature — tap to unlock'
+        }
+      >
+        {photo.isPrivate
+          ? <Lock className="w-3 h-3 text-black" />
+          : isPremium
+            ? <LockOpen className="w-3 h-3 text-white/70" />
+            : <Lock className="w-3 h-3 text-white/50" />
+        }
+      </button>
 
       {/* Badges */}
       {photo.isPrimary && (
@@ -119,6 +128,7 @@ export function MyProfileView() {
   const user = useQuickyStore((s) => s.user)
   const setUser = useQuickyStore((s) => s.setUser)
   const setView = useQuickyStore((s) => s.setView)
+  const showPaywall = useQuickyStore((s) => s.showPaywall)
   const [profile, setProfile] = useState<any | null>(null)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [selectedIdx, setSelectedIdx] = useState(0)
@@ -187,13 +197,24 @@ export function MyProfileView() {
   }
 
   const togglePrivate = async (id: string, val: boolean) => {
+    // Free users trying to make a photo private → route to Premium paywall.
+    // Making a private photo public again is always allowed.
+    if (val && !isPremium) {
+      showPaywall({ kind: 'private_photos' })
+      return
+    }
     // Optimistic update
     setPhotos((prev) => prev.map((p) => p.id === id ? { ...p, isPrivate: val } : p))
     try {
       await api.photos.update(id, { isPrivate: val })
       toast.success(val ? 'Photo set to private' : 'Photo is now public')
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to update')
+      // Server-side premium gate (defense in depth) — also route to paywall
+      if (e.status === 402 && e.body?.paywall === 'private_photos') {
+        showPaywall({ kind: 'private_photos' })
+      } else {
+        toast.error(e.message ?? 'Failed to update')
+      }
       refresh() // revert on error
     }
   }
@@ -235,18 +256,28 @@ export function MyProfileView() {
     <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-y-auto no-scrollbar">
       <header className="shrink-0 px-5 pt-3 pb-3 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
-        <button
-          onClick={async () => {
-            await api.auth.logout()
-            setUser(null)
-            setView('auth')
-            toast.success('Logged out')
-          }}
-          className="text-white/50 hover:text-white p-2"
-          aria-label="Log out"
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setView('edit-profile')}
+            className="flex items-center gap-1 text-[#FF5E7E] hover:text-[#FF2D55] text-sm font-medium px-3 py-1.5 rounded-full hover:bg-[#FF2D55]/10 transition-colors"
+            aria-label="Edit profile"
+          >
+            <Pencil className="w-4 h-4" />
+            Edit
+          </button>
+          <button
+            onClick={async () => {
+              await api.auth.logout()
+              setUser(null)
+              setView('auth')
+              toast.success('Logged out')
+            }}
+            className="text-white/50 hover:text-white p-2"
+            aria-label="Log out"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       {/* Hero photo carousel */}
@@ -458,9 +489,13 @@ export function MyProfileView() {
             <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wide">Manage Photos</h3>
             <span className="text-[10px] text-white/30">Hold & drag to reorder</span>
           </div>
-          {isPremium && (
+          {isPremium ? (
             <p className="text-[10px] text-[#F5C570]/70 mb-2 flex items-center gap-1">
               <Lock className="w-2.5 h-2.5" /> Tap the lock icon to make a photo private (only mutual matches can see it)
+            </p>
+          ) : (
+            <p className="text-[10px] text-white/40 mb-2 flex items-center gap-1">
+              <Lock className="w-2.5 h-2.5" /> Tap the lock icon to make a photo private — Premium feature
             </p>
           )}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

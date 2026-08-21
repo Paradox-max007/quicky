@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Crown, Heart, Camera, Sparkles, Zap, Filter } from 'lucide-react'
+import { X, Crown, Heart, Camera, Sparkles, Zap, Filter, Lock } from 'lucide-react'
 import { QUICKY } from '@/lib/quicky/constants'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
@@ -54,6 +54,12 @@ const PAYWALL_COPY: Record<
     title: 'Boost your visibility',
     body: 'Get a 5x visibility boost for 30 minutes and appear at the top of discovery queues.',
     perk: '5x Boost for 30 min',
+  },
+  private_photos: {
+    icon: Lock,
+    title: 'Private Photos',
+    body: 'Make select photos private so only your mutual matches can see them. Hide your most personal moments from the public discovery feed.',
+    perk: 'Private Photos for matches only',
   },
   generic: {
     icon: Crown,

@@ -16,11 +16,14 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const [native, setNative] = useState(false)
 
   useEffect(() => {
-    if (isNative()) {
+    if (!isNative()) return
+    // Defer state + side-effects to avoid cascading renders inside the effect body
+    const t = setTimeout(() => {
       setNative(true)
       initStatusBar()
       hideSplashScreen()
-    }
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
 
   // ─── Capacitor native: pure full-screen, safe-area aware ────────────────

@@ -18,6 +18,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ photoId: 
   }
 
   const body = await req.json()
+
+  // Premium gate: setting a photo to private requires Premium.
+  // Free users get a 402 with `paywall: 'private_photos'` so the client can
+  // route them to the subscription page.
+  if (body.isPrivate === true && !me.isPremium && !photo.isPrivate) {
+    return NextResponse.json(
+      { error: 'private_photos_required', paywall: 'private_photos' },
+      { status: 402 }
+    )
+  }
+
   const updated = await db.photo.update({
     where: { id: photoId },
     data: {

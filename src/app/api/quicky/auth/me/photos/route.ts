@@ -14,6 +14,14 @@ export async function POST(req: NextRequest) {
   const url = String(body.url ?? '')
   if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
 
+  // Premium gate: creating a private photo requires Premium.
+  if (body.isPrivate === true && !me.isPremium) {
+    return NextResponse.json(
+      { error: 'private_photos_required', paywall: 'private_photos' },
+      { status: 402 }
+    )
+  }
+
   const count = await db.photo.count({ where: { userId: me.id } })
   if (count >= 6) return NextResponse.json({ error: 'Max 6 photos' }, { status: 400 })
 

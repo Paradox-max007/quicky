@@ -9,6 +9,7 @@ import { ChatList } from './ChatList'
 import { ChatView } from './ChatView'
 import { LikesYouView } from './LikesYouView'
 import { MyProfileView } from './MyProfileView'
+import { EditProfileScreen } from './EditProfileScreen'
 import { PremiumView } from './PremiumView'
 import { ProfileView } from './ProfileView'
 import { MatchCelebration } from './MatchCelebration'
@@ -40,11 +41,12 @@ export function AppRoot() {
           {view === 'matches' && <ChatList />}
           {view === 'likes-you' && <LikesYouView />}
           {view === 'profile-me' && <MyProfileView />}
+          {view === 'edit-profile' && <EditProfileScreen />}
           {view === 'premium' && <PremiumView />}
           {view === 'chat' && <ChatView />}
           {view === 'profile-view' && <ProfileView />}
         </div>
-        {/* Bottom nav — hidden in chat & auth/onboarding */}
+        {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile */}
         {['discovery', 'matches', 'likes-you', 'profile-me', 'premium'].includes(view) && <BottomNav />}
       </div>
 

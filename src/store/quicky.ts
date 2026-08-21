@@ -10,6 +10,7 @@ export type AppView =
   | 'matches'
   | 'likes-you'
   | 'profile-me'
+  | 'edit-profile'
   | 'premium'
   | 'chat'
   | 'profile-view'
@@ -85,6 +86,7 @@ export type PaywallContext =
   | { kind: 'see_likes' }
   | { kind: 'advanced_filters' }
   | { kind: 'boost' }
+  | { kind: 'private_photos' }
   | { kind: 'generic' }
 
 type State = {
