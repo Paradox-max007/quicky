@@ -22,7 +22,7 @@
     "cap:build:android": "next build && cap sync android",
     "android:devices": "powershell -Command \"$env:PATH = \\\"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools;$env:PATH\\\"; adb devices\"",
     "android:install": "powershell -Command \"$env:PATH = \\\"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools;$env:PATH\\\"; adb install -r android/app/build/outputs/apk/debug/app-debug.apk; adb shell am start -n com.quicky.app/com.quicky.app.MainActivity\"",
-    "android:run": "powershell -Command \"$env:ANDROID_HOME = \\\"$env:LOCALAPPDATA\\Android\\Sdk\\\"; $env:JAVA_HOME = \\\"C:\\Program Files\\Android\\Android Studio\\jbr\\\"; $env:PATH = \\\"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools;$env:JAVA_HOME\\bin;$env:PATH\\\"; bunx cap run android\"",
+    "android:run": "powershell -Command \"$env:ANDROID_HOME = \\\"$env:LOCALAPPDATA\\Android\\Sdk\\\"; $env:JAVA_HOME = \\\"C:\\Program Files\\Android\\Android Studio\\jbr\\\"; $env:PATH = \\\"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools;$env:JAVA_HOME\\bin;$env:PATH\\\"; adb reverse tcp:3000 tcp:3000; bunx cap run android\"",
     "scripts:gen-personas": "bun scripts/gen-personas.ts",
     "scripts:seed": "bun scripts/seed.ts"
   },
