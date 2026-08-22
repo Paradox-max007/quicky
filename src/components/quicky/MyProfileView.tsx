@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
+import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { cn } from '@/lib/utils'
 import { PhotoVerification } from './PhotoVerification'
@@ -256,23 +256,13 @@ export function MyProfileView() {
     <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-y-auto no-scrollbar">
       <header className="shrink-0 px-5 pt-3 pb-3 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setView('edit-profile')}
-            className="flex items-center gap-1 text-[#FF5E7E] hover:text-[#FF2D55] text-sm font-medium px-3 py-1.5 rounded-full hover:bg-[#FF2D55]/10 transition-colors"
-            aria-label="Edit profile"
-          >
-            <Pencil className="w-4 h-4" />
-            Edit
-          </button>
-          <button
-            onClick={() => setView('settings')}
-            className="text-white/50 hover:text-white p-2.5 rounded-full hover:bg-white/5 transition-colors"
-            aria-label="Settings"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-        </div>
+        <button
+          onClick={() => setView('settings')}
+          className="text-white/50 hover:text-white p-2.5 rounded-full hover:bg-white/5 transition-colors"
+          aria-label="Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
       </header>
 
       {/* Hero photo carousel */}

@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Settings as SettingsIcon, User, Phone, Mail, SlidersHorizontal,
   Bell, Palette, Shield, Lock, HelpCircle, FileText, LogOut, ChevronRight,
-  Crown, RefreshCw, X, AlertCircle,
+  Crown, RefreshCw, AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +34,6 @@ export function SettingsScreen() {
   const setView = useQuickyStore((s) => s.setView)
   const user = useQuickyStore((s) => s.user)
   const setUser = useQuickyStore((s) => s.setUser)
-  const showPaywall = useQuickyStore((s) => s.showPaywall)
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -54,16 +53,12 @@ export function SettingsScreen() {
   const handleLogout = async () => {
     setLoggingOut(true)
     try {
-      // Best-effort server logout — don't block on network failure
       await api.auth.logout().catch(() => {})
     } finally {
-      // Clear local state regardless of server response (fail-open for UX)
       setUser(null)
       setView('auth')
       setShowLogoutConfirm(false)
       setLoggingOut(false)
-      // NOTE: per PRD §5.3.7 — do not show a success toast that reveals
-      // the previous user's name after logout
     }
   }
 
@@ -84,17 +79,15 @@ export function SettingsScreen() {
           icon: Phone,
           value: maskedPhone,
           chevron: true,
-          onClick: () => toast.info('Phone number change coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-phone'),
         },
         {
           id: 'email',
           label: 'Email',
           icon: Mail,
-          value: user?.phone ? 'Not set' : '—',
+          value: user?.email || 'Not set',
           chevron: true,
-          onClick: () => toast.info('Email verification coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-email'),
         },
       ],
     },
@@ -107,25 +100,22 @@ export function SettingsScreen() {
           icon: SlidersHorizontal,
           value: 'Age, distance, gender',
           chevron: true,
-          onClick: () => toast.info('Discovery filters coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-discovery'),
         },
         {
           id: 'notifications',
           label: 'Notifications',
           icon: Bell,
           chevron: true,
-          onClick: () => toast.info('Notification settings coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-notifications'),
         },
         {
           id: 'appearance',
           label: 'Appearance / Theme',
           icon: Palette,
-          value: 'Dark',
+          value: user?.settings?.theme ? capitalize(user.settings.theme) : 'Dark',
           chevron: true,
-          onClick: () => toast.info('Theme switcher coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-appearance'),
         },
       ],
     },
@@ -137,17 +127,14 @@ export function SettingsScreen() {
           label: 'Blocked Users',
           icon: Shield,
           chevron: true,
-          onClick: () => toast.info('Blocked users list coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-blocked'),
         },
         {
           id: 'privacy-settings',
           label: 'Privacy Settings',
           icon: Lock,
-          value: 'Show/hide age, distance',
           chevron: true,
-          onClick: () => toast.info('Privacy settings coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-privacy'),
         },
         {
           id: 'safety-center',
@@ -188,24 +175,21 @@ export function SettingsScreen() {
           label: 'Help & Support',
           icon: HelpCircle,
           chevron: true,
-          onClick: () => toast.info('Help center coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-help'),
         },
         {
           id: 'terms',
           label: 'Terms of Service',
           icon: FileText,
           chevron: true,
-          onClick: () => toast.info('Terms of Service coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-terms'),
         },
         {
           id: 'privacy-policy',
           label: 'Privacy Policy',
           icon: FileText,
           chevron: true,
-          onClick: () => toast.info('Privacy Policy coming soon'),
-          disabled: true,
+          onClick: () => setView('settings-privacy-policy'),
         },
       ],
     },
@@ -226,7 +210,6 @@ export function SettingsScreen() {
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white">
-      {/* Header */}
       <header className="shrink-0 px-3 pt-3 pb-3 flex items-center gap-2 border-b border-white/5">
         <button
           onClick={() => setView('profile-me')}
@@ -241,7 +224,6 @@ export function SettingsScreen() {
         </h1>
       </header>
 
-      {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 flex flex-col gap-6">
         {sections.map((section) => (
           <div key={section.title}>
@@ -306,13 +288,11 @@ export function SettingsScreen() {
           </div>
         ))}
 
-        {/* App version */}
         <div className="text-center text-xs text-white/30 pb-4">
           Quicky v1.0.0
         </div>
       </div>
 
-      {/* Logout confirmation dialog */}
       <AnimatePresence>
         {showLogoutConfirm && (
           <motion.div
@@ -370,4 +350,8 @@ export function SettingsScreen() {
       </AnimatePresence>
     </div>
   )
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }

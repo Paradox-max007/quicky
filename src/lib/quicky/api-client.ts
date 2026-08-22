@@ -142,5 +142,39 @@ export const api = {
   },
   verifyPhoto: (action: 'request_challenge' | 'submit') =>
     jsonFetch('/api/quicky/verify-photo', { method: 'POST', body: JSON.stringify({ action }) }),
+  settings: {
+    get: () => jsonFetch<{ settings: any }>('/api/quicky/settings'),
+    update: (data: any) =>
+      jsonFetch('/api/quicky/settings', { method: 'PATCH', body: JSON.stringify(data) }),
+    phone: {
+      otp: (newPhone: string) =>
+        jsonFetch<{ ok: boolean; demoCode: string }>('/api/quicky/settings/phone', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'request_otp', newPhone }),
+        }),
+      verify: (newPhone: string, code: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/settings/phone', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'verify', newPhone, code }),
+        }),
+    },
+    email: {
+      otp: (email: string) =>
+        jsonFetch<{ ok: boolean; demoCode: string }>('/api/quicky/settings/email', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'request_otp', email }),
+        }),
+      verify: (email: string, code: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/settings/email', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'verify', email, code }),
+        }),
+    },
+    blocked: {
+      list: () => jsonFetch<{ blocked: any[] }>('/api/quicky/settings/blocked'),
+      unblock: (blockId: string) =>
+        jsonFetch(`/api/quicky/settings/blocked?blockId=${blockId}`, { method: 'DELETE' }),
+    },
+  },
   upload: uploadFile,
 }

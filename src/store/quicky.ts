@@ -12,6 +12,16 @@ export type AppView =
   | 'profile-me'
   | 'edit-profile'
   | 'settings'
+  | 'settings-phone'
+  | 'settings-email'
+  | 'settings-discovery'
+  | 'settings-notifications'
+  | 'settings-appearance'
+  | 'settings-blocked'
+  | 'settings-privacy'
+  | 'settings-terms'
+  | 'settings-privacy-policy'
+  | 'settings-help'
   | 'premium'
   | 'chat'
   | 'profile-view'
@@ -19,6 +29,7 @@ export type AppView =
 export type QuickyUser = {
   id: string
   phone: string
+  email?: string | null
   name: string | null
   age: number | null
   gender: string | null
@@ -32,6 +43,25 @@ export type QuickyUser = {
   isVerified: boolean
   quickyScore: number
   onboardedAt: string | null
+  discoveryAgeMin?: number | null
+  discoveryAgeMax?: number | null
+  discoveryDistanceKm?: number | null
+  discoveryShowVerifiedOnly?: boolean
+  discoveryRecentlyActive?: boolean
+  settings?: UserSettings
+}
+
+export type UserSettings = {
+  notifMessages: boolean
+  notifConnectionReqs: boolean
+  notifLikes: boolean
+  notifProfileViews: boolean
+  notifSnackbars: boolean
+  privacyHideAge: boolean
+  privacyHideDistance: boolean
+  privacyHideOnline: boolean
+  privacyHideTyping: boolean
+  theme: string
 }
 
 export type DiscoveryCandidate = {

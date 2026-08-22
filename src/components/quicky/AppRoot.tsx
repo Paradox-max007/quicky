@@ -11,6 +11,15 @@ import { LikesYouView } from './LikesYouView'
 import { MyProfileView } from './MyProfileView'
 import { EditProfileScreen } from './EditProfileScreen'
 import { SettingsScreen } from './SettingsScreen'
+import { PhoneNumberScreen } from './PhoneNumberScreen'
+import { EmailScreen } from './EmailScreen'
+import { DiscoveryPreferencesScreen } from './DiscoveryPreferencesScreen'
+import { NotificationsScreen } from './NotificationsScreen'
+import { AppearanceScreen } from './AppearanceScreen'
+import { BlockedUsersScreen } from './BlockedUsersScreen'
+import { PrivacySettingsScreen } from './PrivacySettingsScreen'
+import { TermsOfServiceScreen, PrivacyPolicyScreen } from './LegalScreens'
+import { HelpSupportScreen } from './HelpSupportScreen'
 import { PremiumView } from './PremiumView'
 import { ProfileView } from './ProfileView'
 import { MatchCelebration } from './MatchCelebration'
@@ -52,6 +61,16 @@ export function AppRoot() {
           {view === 'profile-me' && <MyProfileView />}
           {view === 'edit-profile' && <EditProfileScreen />}
           {view === 'settings' && <SettingsScreen />}
+          {view === 'settings-phone' && <PhoneNumberScreen />}
+          {view === 'settings-email' && <EmailScreen />}
+          {view === 'settings-discovery' && <DiscoveryPreferencesScreen />}
+          {view === 'settings-notifications' && <NotificationsScreen />}
+          {view === 'settings-appearance' && <AppearanceScreen />}
+          {view === 'settings-blocked' && <BlockedUsersScreen />}
+          {view === 'settings-privacy' && <PrivacySettingsScreen />}
+          {view === 'settings-terms' && <TermsOfServiceScreen />}
+          {view === 'settings-privacy-policy' && <PrivacyPolicyScreen />}
+          {view === 'settings-help' && <HelpSupportScreen />}
           {view === 'premium' && <PremiumView />}
           {view === 'chat' && <ChatView />}
           {view === 'profile-view' && <ProfileView />}

@@ -10,17 +10,29 @@ export async function GET() {
   const u = await getCurrentUser()
   if (!u) return NextResponse.json({ user: null }, { status: 200 })
 
-  // Fetch full profile (photos, interests, prompts)
+  // Fetch full profile (photos, interests, prompts, settings)
   const full = await db.user.findUnique({
     where: { id: u.id },
-    include: { photos: { orderBy: { position: 'asc' } } },
+    include: {
+      photos: { orderBy: { position: 'asc' } },
+      settings: true,
+    },
   })
   if (!full) return NextResponse.json({ user: null }, { status: 200 })
+
+  // Auto-create settings if missing
+  let settings = full.settings
+  if (!settings) {
+    settings = await db.userSettings.create({
+      data: { userId: full.id },
+    })
+  }
 
   return NextResponse.json({
     user: {
       id: full.id,
       phone: full.phone,
+      email: full.email,
       name: full.name,
       age: full.age,
       dateOfBirth: full.dateOfBirth,
@@ -35,6 +47,14 @@ export async function GET() {
       isVerified: full.isVerified,
       quickyScore: full.quickyScore,
       onboardedAt: full.onboardedAt,
+      // Discovery preferences
+      discoveryAgeMin: full.discoveryAgeMin,
+      discoveryAgeMax: full.discoveryAgeMax,
+      discoveryDistanceKm: full.discoveryDistanceKm,
+      discoveryShowVerifiedOnly: full.discoveryShowVerifiedOnly,
+      discoveryRecentlyActive: full.discoveryRecentlyActive,
+      // Settings
+      settings: settings,
     },
   })
 }
@@ -110,6 +130,36 @@ export async function PATCH(req: NextRequest) {
       data.prompts = JSON.stringify(prompts)
     }
 
+    // Discovery preferences (premium gates distance + age range)
+    if (body.discoveryAgeMin !== undefined) {
+      const min = Number(body.discoveryAgeMin)
+      if (!me.isPremium && (min < 18 || min > 50)) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      data.discoveryAgeMin = min
+    }
+    if (body.discoveryAgeMax !== undefined) {
+      const max = Number(body.discoveryAgeMax)
+      if (!me.isPremium && (max < 18 || max > 50)) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      data.discoveryAgeMax = max
+    }
+    if (body.discoveryDistanceKm !== undefined) {
+      const dist = Number(body.discoveryDistanceKm)
+      // Free users limited to 50km
+      if (!me.isPremium && dist > 50) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      data.discoveryDistanceKm = dist
+    }
+    if (body.discoveryShowVerifiedOnly !== undefined) {
+      data.discoveryShowVerifiedOnly = Boolean(body.discoveryShowVerifiedOnly)
+    }
+    if (body.discoveryRecentlyActive !== undefined) {
+      data.discoveryRecentlyActive = Boolean(body.discoveryRecentlyActive)
+    }
+
     const updated = await db.user.update({
       where: { id: me.id },
       data,
@@ -128,6 +178,11 @@ export async function PATCH(req: NextRequest) {
         city: updated.city,
         interests: updated.interests ? JSON.parse(updated.interests) : [],
         prompts: updated.prompts ? JSON.parse(updated.prompts) : [],
+        discoveryAgeMin: updated.discoveryAgeMin,
+        discoveryAgeMax: updated.discoveryAgeMax,
+        discoveryDistanceKm: updated.discoveryDistanceKm,
+        discoveryShowVerifiedOnly: updated.discoveryShowVerifiedOnly,
+        discoveryRecentlyActive: updated.discoveryRecentlyActive,
       },
     })
   } catch (e: any) {
