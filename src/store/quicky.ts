@@ -11,6 +11,7 @@ export type AppView =
   | 'likes-you'
   | 'profile-me'
   | 'edit-profile'
+  | 'settings'
   | 'premium'
   | 'chat'
   | 'profile-view'

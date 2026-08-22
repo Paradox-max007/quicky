@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, LogOut, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
+import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { cn } from '@/lib/utils'
 import { PhotoVerification } from './PhotoVerification'
@@ -266,16 +266,11 @@ export function MyProfileView() {
             Edit
           </button>
           <button
-            onClick={async () => {
-              await api.auth.logout()
-              setUser(null)
-              setView('auth')
-              toast.success('Logged out')
-            }}
-            className="text-white/50 hover:text-white p-2"
-            aria-label="Log out"
+            onClick={() => setView('settings')}
+            className="text-white/50 hover:text-white p-2.5 rounded-full hover:bg-white/5 transition-colors"
+            aria-label="Settings"
           >
-            <LogOut className="w-5 h-5" />
+            <Settings className="w-5 h-5" />
           </button>
         </div>
       </header>
