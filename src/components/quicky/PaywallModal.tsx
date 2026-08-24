@@ -114,7 +114,7 @@ export function PaywallModal() {
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          className="bg-[#0F0F14] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90%] overflow-y-auto no-scrollbar border-t border-[#F5C570]/30"
+          className="bg-[var(--qk-bg)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90%] overflow-y-auto no-scrollbar border-t border-[var(--qk-gold)]/30"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative p-5">
@@ -123,7 +123,7 @@ export function PaywallModal() {
             </button>
 
             {/* Hero icon */}
-            <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-[#F5C570] to-[#B8A4FF] flex items-center justify-center glow-gold mb-3">
+            <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-[var(--qk-gold)] to-[var(--qk-purple)] flex items-center justify-center glow-gold mb-3">
               <Icon className="w-8 h-8 text-white" />
             </div>
 
@@ -131,11 +131,11 @@ export function PaywallModal() {
             <p className="text-sm text-white/60 text-center mt-2 text-pretty max-w-xs mx-auto">{copy.body}</p>
 
             {/* Perk highlight */}
-            <div className="mt-4 mb-4 bg-[#F5C570]/10 border border-[#F5C570]/30 rounded-2xl px-3 py-2.5 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-[#F5C570]/20 flex items-center justify-center shrink-0">
-                <Sparkles className="w-3.5 h-3.5 text-[#F5C570]" />
+            <div className="mt-4 mb-4 bg-[var(--qk-gold)]/10 border border-[var(--qk-gold)]/30 rounded-2xl px-3 py-2.5 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-[var(--qk-gold)]/20 flex items-center justify-center shrink-0">
+                <Sparkles className="w-3.5 h-3.5 text-[var(--qk-gold)]" />
               </div>
-              <p className="text-sm font-semibold text-[#F5C570]">{copy.perk}</p>
+              <p className="text-sm font-semibold text-[var(--qk-gold)]">{copy.perk}</p>
             </div>
 
             {/* Plans */}
@@ -147,20 +147,20 @@ export function PaywallModal() {
                   className={cn(
                     'flex items-center justify-between p-3 rounded-2xl border-2 transition-all text-left',
                     selectedPlan === p.id
-                      ? 'border-[#F5C570] bg-[#F5C570]/10'
+                      ? 'border-[var(--qk-gold)] bg-[var(--qk-gold)]/10'
                       : 'border-white/10 bg-white/5'
                   )}
                 >
                   <div className="flex items-center gap-2">
                     <div className={cn(
                       'w-5 h-5 rounded-full border-2 flex items-center justify-center',
-                      selectedPlan === p.id ? 'border-[#F5C570] bg-[#F5C570]' : 'border-white/30'
+                      selectedPlan === p.id ? 'border-[var(--qk-gold)] bg-[var(--qk-gold)]' : 'border-white/30'
                     )}>
                       {selectedPlan === p.id && <span className="w-2 h-2 rounded-full bg-black" />}
                     </div>
                     <div>
                       <p className="text-sm font-semibold">{p.label}</p>
-                      {'saveText' in p && p.saveText && <p className="text-xs text-[#F5C570]">{p.saveText}</p>}
+                      {'saveText' in p && p.saveText && <p className="text-xs text-[var(--qk-gold)]">{p.saveText}</p>}
                     </div>
                   </div>
                   <div className="text-right">

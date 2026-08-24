@@ -140,8 +140,8 @@ export function ChatView() {
 
   if (loading && !match) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#0F0F14]">
-        <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+      <div className="w-full h-full flex items-center justify-center bg-[var(--qk-bg)]">
+        <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
       </div>
     )
   }
@@ -149,9 +149,9 @@ export function ChatView() {
   if (!partner) return null
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       {/* Header */}
-      <header className="shrink-0 px-3 pt-2 pb-3 flex items-center gap-2 border-b border-white/5 bg-[#0F0F14]/95 backdrop-blur">
+      <header className="shrink-0 px-3 pt-2 pb-3 flex items-center gap-2 border-b border-white/5 bg-[var(--qk-bg)]/95 backdrop-blur">
         <button onClick={() => setView('matches')} className="p-2 hover:bg-white/5 rounded-full" aria-label="Back">
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -166,7 +166,7 @@ export function ChatView() {
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-center gap-1">
               <span className="font-semibold text-sm truncate">{partner.name}, {partner.age}</span>
-              {partner.isVerified && <BadgeCheck className="w-3.5 h-3.5 text-[#FF2D55]" fill="currentColor" stroke="white" />}
+              {partner.isVerified && <BadgeCheck className="w-3.5 h-3.5 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />}
               {partner.isPremium && (
                 <span className="text-gradient-gold">
                   <Crown className="w-3 h-3" fill="currentColor" stroke="none" />
@@ -182,10 +182,10 @@ export function ChatView() {
 
       {/* Pending quickies notice */}
       {pendingQuickies.length > 0 && (
-        <div className="shrink-0 px-4 py-2 bg-[#FF2D55]/10 border-b border-[#FF2D55]/30 flex items-center justify-between">
+        <div className="shrink-0 px-4 py-2 bg-[var(--qk-accent)]/10 border-b border-[var(--qk-accent)]/30 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
-            <CamIcon className="w-4 h-4 text-[#FF2D55] animate-quicky-pulse" />
-            <span className="text-[#FF5E7E] font-medium">
+            <CamIcon className="w-4 h-4 text-[var(--qk-accent)] animate-quicky-pulse" />
+            <span className="text-[var(--qk-accent-light)] font-medium">
               {pendingQuickies.length} new Quicky {pendingQuickies.length === 1 ? 'waiting' : 'waiting'}
             </span>
           </div>
@@ -220,7 +220,7 @@ export function ChatView() {
       <div className="shrink-0 px-3 pb-1 flex items-center gap-2">
         <button
           onClick={openQuickyCapture}
-          className="p-3 rounded-full bg-[#FF2D55]/15 border border-[#FF2D55]/30 text-[#FF5E7E] hover:bg-[#FF2D55]/25 active:scale-95 transition-all"
+          className="p-3 rounded-full bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 text-[var(--qk-accent-light)] hover:bg-[var(--qk-accent)]/25 active:scale-95 transition-all"
           aria-label="Send Quicky"
         >
           <Camera className="w-5 h-5" />
@@ -244,7 +244,7 @@ export function ChatView() {
               toast.error(e.message ?? 'Failed to start game')
             }
           }}
-          className="p-3 rounded-full bg-[#B8A4FF]/15 border border-[#B8A4FF]/30 text-[#B8A4FF] hover:bg-[#B8A4FF]/25 active:scale-95 transition-all"
+          className="p-3 rounded-full bg-[var(--qk-purple)]/15 border border-[var(--qk-purple)]/30 text-[var(--qk-purple)] hover:bg-[var(--qk-purple)]/25 active:scale-95 transition-all"
           aria-label="Truth or Dare"
         >
           <Sparkles className="w-5 h-5" />
@@ -255,7 +255,7 @@ export function ChatView() {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendText()}
           placeholder="Type a message..."
-          className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55]/50"
+          className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50"
         />
         <button
           onClick={sendText}
@@ -284,7 +284,7 @@ export function ChatView() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="absolute left-0 right-0 bottom-0 bg-[#1A1A2E] border-t border-white/10 rounded-t-3xl p-4 z-50"
+              className="absolute left-0 right-0 bottom-0 bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl p-4 z-50"
             >
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Chat actions</h3>
@@ -346,7 +346,7 @@ export function ChatView() {
       {/* Duration picker modal */}
       {durationPickerOpen && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setPickedDuration((p) => p ?? 0)}>
-          <div className="bg-[#1A1A2E] rounded-3xl p-6 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[var(--qk-card)] rounded-3xl p-6 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold mb-1 text-center">Quicky duration</h3>
             <p className="text-white/50 text-sm mb-4 text-center">How long should it last?</p>
             <div className="grid grid-cols-4 gap-2">
@@ -354,7 +354,7 @@ export function ChatView() {
                 <button
                   key={d}
                   onClick={() => setPickedDuration(d)}
-                  className="aspect-square rounded-2xl border border-[#FF2D55]/30 bg-[#FF2D55]/10 hover:bg-[#FF2D55]/20 flex flex-col items-center justify-center gap-1 active:scale-95"
+                  className="aspect-square rounded-2xl border border-[var(--qk-accent)]/30 bg-[var(--qk-accent)]/10 hover:bg-[var(--qk-accent)]/20 flex flex-col items-center justify-center gap-1 active:scale-95"
                 >
                   <span className="text-xl font-bold">{d}</span>
                   <span className="text-[10px] text-white/60">sec</span>
@@ -393,8 +393,8 @@ function SheetAction({
   color: 'coral' | 'lavender' | 'white' | 'red'
 }) {
   const colors = {
-    coral: 'text-[#FF2D55]',
-    lavender: 'text-[#B8A4FF]',
+    coral: 'text-[var(--qk-accent)]',
+    lavender: 'text-[var(--qk-purple)]',
     white: 'text-white',
     red: 'text-[#FF3B30]',
   }
@@ -439,20 +439,20 @@ function MessageBubble({
           <button
             onClick={() => (isMe ? null : isUnopened ? onOpenQuicky(m) : setViewerOpen(true))}
             className={cn(
-              'max-w-[80%] rounded-3xl p-2 border-2 border-[#FF2D55] bg-[#FF2D55]/10 flex items-center gap-2',
+              'max-w-[80%] rounded-3xl p-2 border-2 border-[var(--qk-accent)] bg-[var(--qk-accent)]/10 flex items-center gap-2',
               isMe ? 'rounded-br-md' : 'rounded-bl-md',
               isUnopened && 'animate-quicky-pulse'
             )}
           >
-            <div className="w-16 h-20 rounded-2xl bg-[#FF2D55]/20 flex items-center justify-center overflow-hidden">
+            <div className="w-16 h-20 rounded-2xl bg-[var(--qk-accent)]/20 flex items-center justify-center overflow-hidden">
               {m.mediaUrl && m.quickyOpenedAt ? (
                 <img src={m.mediaUrl} alt="" className="w-full h-full object-cover blur-sm" />
               ) : (
-                <Camera className="w-6 h-6 text-[#FF2D55]" />
+                <Camera className="w-6 h-6 text-[var(--qk-accent)]" />
               )}
             </div>
             <div className="flex flex-col items-start gap-0.5 pr-2">
-              <span className="text-xs font-semibold text-[#FF5E7E]">
+              <span className="text-xs font-semibold text-[var(--qk-accent-light)]">
                 {isMe ? (m.quickyOpenedAt ? 'Opened' : 'Sent') : (m.quickyOpenedAt ? 'Replay' : 'Open Quicky')}
               </span>
               <span className="text-[10px] text-white/60">
@@ -494,7 +494,7 @@ function MessageBubble({
       <div
         className={cn(
           'max-w-[80%] rounded-3xl px-3.5 py-2 text-sm',
-          isMe ? 'bg-[#FF2D55] text-white rounded-br-md' : 'bg-white/8 text-white rounded-bl-md'
+          isMe ? 'bg-[var(--qk-accent)] text-white rounded-br-md' : 'bg-white/8 text-white rounded-bl-md'
         )}
       >
         {m.text}

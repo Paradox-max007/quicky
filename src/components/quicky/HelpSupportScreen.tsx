@@ -42,8 +42,8 @@ export function HelpSupportScreen() {
     <SettingsSubScreen title="Help & Support">
       <div className="px-5 py-5">
         {/* Email-only banner */}
-        <div className="bg-[#FF2D55]/10 border border-[#FF2D55]/30 rounded-2xl p-3 mb-4 flex items-start gap-2">
-          <Mail className="w-4 h-4 text-[#FF5E7E] shrink-0 mt-0.5" />
+        <div className="bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/30 rounded-2xl p-3 mb-4 flex items-start gap-2">
+          <Mail className="w-4 h-4 text-[var(--qk-accent-light)] shrink-0 mt-0.5" />
           <p className="text-xs text-white/80">
             We offer support via email only. Send us a message and our team will get back to you within 24 hours.
           </p>
@@ -51,12 +51,12 @@ export function HelpSupportScreen() {
 
         {sent ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-[#FF2D55]/15 flex items-center justify-center mb-3 animate-pop-in">
-              <Heart className="w-8 h-8 text-[#FF2D55]" fill="currentColor" stroke="none" />
+            <div className="w-16 h-16 rounded-full bg-[var(--qk-accent)]/15 flex items-center justify-center mb-3 animate-pop-in">
+              <Heart className="w-8 h-8 text-[var(--qk-accent)]" fill="currentColor" stroke="none" />
             </div>
             <h2 className="text-lg font-bold">Message sent!</h2>
             <p className="text-sm text-white/60 mt-1 max-w-xs">
-              Thanks for reaching out. We&apos;ll reply to <span className="text-[#FF5E7E] font-medium">{email}</span> within 24 hours.
+              Thanks for reaching out. We&apos;ll reply to <span className="text-[var(--qk-accent-light)] font-medium">{email}</span> within 24 hours.
             </p>
             <button
               onClick={() => useQuickyStore.getState().setView('settings')}
@@ -76,7 +76,7 @@ export function HelpSupportScreen() {
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-10 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-10 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
                 />
               </div>
             </div>
@@ -88,7 +88,7 @@ export function HelpSupportScreen() {
                 placeholder="What do you need help with?"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value.slice(0, 100))}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] transition-colors"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
               />
             </div>
 
@@ -99,7 +99,7 @@ export function HelpSupportScreen() {
                 value={message}
                 onChange={(e) => setMessage(e.target.value.slice(0, 2000))}
                 rows={6}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] transition-colors resize-none"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors resize-none"
               />
               <div className="flex justify-end text-xs text-white/40">{message.length}/2000</div>
             </div>

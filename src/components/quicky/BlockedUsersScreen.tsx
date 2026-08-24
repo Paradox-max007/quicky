@@ -62,7 +62,7 @@ export function BlockedUsersScreen() {
       <div className="px-5 py-5">
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+            <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
           </div>
         ) : blocked.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -90,14 +90,14 @@ export function BlockedUsersScreen() {
                     </div>
                   )}
                   {b.user.isVerified && (
-                    <BadgeCheck className="absolute -bottom-0.5 -right-0.5 w-4 h-4 text-[#FF2D55] bg-[#0F0F14] rounded-full" fill="currentColor" stroke="white" />
+                    <BadgeCheck className="absolute -bottom-0.5 -right-0.5 w-4 h-4 text-[var(--qk-accent)] bg-[var(--qk-bg)] rounded-full" fill="currentColor" stroke="white" />
                   )}
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
                     <p className="text-sm font-semibold truncate">{b.user.name}, {b.user.age}</p>
                     {b.user.isPremium && (
-                      <Crown className="w-3 h-3 text-[#F5C570]" fill="currentColor" stroke="none" />
+                      <Crown className="w-3 h-3 text-[var(--qk-gold)]" fill="currentColor" stroke="none" />
                     )}
                   </div>
                   {b.user.city && (
@@ -107,7 +107,7 @@ export function BlockedUsersScreen() {
                 <button
                   onClick={() => unblock(b.blockId, b.user.name)}
                   disabled={unblocking === b.blockId}
-                  className="text-xs font-semibold text-[#FF5E7E] hover:text-[#FF2D55] px-3 py-1.5 rounded-full hover:bg-[#FF2D55]/10 transition-colors disabled:opacity-50 shrink-0"
+                  className="text-xs font-semibold text-[var(--qk-accent-light)] hover:text-[var(--qk-accent)] px-3 py-1.5 rounded-full hover:bg-[var(--qk-accent)]/10 transition-colors disabled:opacity-50 shrink-0"
                 >
                   {unblocking === b.blockId ? '...' : 'Unblock'}
                 </button>

@@ -16,7 +16,7 @@ export function MatchCelebration() {
   if (!m) return null
 
   return (
-    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-[#0F0F14]/95 backdrop-blur-sm px-6 overflow-hidden">
+    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-[var(--qk-bg)]/95 backdrop-blur-sm px-6 overflow-hidden">
       {/* Confetti */}
       {Array.from({ length: 24 }).map((_, i) => {
         const colors = ['#FF2D55', '#B8A4FF', '#F5C570', '#FFFFFF']
@@ -54,20 +54,20 @@ export function MatchCelebration() {
 
         {/* Two avatars */}
         <div className="relative flex items-center justify-center">
-          <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-[#FF2D55] glow-coral-strong">
+          <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-[var(--qk-accent)] glow-coral-strong">
             {myPhoto ? (
               <img src={myPhoto} alt="You" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full bg-[#FF2D55]/30 flex items-center justify-center text-2xl font-bold">
+              <div className="w-full h-full bg-[var(--qk-accent)]/30 flex items-center justify-center text-2xl font-bold">
                 {user?.name?.[0] ?? '?'}
               </div>
             )}
           </div>
-          <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-[#FF2D55] glow-coral-strong -ml-6">
+          <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-[var(--qk-accent)] glow-coral-strong -ml-6">
             {m.partnerPhoto ? (
               <img src={m.partnerPhoto} alt={m.partnerName ?? 'Partner'} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full bg-[#FF2D55]/30 flex items-center justify-center text-2xl font-bold">
+              <div className="w-full h-full bg-[var(--qk-accent)]/30 flex items-center justify-center text-2xl font-bold">
                 {m.partnerName?.[0] ?? '?'}
               </div>
             )}
@@ -77,7 +77,7 @@ export function MatchCelebration() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: 'spring', stiffness: 260, damping: 14 }}
-            className="absolute -top-2 left-1/2 -translate-x-1/2 bg-[#FF2D55] w-12 h-12 rounded-full flex items-center justify-center glow-coral-strong z-20"
+            className="absolute -top-2 left-1/2 -translate-x-1/2 bg-[var(--qk-accent)] w-12 h-12 rounded-full flex items-center justify-center glow-coral-strong z-20"
           >
             <Heart className="w-6 h-6 text-white" fill="white" />
           </motion.div>

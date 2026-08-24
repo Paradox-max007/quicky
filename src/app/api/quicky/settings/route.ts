@@ -60,7 +60,7 @@ export async function PATCH(req: NextRequest) {
   }
   if (body.theme !== undefined) {
     const theme = String(body.theme)
-    if (['dark', 'midnight', 'coral', 'lavender', 'gold'].includes(theme)) {
+    if (['dark', 'light', 'midnight', 'coral', 'lavender', 'gold'].includes(theme)) {
       allowed.theme = theme
     }
   }

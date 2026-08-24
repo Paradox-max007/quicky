@@ -30,7 +30,7 @@ export function ChatList() {
   }, [])
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 px-5 pt-3 pb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Chats</h1>
         <button onClick={refresh} className="text-xs text-white/50 hover:text-white">Refresh</button>
@@ -39,7 +39,7 @@ export function ChatList() {
       <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-4">
         {loading && matches.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
-            <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+            <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
           </div>
         ) : matches.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -67,7 +67,7 @@ export function ChatList() {
                       </div>
                     )}
                     {m.partner.isPremium && (
-                      <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#1A1A2E] flex items-center justify-center">
+                      <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[var(--qk-card)] flex items-center justify-center">
                         <Crown className="w-3 h-3 text-gradient-gold" fill="currentColor" stroke="none" />
                       </span>
                     )}
@@ -76,7 +76,7 @@ export function ChatList() {
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold truncate">{m.partner.name}, {m.partner.age}</span>
                       {m.partner.isVerified && (
-                        <BadgeCheck className="w-4 h-4 text-[#FF2D55]" fill="currentColor" stroke="white" />
+                        <BadgeCheck className="w-4 h-4 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />
                       )}
                       {m.streak > 0 && (
                         <span className="text-xs flex items-center gap-0.5 ml-auto shrink-0">
@@ -90,7 +90,7 @@ export function ChatList() {
                         {m.preview}
                       </p>
                       {m.unread && (
-                        <span className="w-2 h-2 rounded-full bg-[#FF2D55] glow-coral shrink-0" />
+                        <span className="w-2 h-2 rounded-full bg-[var(--qk-accent)] glow-coral shrink-0" />
                       )}
                     </div>
                   </div>

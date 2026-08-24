@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { Crown, Check, X, Sparkles, Heart, Zap, Camera, Filter, MapPin, Eye, MessageSquare } from 'lucide-react'
+import { Crown, Check, X, Sparkles, Heart, Zap, Camera, Filter, MapPin, Eye, MessageSquare, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUICKY } from '@/lib/quicky/constants'
 
@@ -78,12 +78,19 @@ export function PremiumView() {
   ]
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-y-auto no-scrollbar">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-y-auto no-scrollbar">
       {/* Hero */}
       <div className="shrink-0 px-5 pt-6 pb-4 text-center relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#F5C570]/10 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[var(--qk-gold)]/10 via-transparent to-transparent pointer-events-none" />
         <div className="relative">
-          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-[#F5C570] to-[#B8A4FF] flex items-center justify-center glow-gold mb-3">
+          <button
+            onClick={() => setView('discovery')}
+            className="absolute -top-2 left-0 text-white/50 hover:text-white p-2.5 -ml-2.5 rounded-full hover:bg-white/5 transition-colors"
+            aria-label="Back"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-[var(--qk-gold)] to-[var(--qk-purple)] flex items-center justify-center glow-gold mb-3">
             <Crown className="w-8 h-8 text-white" fill="white" stroke="none" />
           </div>
           <h1 className="text-3xl font-extrabold text-gradient-gold tracking-tight">Quicky Premium</h1>
@@ -99,8 +106,8 @@ export function PremiumView() {
         <div className="grid grid-cols-2 gap-2">
           {PERKS.map((p) => (
             <div key={p.label} className="bg-white/5 border border-white/8 rounded-2xl p-3">
-              <div className="w-9 h-9 rounded-full bg-[#F5C570]/15 flex items-center justify-center mb-2">
-                <p.icon className="w-4 h-4 text-[#F5C570]" />
+              <div className="w-9 h-9 rounded-full bg-[var(--qk-gold)]/15 flex items-center justify-center mb-2">
+                <p.icon className="w-4 h-4 text-[var(--qk-gold)]" />
               </div>
               <p className="text-sm font-semibold">{p.label}</p>
               <p className="text-xs text-white/50 mt-0.5">{p.desc}</p>
@@ -121,7 +128,7 @@ export function PremiumView() {
                 className={cn(
                   'flex items-center justify-between p-3 rounded-2xl border-2 transition-all text-left',
                   selectedPlan === p.id
-                    ? 'border-[#F5C570] bg-[#F5C570]/10 glow-gold'
+                    ? 'border-[var(--qk-gold)] bg-[var(--qk-gold)]/10 glow-gold'
                     : 'border-white/10 bg-white/5'
                 )}
               >
@@ -129,14 +136,14 @@ export function PremiumView() {
                   <div
                     className={cn(
                       'w-5 h-5 rounded-full border-2 flex items-center justify-center',
-                      selectedPlan === p.id ? 'border-[#F5C570] bg-[#F5C570]' : 'border-white/30'
+                      selectedPlan === p.id ? 'border-[var(--qk-gold)] bg-[var(--qk-gold)]' : 'border-white/30'
                     )}
                   >
                     {selectedPlan === p.id && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
                   </div>
                   <div>
                     <p className="text-sm font-semibold">{p.label}</p>
-                    {p.saveText && <p className="text-xs text-[#F5C570]">{p.saveText}</p>}
+                    {p.saveText && <p className="text-xs text-[var(--qk-gold)]">{p.saveText}</p>}
                   </div>
                 </div>
                 <div className="text-right">
@@ -169,7 +176,7 @@ export function PremiumView() {
           <div className="bg-white/5 border border-white/8 rounded-2xl p-4 mb-3">
             <div className="flex items-center justify-between mb-1">
               <p className="text-sm font-semibold">Active Subscription</p>
-              <span className="text-xs bg-[#F5C570]/20 text-[#F5C570] font-semibold px-2 py-0.5 rounded-full">PREMIUM</span>
+              <span className="text-xs bg-[var(--qk-gold)]/20 text-[var(--qk-gold)] font-semibold px-2 py-0.5 rounded-full">PREMIUM</span>
             </div>
             {subscription && (
               <>

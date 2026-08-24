@@ -63,7 +63,7 @@ export function LikesYouView() {
   }, [refresh])
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 px-5 pt-3 pb-2">
         <h1 className="text-2xl font-bold tracking-tight">Likes</h1>
       </header>
@@ -113,7 +113,7 @@ export function LikesYouView() {
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4">
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+            <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
           </div>
         ) : tab === 'likes-you' ? (
           <LikesYouSection
@@ -164,9 +164,9 @@ function LikesYouSection({
     return (
       <div className="flex flex-col gap-3">
         {/* Premium upsell banner */}
-        <div className="rounded-2xl bg-gradient-to-r from-[#FF2D55]/20 to-[#B8A4FF]/15 border border-[#FF2D55]/30 p-3 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#FF2D55]/20 flex items-center justify-center shrink-0">
-            <Crown className="w-5 h-5 text-[#F5C570]" />
+        <div className="rounded-2xl bg-gradient-to-r from-[var(--qk-accent)]/20 to-[var(--qk-purple)]/15 border border-[var(--qk-accent)]/30 p-3 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[var(--qk-accent)]/20 flex items-center justify-center shrink-0">
+            <Crown className="w-5 h-5 text-[var(--qk-gold)]" />
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold">{lockedCount} people like you</p>
@@ -201,8 +201,8 @@ function LikesYouSection({
               <div className="absolute inset-0 bg-black/50" />
               {/* Lock + question mark */}
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <div className="w-12 h-12 rounded-full bg-[#FF2D55]/30 backdrop-blur-md flex items-center justify-center border border-[#FF2D55]/40">
-                  <Lock className="w-6 h-6 text-[#FF5E7E]" />
+                <div className="w-12 h-12 rounded-full bg-[var(--qk-accent)]/30 backdrop-blur-md flex items-center justify-center border border-[var(--qk-accent)]/40">
+                  <Lock className="w-6 h-6 text-[var(--qk-accent-light)]" />
                 </div>
                 <span className="text-xs font-bold text-white/80">?</span>
               </div>
@@ -213,7 +213,7 @@ function LikesYouSection({
         {/* Big unlock CTA at bottom */}
         <button
           onClick={onUnlock}
-          className="w-full bg-gradient-to-r from-[#FF2D55] to-[#FF5E7E] glow-coral rounded-2xl py-3.5 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform mt-2"
+          className="w-full bg-gradient-to-r from-[var(--qk-accent)] to-[var(--qk-accent-light)] glow-coral rounded-2xl py-3.5 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform mt-2"
         >
           <Crown className="w-4 h-4" fill="currentColor" stroke="none" />
           Unlock {lockedCount} {lockedCount === 1 ? 'person' : 'people'}
@@ -240,9 +240,9 @@ function LikesYouSection({
             )}
             <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
             {l.superLike && (
-              <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-[#B8A4FF]/30 backdrop-blur-md rounded-full px-2 py-0.5">
-                <Sparkles className="w-2.5 h-2.5 text-[#B8A4FF]" />
-                <span className="text-[10px] font-bold text-[#B8A4FF]">SUPER</span>
+              <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-[var(--qk-purple)]/30 backdrop-blur-md rounded-full px-2 py-0.5">
+                <Sparkles className="w-2.5 h-2.5 text-[var(--qk-purple)]" />
+                <span className="text-[10px] font-bold text-[var(--qk-purple)]">SUPER</span>
               </div>
             )}
             <div className="absolute bottom-2 left-2 right-2">
@@ -295,7 +295,7 @@ function ILikedSection({
 
             {/* Match badge */}
             {l.isMatch && (
-              <div className="absolute top-2 left-2 flex items-center gap-0.5 bg-[#FF2D55] rounded-full px-2 py-0.5">
+              <div className="absolute top-2 left-2 flex items-center gap-0.5 bg-[var(--qk-accent)] rounded-full px-2 py-0.5">
                 <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
                 <span className="text-[10px] font-bold text-white">MATCH</span>
               </div>
@@ -303,9 +303,9 @@ function ILikedSection({
 
             {/* Super like badge */}
             {l.superLike && (
-              <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-[#B8A4FF]/30 backdrop-blur-md rounded-full px-2 py-0.5">
-                <Sparkles className="w-2.5 h-2.5 text-[#B8A4FF]" />
-                <span className="text-[10px] font-bold text-[#B8A4FF]">SUPER</span>
+              <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-[var(--qk-purple)]/30 backdrop-blur-md rounded-full px-2 py-0.5">
+                <Sparkles className="w-2.5 h-2.5 text-[var(--qk-purple)]" />
+                <span className="text-[10px] font-bold text-[var(--qk-purple)]">SUPER</span>
               </div>
             )}
 
@@ -315,7 +315,7 @@ function ILikedSection({
                   {l.name}, {l.age}
                 </p>
                 {l.isVerified && (
-                  <BadgeCheck className="w-3 h-3 text-[#FF2D55]" fill="currentColor" stroke="white" />
+                  <BadgeCheck className="w-3 h-3 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />
                 )}
               </div>
               {l.city && (

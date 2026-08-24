@@ -52,7 +52,7 @@ function SortablePhoto({
       style={style}
       className={cn(
         'relative aspect-[3/4] rounded-xl overflow-hidden border border-white/8',
-        isDragging && 'opacity-80 shadow-2xl ring-2 ring-[#FF2D55]/50'
+        isDragging && 'opacity-80 shadow-2xl ring-2 ring-[var(--qk-accent)]/50'
       )}
     >
       <img src={photo.url} alt="" className="w-full h-full object-cover" />
@@ -87,10 +87,10 @@ function SortablePhoto({
         className={cn(
           'absolute bottom-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
           photo.isPrivate
-            ? 'bg-[#F5C570]/90 hover:bg-[#F5C570]'
+            ? 'bg-[var(--qk-gold)]/90 hover:bg-[var(--qk-gold)]'
             : isPremium
               ? 'bg-black/60 hover:bg-black/80'
-              : 'bg-black/60 hover:bg-[#F5C570]/40'
+              : 'bg-black/60 hover:bg-[var(--qk-gold)]/40'
         )}
         aria-label={photo.isPrivate ? 'Make public' : 'Make private'}
         title={
@@ -111,12 +111,12 @@ function SortablePhoto({
 
       {/* Badges */}
       {photo.isPrimary && (
-        <span className="absolute bottom-1 left-1 bg-[#FF2D55] text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+        <span className="absolute bottom-1 left-1 bg-[var(--qk-accent)] text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
           MAIN
         </span>
       )}
       {photo.isPrivate && !photo.isPrimary && (
-        <span className="absolute bottom-1 left-1 bg-[#F5C570]/20 text-[#F5C570] text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+        <span className="absolute bottom-1 left-1 bg-[var(--qk-gold)]/20 text-[var(--qk-gold)] text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
           <Lock className="w-2.5 h-2.5" /> PRIVATE
         </span>
       )}
@@ -243,8 +243,8 @@ export function MyProfileView() {
 
   if (!profile) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#0F0F14]">
-        <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+      <div className="w-full h-full flex items-center justify-center bg-[var(--qk-bg)]">
+        <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
       </div>
     )
   }
@@ -253,7 +253,7 @@ export function MyProfileView() {
   const isPremium = profile.isPremium
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-y-auto no-scrollbar">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-y-auto no-scrollbar">
       <header className="shrink-0 px-5 pt-3 pb-3 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
         <button
@@ -267,7 +267,7 @@ export function MyProfileView() {
 
       {/* Hero photo carousel */}
       <div className="px-4 pb-4">
-        <div className="relative rounded-3xl overflow-hidden bg-[#1A1A2E] border border-white/8 aspect-[3/4]">
+        <div className="relative rounded-3xl overflow-hidden bg-[var(--qk-card)] border border-white/8 aspect-[3/4]">
           {photos.length > 0 ? (
             <>
               <div ref={emblaRef} className="overflow-hidden w-full h-full">
@@ -313,9 +313,9 @@ export function MyProfileView() {
 
               {/* Private badge on current photo */}
               {photos[selectedIdx]?.isPrivate && (
-                <div className="absolute top-3 right-12 flex items-center gap-1 bg-[#F5C570]/20 rounded-full px-2 py-0.5 pointer-events-none">
-                  <Lock className="w-2.5 h-2.5 text-[#F5C570]" />
-                  <span className="text-[10px] text-[#F5C570] font-semibold">Private</span>
+                <div className="absolute top-3 right-12 flex items-center gap-1 bg-[var(--qk-gold)]/20 rounded-full px-2 py-0.5 pointer-events-none">
+                  <Lock className="w-2.5 h-2.5 text-[var(--qk-gold)]" />
+                  <span className="text-[10px] text-[var(--qk-gold)] font-semibold">Private</span>
                 </div>
               )}
             </>
@@ -332,7 +332,7 @@ export function MyProfileView() {
             <div>
               <div className="flex items-center gap-1.5">
                 <h2 className="text-2xl font-bold">{profile.name}, {profile.age}</h2>
-                {profile.isVerified && <BadgeCheck className="w-5 h-5 text-[#FF2D55]" fill="currentColor" stroke="white" />}
+                {profile.isVerified && <BadgeCheck className="w-5 h-5 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />}
                 {profile.isPremium && (
                   <span className="text-gradient-gold">
                     <Crown className="w-4 h-4" fill="currentColor" stroke="none" />
@@ -354,7 +354,7 @@ export function MyProfileView() {
 
           {/* Add photo button */}
           {photos.length < 6 && (
-            <label className={cn('absolute top-3 right-3 w-9 h-9 rounded-full bg-[#FF2D55] flex items-center justify-center glow-coral cursor-pointer active:scale-95', uploading && 'opacity-50')}>
+            <label className={cn('absolute top-3 right-3 w-9 h-9 rounded-full bg-[var(--qk-accent)] flex items-center justify-center glow-coral cursor-pointer active:scale-95', uploading && 'opacity-50')}>
               <Plus className="w-5 h-5 text-white" />
               <input
                 type="file"
@@ -381,13 +381,13 @@ export function MyProfileView() {
                 onClick={() => emblaApi?.scrollTo(i)}
                 className={cn(
                   'flex-shrink-0 w-14 h-14 rounded-xl overflow-hidden border-2 transition-all relative',
-                  i === selectedIdx ? 'border-[#FF2D55]' : 'border-transparent'
+                  i === selectedIdx ? 'border-[var(--qk-accent)]' : 'border-transparent'
                 )}
               >
                 <img src={p.url} alt="" className="w-full h-full object-cover" />
                 {p.isPrivate && (
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <Lock className="w-3 h-3 text-[#F5C570]" />
+                    <Lock className="w-3 h-3 text-[var(--qk-gold)]" />
                   </div>
                 )}
               </button>
@@ -401,10 +401,10 @@ export function MyProfileView() {
         <div className="px-4 pb-3">
           <button
             onClick={() => setShowVerify(true)}
-            className="w-full flex items-center gap-3 bg-[#FF2D55]/10 border border-[#FF2D55]/30 rounded-2xl p-3 active:scale-[0.98] transition-transform"
+            className="w-full flex items-center gap-3 bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/30 rounded-2xl p-3 active:scale-[0.98] transition-transform"
           >
-            <div className="w-10 h-10 rounded-full bg-[#FF2D55]/20 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-[#FF2D55]" />
+            <div className="w-10 h-10 rounded-full bg-[var(--qk-accent)]/20 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-[var(--qk-accent)]" />
             </div>
             <div className="flex-1 text-left">
               <p className="text-sm font-semibold">Get verified</p>
@@ -414,23 +414,29 @@ export function MyProfileView() {
         </div>
       )}
 
-      {/* Premium upsell for free users */}
-      {!profile.isPremium && (
-        <div className="px-4 pb-3">
-          <button
-            onClick={() => setView('premium')}
-            className="w-full flex items-center gap-3 bg-gradient-to-r from-[#F5C570]/15 to-[#B8A4FF]/15 border border-[#F5C570]/30 rounded-2xl p-3 active:scale-[0.98] transition-transform"
-          >
-            <div className="w-10 h-10 rounded-full bg-[#F5C570]/20 flex items-center justify-center">
-              <Crown className="w-5 h-5 text-[#F5C570]" />
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-semibold text-gradient-gold">Upgrade to Premium</p>
-              <p className="text-xs text-white/60">Unlimited likes, Quickies, games, private photos + boost</p>
-            </div>
-          </button>
-        </div>
-      )}
+      {/* Premium section — upsell for free users, subscription info for premium */}
+      <div className="px-4 pb-3">
+        <button
+          onClick={() => setView('premium')}
+          className="w-full flex items-center gap-3 bg-gradient-to-r from-[var(--qk-gold)]/15 to-[var(--qk-purple)]/15 border border-[var(--qk-gold)]/30 rounded-2xl p-3 active:scale-[0.98] transition-transform"
+        >
+          <div className="w-10 h-10 rounded-full bg-[var(--qk-gold)]/20 flex items-center justify-center">
+            <Crown className={cn('w-5 h-5 text-[var(--qk-gold)]', isPremium && 'text-gradient-gold')} fill={isPremium ? 'currentColor' : 'none'} />
+          </div>
+          <div className="flex-1 text-left">
+            <p className="text-sm font-semibold text-gradient-gold">
+              {isPremium ? 'Premium Subscription' : 'Upgrade to Premium'}
+            </p>
+            <p className="text-xs text-white/60">
+              {isPremium
+                ? profile.premiumUntil
+                  ? `Active until ${new Date(profile.premiumUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · tap to manage`
+                  : 'Tap to manage your subscription'
+                : 'Unlimited likes, Quickies, games, private photos + boost'}
+            </p>
+          </div>
+        </button>
+      </div>
 
       {/* Bio */}
       {profile.bio && (
@@ -459,7 +465,7 @@ export function MyProfileView() {
           <div className="flex flex-col gap-2">
             {profile.prompts.map((p: any, i: number) => (
               <div key={i} className="bg-white/5 rounded-2xl p-3">
-                <p className="text-xs font-semibold text-[#FF5E7E] mb-1">{p.prompt}</p>
+                <p className="text-xs font-semibold text-[var(--qk-accent-light)] mb-1">{p.prompt}</p>
                 <p className="text-sm text-white/80 text-pretty">{p.answer}</p>
               </div>
             ))}
@@ -475,7 +481,7 @@ export function MyProfileView() {
             <span className="text-[10px] text-white/30">Hold & drag to reorder</span>
           </div>
           {isPremium ? (
-            <p className="text-[10px] text-[#F5C570]/70 mb-2 flex items-center gap-1">
+            <p className="text-[10px] text-[var(--qk-gold)]/70 mb-2 flex items-center gap-1">
               <Lock className="w-2.5 h-2.5" /> Tap the lock icon to make a photo private (only mutual matches can see it)
             </p>
           ) : (

@@ -46,7 +46,7 @@ export function ProfileSheet({
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          className="bg-[#0F0F14] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90%] overflow-y-auto no-scrollbar"
+          className="bg-[var(--qk-bg)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90%] overflow-y-auto no-scrollbar"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative">
@@ -55,7 +55,7 @@ export function ProfileSheet({
             </button>
             {loading ? (
               <div className="h-64 flex items-center justify-center">
-                <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+                <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
               </div>
             ) : !profile ? (
               <div className="h-64 flex items-center justify-center text-white/40">Not found</div>
@@ -80,7 +80,7 @@ export function ProfileSheet({
                     <div className="absolute bottom-4 left-4 right-4">
                       <div className="flex items-center gap-2">
                         <h2 className="text-2xl font-bold">{profile.name}, {profile.age}</h2>
-                        {profile.isVerified && <BadgeCheck className="w-5 h-5 text-[#FF2D55]" fill="currentColor" stroke="white" />}
+                        {profile.isVerified && <BadgeCheck className="w-5 h-5 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />}
                         {profile.isPremium && (
                           <span className="text-gradient-gold">
                             <Crown className="w-4 h-4" fill="currentColor" stroke="none" />
@@ -112,7 +112,7 @@ export function ProfileSheet({
                     <div className="flex flex-col gap-2">
                       {profile.prompts.map((p: any, i: number) => (
                         <div key={i} className="bg-white/5 rounded-2xl p-3">
-                          <p className="text-xs font-semibold text-[#FF5E7E] mb-1">{p.prompt}</p>
+                          <p className="text-xs font-semibold text-[var(--qk-accent-light)] mb-1">{p.prompt}</p>
                           <p className="text-sm text-white/80 text-pretty">{p.answer}</p>
                         </div>
                       ))}

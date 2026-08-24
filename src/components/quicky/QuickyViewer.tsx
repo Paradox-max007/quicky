@@ -99,7 +99,7 @@ export function QuickyViewer({
             cy="24"
             r="20"
             fill="none"
-            stroke="#FF2D55"
+            stroke="var(--qk-accent)"
             strokeWidth="3"
             strokeDasharray={`${2 * Math.PI * 20 * progress} ${2 * Math.PI * 20}`}
             strokeLinecap="round"
@@ -110,7 +110,7 @@ export function QuickyViewer({
 
       {/* Quicky label */}
       <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-black/40 backdrop-blur rounded-full px-3 py-1.5">
-        <span className="w-2 h-2 rounded-full bg-[#FF2D55] animate-quicky-pulse" />
+        <span className="w-2 h-2 rounded-full bg-[var(--qk-accent)] animate-quicky-pulse" />
         <span className="text-xs font-semibold text-white">Quicky</span>
       </div>
 

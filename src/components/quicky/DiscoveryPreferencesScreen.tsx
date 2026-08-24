@@ -5,6 +5,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
+import { Toggle } from './Toggle'
 import { Lock, Crown, Users, MapPin, Shield, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { INTEREST_TAGS } from '@/lib/quicky/constants'
@@ -85,7 +86,7 @@ export function DiscoveryPreferencesScreen() {
         {/* Age range */}
         <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
           <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-[#FF5E7E]" />
+            <Users className="w-4 h-4 text-[var(--qk-accent-light)]" />
             <h3 className="text-sm font-semibold">Age Range</h3>
             {!isPremium && <span className="ml-auto text-[10px] text-white/40">18–50 (Premium: 18–99)</span>}
           </div>
@@ -97,7 +98,7 @@ export function DiscoveryPreferencesScreen() {
               max={maxAgeForUser}
               value={ageMin}
               onChange={(e) => trySetAgeMin(Number(e.target.value))}
-              className="flex-1 accent-[#FF2D55]"
+              className="flex-1 accent-[var(--qk-accent)]"
             />
             <span className="text-sm font-bold w-8 text-right">{ageMin}</span>
           </div>
@@ -109,7 +110,7 @@ export function DiscoveryPreferencesScreen() {
               max={maxAgeForUser}
               value={ageMax}
               onChange={(e) => trySetAgeMax(Number(e.target.value))}
-              className="flex-1 accent-[#FF2D55]"
+              className="flex-1 accent-[var(--qk-accent)]"
             />
             <span className="text-sm font-bold w-8 text-right">{ageMax}</span>
           </div>
@@ -121,7 +122,7 @@ export function DiscoveryPreferencesScreen() {
         {/* Distance */}
         <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
           <div className="flex items-center gap-2 mb-3">
-            <MapPin className="w-4 h-4 text-[#FF5E7E]" />
+            <MapPin className="w-4 h-4 text-[var(--qk-accent-light)]" />
             <h3 className="text-sm font-semibold">Maximum Distance</h3>
             {!isPremium && <span className="ml-auto text-[10px] text-white/40">Max 50km (Premium: 500km)</span>}
           </div>
@@ -132,7 +133,7 @@ export function DiscoveryPreferencesScreen() {
               max={maxDistanceForUser}
               value={distance}
               onChange={(e) => trySetDistance(Number(e.target.value))}
-              className="flex-1 accent-[#FF2D55]"
+              className="flex-1 accent-[var(--qk-accent)]"
             />
             <span className="text-sm font-bold w-12 text-right">{distance} km</span>
           </div>
@@ -144,7 +145,7 @@ export function DiscoveryPreferencesScreen() {
         {/* Gender preference */}
         <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
           <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-[#FF5E7E]" />
+            <Users className="w-4 h-4 text-[var(--qk-accent-light)]" />
             <h3 className="text-sm font-semibold">Show Me</h3>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -155,7 +156,7 @@ export function DiscoveryPreferencesScreen() {
                 className={cn(
                   'rounded-xl border px-3 py-2.5 text-sm font-medium capitalize transition-all',
                   gender === g
-                    ? 'border-[#FF2D55] bg-[#FF2D55]/10 text-white'
+                    ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)]/10 text-white'
                     : 'border-white/10 bg-white/5 text-white/70'
                 )}
               >
@@ -168,7 +169,7 @@ export function DiscoveryPreferencesScreen() {
         {/* Interests */}
         <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
           <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-[#FF5E7E]" />
+            <Users className="w-4 h-4 text-[var(--qk-accent-light)]" />
             <h3 className="text-sm font-semibold">Interests (match on overlap)</h3>
             <span className="ml-auto text-[10px] text-white/40">{interests.length}/8</span>
           </div>
@@ -186,7 +187,7 @@ export function DiscoveryPreferencesScreen() {
                   className={cn(
                     'rounded-full border px-2.5 py-1 text-xs font-medium capitalize transition-all',
                     selected
-                      ? 'border-[#FF2D55] bg-[#FF2D55] text-white'
+                      ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white'
                       : 'border-white/10 bg-white/5 text-white/70',
                     disabled && 'opacity-30'
                   )}
@@ -201,7 +202,7 @@ export function DiscoveryPreferencesScreen() {
         {/* Toggles */}
         <div className="bg-white/5 rounded-2xl border border-white/8 overflow-hidden">
           <ToggleRow
-            icon={<Shield className="w-4 h-4 text-[#FF5E7E]" />}
+            icon={<Shield className="w-4 h-4 text-[var(--qk-accent-light)]" />}
             label="Verified profiles only"
             description="Only show profiles with a verified badge"
             value={verifiedOnly}
@@ -209,7 +210,7 @@ export function DiscoveryPreferencesScreen() {
           />
           <div className="border-t border-white/5" />
           <ToggleRow
-            icon={<Clock className="w-4 h-4 text-[#FF5E7E]" />}
+            icon={<Clock className="w-4 h-4 text-[var(--qk-accent-light)]" />}
             label="Recently active"
             description="Only show users active in the last 7 days"
             value={recentlyActive}
@@ -245,22 +246,7 @@ function ToggleRow({
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-white/50">{description}</p>
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={cn(
-          'w-11 h-6 rounded-full transition-colors relative shrink-0',
-          value ? 'bg-[#FF2D55]' : 'bg-white/10'
-        )}
-        role="switch"
-        aria-checked={value}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform',
-            value ? 'translate-x-[22px]' : 'translate-x-0.5'
-          )}
-        />
-      </button>
+      <Toggle value={value} onChange={onChange} label={label} />
     </div>
   )
 }
@@ -269,7 +255,7 @@ function PremiumHint({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="mt-2 w-full text-left text-[10px] text-[#F5C570] flex items-center gap-1 hover:underline"
+      className="mt-2 w-full text-left text-[10px] text-[var(--qk-gold)] flex items-center gap-1 hover:underline"
     >
       <Crown className="w-3 h-3" /> Unlock wider ranges with Premium
     </button>

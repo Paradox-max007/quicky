@@ -81,7 +81,7 @@ export function PhotoVerification({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 z-[160] bg-[#0F0F14] text-white flex flex-col"
+        className="absolute inset-0 z-[160] bg-[var(--qk-bg)] text-white flex flex-col"
       >
         <header className="shrink-0 px-3 pt-3 pb-3 flex items-center gap-2 border-b border-white/5">
           <button onClick={() => (step === 'intro' ? onClose() : setStep('intro'))} className="p-2 hover:bg-white/5 rounded-full" aria-label="Back">
@@ -96,8 +96,8 @@ export function PhotoVerification({
         <div className="flex-1 overflow-y-auto no-scrollbar p-5 flex flex-col items-center justify-center text-center">
           {step === 'intro' && (
             <div className="flex flex-col items-center gap-4 max-w-xs">
-              <div className="w-20 h-20 rounded-full bg-[#FF2D55]/15 flex items-center justify-center">
-                <Camera className="w-10 h-10 text-[#FF2D55]" />
+              <div className="w-20 h-20 rounded-full bg-[var(--qk-accent)]/15 flex items-center justify-center">
+                <Camera className="w-10 h-10 text-[var(--qk-accent)]" />
               </div>
               <h2 className="text-xl font-bold">Get verified</h2>
               <p className="text-sm text-white/60 text-pretty">
@@ -114,8 +114,8 @@ export function PhotoVerification({
 
           {step === 'camera' && (
             <div className="flex flex-col items-center gap-4 max-w-xs">
-              <div className="w-20 h-20 rounded-full bg-[#FF2D55]/15 flex items-center justify-center">
-                <Camera className="w-10 h-10 text-[#FF2D55]" />
+              <div className="w-20 h-20 rounded-full bg-[var(--qk-accent)]/15 flex items-center justify-center">
+                <Camera className="w-10 h-10 text-[var(--qk-accent)]" />
               </div>
               <h2 className="text-xl font-bold">Take a clear selfie</h2>
               <p className="text-sm text-white/60 text-pretty">
@@ -150,7 +150,7 @@ export function PhotoVerification({
 
           {step === 'review' && selfieUrl && (
             <div className="flex flex-col items-center gap-4 max-w-xs">
-              <img src={selfieUrl} alt="Selfie" className="w-48 h-48 rounded-3xl object-cover border-2 border-[#FF2D55]" />
+              <img src={selfieUrl} alt="Selfie" className="w-48 h-48 rounded-3xl object-cover border-2 border-[var(--qk-accent)]" />
               <h2 className="text-xl font-bold">Looks good?</h2>
               <p className="text-sm text-white/60">If approved, you’ll get a verified badge.</p>
               <button
@@ -172,7 +172,7 @@ export function PhotoVerification({
               animate={{ scale: 1, opacity: 1 }}
               className="flex flex-col items-center gap-4"
             >
-              <div className="w-24 h-24 rounded-full bg-[#FF2D55] glow-coral-strong flex items-center justify-center animate-pop-in">
+              <div className="w-24 h-24 rounded-full bg-[var(--qk-accent)] glow-coral-strong flex items-center justify-center animate-pop-in">
                 <Check className="w-12 h-12 text-white" strokeWidth={3} />
               </div>
               <h2 className="text-xl font-bold text-gradient-coral">Verified!</h2>

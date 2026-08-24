@@ -85,7 +85,7 @@ export function PhoneNumberScreen() {
                   placeholder="+1 (555) 555-0100"
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-10 py-3.5 text-base placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-10 py-3.5 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
                 />
               </div>
             </div>
@@ -100,9 +100,9 @@ export function PhoneNumberScreen() {
           </>
         ) : (
           <>
-            <div className="bg-[#FF2D55]/10 border border-[#FF2D55]/30 rounded-2xl p-3 text-center">
+            <div className="bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/30 rounded-2xl p-3 text-center">
               <p className="text-xs text-white/60">A 4-digit code was sent to</p>
-              <p className="text-sm font-semibold text-[#FF5E7E] mt-0.5">{newPhone}</p>
+              <p className="text-sm font-semibold text-[var(--qk-accent-light)] mt-0.5">{newPhone}</p>
             </div>
             <input
               type="text"
@@ -110,13 +110,13 @@ export function PhoneNumberScreen() {
               placeholder="0000"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-center text-2xl font-bold tracking-[0.6em] placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] transition-colors"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-center text-2xl font-bold tracking-[0.6em] placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
               autoFocus
             />
             {demoCode && (
-              <div className="bg-[#FF2D55]/10 border border-[#FF2D55]/30 rounded-xl px-4 py-3 text-center">
+              <div className="bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/30 rounded-xl px-4 py-3 text-center">
                 <p className="text-xs text-white/60">Demo code (no real SMS):</p>
-                <p className="text-2xl font-bold text-[#FF2D55] tracking-[0.4em] mt-1">{demoCode}</p>
+                <p className="text-2xl font-bold text-[var(--qk-accent)] tracking-[0.4em] mt-1">{demoCode}</p>
               </div>
             )}
             <button

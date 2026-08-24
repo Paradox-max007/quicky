@@ -6,8 +6,11 @@ const config: CapacitorConfig = {
   webDir: "out",
 
   // ─── Dev: point to the running Next.js server ──────────────────────────────
-  // When testing on Android via USB, `adb reverse tcp:3000 tcp:3000` forwards localhost:3000.
-  // For Wi-Fi testing, you can change this back to your PC's Wi-Fi IP (e.g. http://172.20.10.7:3000).
+  // Wi-Fi testing: the phone loads the app directly from the PC's Wi-Fi IP.
+  // (Requires the dev server running with `npm run dev` and both devices on
+  // the same network. If this IP changes, update it and re-run `cap sync`.)
+  // For USB testing instead, revert to http://localhost:3000 and run
+  // `adb reverse tcp:3000 tcp:3000` before launching the app.
   server: {
     url: "http://localhost:3000",
     cleartext: true,

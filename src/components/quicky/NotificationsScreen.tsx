@@ -5,17 +5,18 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
+import { Toggle } from './Toggle'
 import { MessageCircle, UserPlus, Heart, Eye, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Toggle = {
+type ToggleDef = {
   key: string
   label: string
   description: string
   icon: any
 }
 
-const TOGGLES: Toggle[] = [
+const TOGGLES: ToggleDef[] = [
   { key: 'notifMessages', label: 'Messages', description: 'New messages from your matches', icon: MessageCircle },
   { key: 'notifConnectionReqs', label: 'Connection Requests', description: 'When someone you liked likes you back', icon: UserPlus },
   { key: 'notifLikes', label: 'Likes', description: 'When someone likes your profile', icon: Heart },
@@ -64,7 +65,7 @@ export function NotificationsScreen() {
     return (
       <SettingsSubScreen title="Notifications">
         <div className="flex justify-center py-12">
-          <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
         </div>
       </SettingsSubScreen>
     )
@@ -79,7 +80,7 @@ export function NotificationsScreen() {
             <div key={t.key}>
               {idx > 0 && <div className="border-t border-white/5" />}
               <ToggleRow
-                icon={<t.icon className="w-4 h-4 text-[#FF5E7E]" />}
+                icon={<t.icon className="w-4 h-4 text-[var(--qk-accent-light)]" />}
                 label={t.label}
                 description={t.description}
                 value={settings?.[t.key] ?? true}
@@ -109,22 +110,7 @@ function ToggleRow({
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-white/50">{description}</p>
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={cn(
-          'w-11 h-6 rounded-full transition-colors relative shrink-0',
-          value ? 'bg-[#FF2D55]' : 'bg-white/10'
-        )}
-        role="switch"
-        aria-checked={value}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform',
-            value ? 'translate-x-[22px]' : 'translate-x-0.5'
-          )}
-        />
-      </button>
+      <Toggle value={value} onChange={onChange} label={label} />
     </div>
   )
 }

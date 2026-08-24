@@ -23,6 +23,7 @@ export type AppView =
   | 'settings-privacy-policy'
   | 'settings-help'
   | 'premium'
+  | 'games'
   | 'chat'
   | 'profile-view'
 
@@ -40,6 +41,7 @@ export type QuickyUser = {
   prompts?: { prompt: string; answer: string }[]
   photos?: { id: string; url: string; isPrimary: boolean; isPrivate: boolean; position: number }[]
   isPremium: boolean
+  premiumUntil?: string | null
   isVerified: boolean
   quickyScore: number
   onboardedAt: string | null

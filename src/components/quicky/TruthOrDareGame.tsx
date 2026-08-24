@@ -128,13 +128,13 @@ export function TruthOrDareGame({
       animate={{ y: 0 }}
       exit={{ y: '100%' }}
       transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-      className="absolute inset-0 z-[150] bg-[#0F0F14] text-white flex flex-col"
+      className="absolute inset-0 z-[150] bg-[var(--qk-bg)] text-white flex flex-col"
     >
       {/* Header */}
       <header className="shrink-0 px-4 pt-3 pb-3 flex items-center justify-between border-b border-white/8">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-full bg-[#B8A4FF]/20 flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-[#B8A4FF]" />
+          <div className="w-9 h-9 rounded-full bg-[var(--qk-purple)]/20 flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-[var(--qk-purple)]" />
           </div>
           <div>
             <h2 className="font-bold text-base">Truth or Dare</h2>
@@ -149,11 +149,11 @@ export function TruthOrDareGame({
       <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-4">
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="w-10 h-10 rounded-full border-2 border-[#B8A4FF] border-t-transparent animate-spin" />
+            <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-purple)] border-t-transparent animate-spin" />
           </div>
         ) : !session ? (
           <div className="flex-1 flex flex-col items-center justify-center text-white/50">
-            <Sparkles className="w-12 h-12 text-[#B8A4FF]/30 mb-3" />
+            <Sparkles className="w-12 h-12 text-[var(--qk-purple)]/30 mb-3" />
             <p>No active session</p>
           </div>
         ) : (
@@ -163,7 +163,7 @@ export function TruthOrDareGame({
               {session.turns.map((t, idx) => (
                 <div key={t.id} className="bg-white/5 rounded-2xl p-3 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium capitalize text-[#B8A4FF]">
+                    <span className="text-xs font-medium capitalize text-[var(--qk-purple)]">
                       Turn {idx + 1} · {t.choice}
                     </span>
                     <span className="text-[10px] text-white/40 uppercase tracking-wide">
@@ -172,7 +172,7 @@ export function TruthOrDareGame({
                   </div>
                   <p className="text-sm font-medium">{t.promptText}</p>
                   {t.answerText && (
-                    <p className="text-sm text-white/70 mt-2 pl-2 border-l-2 border-[#FF2D55]/40">
+                    <p className="text-sm text-white/70 mt-2 pl-2 border-l-2 border-[var(--qk-accent)]/40">
                       {t.answerText}
                     </p>
                   )}
@@ -186,21 +186,21 @@ export function TruthOrDareGame({
             {/* Current action */}
             <div className="mt-auto">
               {isMyTurn && !awaitingMyAnswer && !currentTurn && (
-                <div className="bg-[#1A1A2E] border border-[#B8A4FF]/30 rounded-3xl p-5">
+                <div className="bg-[var(--qk-card)] border border-[var(--qk-purple)]/30 rounded-3xl p-5">
                   <p className="text-sm text-white/60 text-center mb-1">Your turn — pick one for yourself</p>
                   <h3 className="text-xl font-bold text-center mb-4">Truth or Dare?</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => pick('truth')}
                       disabled={busy}
-                      className="py-4 rounded-2xl bg-[#B8A4FF]/15 border border-[#B8A4FF]/30 text-[#B8A4FF] font-bold text-lg hover:bg-[#B8A4FF]/25 active:scale-95 transition-all disabled:opacity-50"
+                      className="py-4 rounded-2xl bg-[var(--qk-purple)]/15 border border-[var(--qk-purple)]/30 text-[var(--qk-purple)] font-bold text-lg hover:bg-[var(--qk-purple)]/25 active:scale-95 transition-all disabled:opacity-50"
                     >
                       Truth
                     </button>
                     <button
                       onClick={() => pick('dare')}
                       disabled={busy}
-                      className="py-4 rounded-2xl bg-[#FF2D55]/15 border border-[#FF2D55]/30 text-[#FF2D55] font-bold text-lg hover:bg-[#FF2D55]/25 active:scale-95 transition-all disabled:opacity-50"
+                      className="py-4 rounded-2xl bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 text-[var(--qk-accent)] font-bold text-lg hover:bg-[var(--qk-accent)]/25 active:scale-95 transition-all disabled:opacity-50"
                     >
                       Dare
                     </button>
@@ -209,9 +209,9 @@ export function TruthOrDareGame({
               )}
 
               {currentTurn && (
-                <div className="bg-[#1A1A2E] border border-[#FF2D55]/30 rounded-3xl p-5">
+                <div className="bg-[var(--qk-card)] border border-[var(--qk-accent)]/30 rounded-3xl p-5">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium capitalize text-[#FF5E7E]">
+                    <span className="text-xs font-medium capitalize text-[var(--qk-accent-light)]">
                       {currentTurn.choice} · {currentTurn.promptDeck}
                     </span>
                   </div>
@@ -221,7 +221,7 @@ export function TruthOrDareGame({
                     onChange={(e) => setAnswerText(e.target.value.slice(0, 500))}
                     rows={3}
                     placeholder="Type your answer..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55]/50 resize-none mb-3"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50 resize-none mb-3"
                   />
                   <div className="flex gap-2">
                     <button
@@ -243,8 +243,8 @@ export function TruthOrDareGame({
               )}
 
               {!isMyTurn && !awaitingMyAnswer && (
-                <div className="bg-[#1A1A2E] border border-white/10 rounded-3xl p-5 text-center">
-                  <Sparkles className="w-8 h-8 mx-auto mb-2 text-[#B8A4FF]/40" />
+                <div className="bg-[var(--qk-card)] border border-white/10 rounded-3xl p-5 text-center">
+                  <Sparkles className="w-8 h-8 mx-auto mb-2 text-[var(--qk-purple)]/40" />
                   <p className="text-sm text-white/60">
                     Waiting for {partnerName ?? 'them'} to pick truth or dare...
                   </p>

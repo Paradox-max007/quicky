@@ -72,7 +72,7 @@ const PERSONAS: PersonaData[] = [
     prompts: [
       { prompt: 'Green flags I look for...', answer: 'Reads books, calls their mom, doesn\'t honk in traffic.' },
     ],
-    isPremium: true,
+    isPremium: false,
     isVerified: true,
     quickyScore: 156,
     phone: '+15555550103',
@@ -90,7 +90,7 @@ const PERSONAS: PersonaData[] = [
       { prompt: 'My most controversial opinion is...', answer: 'Brutalism is the only honest architecture.' },
       { prompt: 'The way to my heart is...', answer: 'A bookstore receipt and a handwritten note.' },
     ],
-    isPremium: true,
+    isPremium: false,
     isVerified: false,
     quickyScore: 489,
     phone: '+15555550104',
@@ -159,7 +159,7 @@ const PERSONAS: PersonaData[] = [
     prompts: [
       { prompt: 'My ideal Sunday...', answer: 'Mercado, mezcal, mucho cooking.' },
     ],
-    isPremium: true,
+    isPremium: false,
     isVerified: true,
     quickyScore: 410,
     phone: '+15555550108',
@@ -233,6 +233,142 @@ const PERSONAS: PersonaData[] = [
     quickyScore: 891,
     phone: '+15555550112',
   },
+  {
+    id: 'nora',
+    name: 'Nora',
+    age: 25,
+    gender: 'female',
+    lookingFor: 'men',
+    city: 'Brooklyn, NY',
+    bio: 'Indie bookstore clerk. I will recommend you a novel and then quiz you on it.',
+    interests: ['books', 'coffee', 'poetry', 'vinyl', 'cats'],
+    prompts: [
+      { prompt: 'The way to my heart is...', answer: 'Correct use of a semicolon; incorrectly is also fine if confident.' },
+    ],
+    isPremium: false,
+    isVerified: true,
+    quickyScore: 143,
+    phone: '+15555550113',
+  },
+  {
+    id: 'ivy',
+    name: 'Ivy',
+    age: 27,
+    gender: 'female',
+    lookingFor: 'everyone',
+    city: 'Austin, TX',
+    bio: 'Botanical garden guide. My apartment is 60% plants and 40% regret.',
+    interests: ['plants', 'hiking', 'watercolor', 'farmers-markets', 'dogs'],
+    prompts: [
+      { prompt: 'My ideal Sunday...', answer: 'Greenhouse, iced latte, nap under a monstera.' },
+    ],
+    isPremium: false,
+    isVerified: false,
+    quickyScore: 58,
+    phone: '+15555550114',
+  },
+  {
+    id: 'ruby',
+    name: 'Ruby',
+    age: 29,
+    gender: 'female',
+    lookingFor: 'men',
+    city: 'Chicago, IL',
+    bio: 'Jazz singer on weekends, copywriter on weekdays. Ask me about my vinyl collection.',
+    interests: ['jazz', 'vinyl', 'cocktails', 'dancing', 'film'],
+    prompts: [
+      { prompt: 'Two truths and a lie...', answer: 'I busked in Paris. I hate jazz. I own 300 records.' },
+    ],
+    isPremium: false,
+    isVerified: true,
+    quickyScore: 205,
+    phone: '+15555550115',
+  },
+  {
+    id: 'elle',
+    name: 'Elle',
+    age: 24,
+    gender: 'female',
+    lookingFor: 'everyone',
+    city: 'Seattle, WA',
+    bio: 'Barista champion hopeful. I can taste the difference between roasts and I will tell you.',
+    interests: ['coffee', 'baking', 'running', 'podcasts', 'thrift'],
+    prompts: [
+      { prompt: 'Green flags I look for...', answer: 'Tips well, reads the menu before ordering, dogs like them.' },
+    ],
+    isPremium: false,
+    isVerified: false,
+    quickyScore: 71,
+    phone: '+15555550116',
+  },
+  {
+    id: 'finn',
+    name: 'Finn',
+    age: 27,
+    gender: 'male',
+    lookingFor: 'women',
+    city: 'Portland, OR',
+    bio: 'Cartoonist. My hands are always ink-stained and my jokes are always drawn out.',
+    interests: ['comics', 'coffee', 'cycling', 'cinema', 'cats'],
+    prompts: [
+      { prompt: 'My most controversial opinion is...', answer: 'Sunday comics are the peak of the art form.' },
+    ],
+    isPremium: false,
+    isVerified: true,
+    quickyScore: 132,
+    phone: '+15555550117',
+  },
+  {
+    id: 'dane',
+    name: 'Dane',
+    age: 31,
+    gender: 'male',
+    lookingFor: 'everyone',
+    city: 'Los Angeles, CA',
+    bio: 'Sound engineer. I mix records by day and vinyl by night. Ears on commission.',
+    interests: ['music', 'vinyl', 'tacos', 'hiking', 'photography'],
+    prompts: [
+      { prompt: 'Best travel story...', answer: 'Recorded an album in a Joshua Tree cabin with no Wi-Fi. Best two weeks ever.' },
+    ],
+    isPremium: false,
+    isVerified: false,
+    quickyScore: 94,
+    phone: '+15555550118',
+  },
+  {
+    id: 'milo',
+    name: 'Milo',
+    age: 26,
+    gender: 'male',
+    lookingFor: 'women',
+    city: 'Brooklyn, NY',
+    bio: 'Climbing gym regular and mediocre sourdough baker. The bread is improving though.',
+    interests: ['climbing', 'baking', 'running', 'podcasts', 'dogs'],
+    prompts: [
+      { prompt: 'I\'m looking for...', answer: 'A belay partner who won\'t judge my fear of the slab wall.' },
+    ],
+    isPremium: false,
+    isVerified: true,
+    quickyScore: 47,
+    phone: '+15555550119',
+  },
+  {
+    id: 'jonah',
+    name: 'Jonah',
+    age: 33,
+    gender: 'male',
+    lookingFor: 'everyone',
+    city: 'Seattle, WA',
+    bio: 'Marine biologist. Yes, I have held an octopus. No, it was not slimy. Well, slightly.',
+    interests: ['diving', 'science', 'hiking', 'whisky', 'documentaries'],
+    prompts: [
+      { prompt: 'The way to my heart is...', answer: 'Ask me one question about the ocean. Any question. I dare you.' },
+    ],
+    isPremium: false,
+    isVerified: false,
+    quickyScore: 118,
+    phone: '+15555550120',
+  },
 ]
 
 async function seed() {
@@ -276,6 +412,7 @@ async function seed() {
         interests: JSON.stringify(p.interests),
         prompts: JSON.stringify(p.prompts),
         isPremium: p.isPremium,
+        premiumUntil: p.isPremium ? new Date(Date.now() + 335 * 86400000) : null,
         isVerified: p.isVerified,
         quickyScore: p.quickyScore,
         onboardedAt: created,
@@ -284,16 +421,13 @@ async function seed() {
       },
     })
 
-    // Attach the generated portrait as the primary photo
-    const portraitPath = `${PERSONAS_DIR}/${p.id}.png`
-    let photoUrl: string
-    // try {
-    //   await fs.promises.access(portraitPath)
-    //   photoUrl = `/personas/${p.id}.png`
-    // } catch {
-    //   photoUrl = `https://picsum.photos/seed/${p.id}/800/1000`
-    // }
-    photoUrl = `/personas/${p.id}.png`
+    // Attach a generated portrait as the primary photo.
+    // Only 12 portraits exist, so personas without their own image
+    // cycle through the available ones.
+    const PORTRAITS = ['luna', 'mia', 'aria', 'sofia', 'zoe', 'emma', 'leo', 'mateo', 'kai', 'theo', 'rex', 'owen']
+    const fallback = PORTRAITS[PERSONAS.indexOf(p) % PORTRAITS.length]
+    const imageKey = PORTRAITS.includes(p.id) ? p.id : fallback
+    const photoUrl = `/personas/${imageKey}.png`
 
     await db.photo.create({
       data: {

@@ -1,6 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useQuickyStore } from '@/store/quicky'
+import { applyThemeToDOM } from '@/lib/quicky/theme'
 import { AuthScreen } from './AuthScreen'
 import { OnboardingFlow } from './OnboardingFlow'
 import { DiscoveryFeed } from './DiscoveryFeed'
@@ -21,6 +23,7 @@ import { PrivacySettingsScreen } from './PrivacySettingsScreen'
 import { TermsOfServiceScreen, PrivacyPolicyScreen } from './LegalScreens'
 import { HelpSupportScreen } from './HelpSupportScreen'
 import { PremiumView } from './PremiumView'
+import { GamesScreen } from './GamesScreen'
 import { ProfileView } from './ProfileView'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
@@ -29,12 +32,17 @@ import { Toaster as SonnerToaster } from 'sonner'
 export function AppRoot() {
   const view = useQuickyStore((s) => s.view)
   const hydrated = useQuickyStore((s) => s.hydrated)
+  const user = useQuickyStore((s) => s.user)
+
+  useEffect(() => {
+    applyThemeToDOM(user?.settings?.theme)
+  }, [user?.settings?.theme])
 
   if (!hydrated) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#0F0F14]">
+      <div className="w-full h-full flex items-center justify-center bg-[var(--qk-bg)]">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+          <div className="w-12 h-12 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
           <span className="text-white/60 text-sm">Loading Quicky...</span>
         </div>
       </div>
@@ -47,7 +55,7 @@ export function AppRoot() {
     // than the whole browser window. This keeps toasts inside the phone frame
     // on desktop and inside the safe-area on mobile.
     <div
-      className="w-full h-full relative bg-[#0F0F14] text-white overflow-hidden"
+      className="w-full h-full relative bg-[var(--qk-bg)] text-white overflow-hidden"
       style={{ transform: 'translateZ(0)' }}
     >
       {/* Main view */}
@@ -72,11 +80,12 @@ export function AppRoot() {
           {view === 'settings-privacy-policy' && <PrivacyPolicyScreen />}
           {view === 'settings-help' && <HelpSupportScreen />}
           {view === 'premium' && <PremiumView />}
+          {view === 'games' && <GamesScreen />}
           {view === 'chat' && <ChatView />}
           {view === 'profile-view' && <ProfileView />}
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings */}
-        {['discovery', 'matches', 'likes-you', 'profile-me', 'premium'].includes(view) && <BottomNav />}
+        {['discovery', 'matches', 'likes-you', 'profile-me', 'games'].includes(view) && <BottomNav />}
       </div>
 
       {/* Overlays */}
@@ -95,7 +104,7 @@ export function AppRoot() {
         closeButton={false}
         toastOptions={{
           style: {
-            background: '#1A1A2E',
+            background: 'var(--qk-card)',
             color: '#F5F5F7',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             fontSize: '14px',

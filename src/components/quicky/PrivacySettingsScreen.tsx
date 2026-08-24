@@ -5,6 +5,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
+import { Toggle } from './Toggle'
 import { Eye, MapPin, Clock, Type, Crown, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -73,7 +74,7 @@ export function PrivacySettingsScreen() {
     return (
       <SettingsSubScreen title="Privacy Settings">
         <div className="flex justify-center py-12">
-          <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
         </div>
       </SettingsSubScreen>
     )
@@ -92,41 +93,27 @@ export function PrivacySettingsScreen() {
                 {idx > 0 && <div className="border-t border-white/5" />}
                 <div className="flex items-center gap-3 px-4 py-3">
                   <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                    <t.icon className={cn('w-4 h-4', t.premium ? 'text-[#F5C570]' : 'text-[#FF5E7E]')} />
+                    <t.icon className={cn('w-4 h-4', t.premium ? 'text-[var(--qk-gold)]' : 'text-[var(--qk-accent-light)]')} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1">
                       <p className="text-sm font-medium">{t.label}</p>
                       {t.premium && (
-                        <span className="text-[9px] font-bold bg-[#F5C570]/20 text-[#F5C570] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                        <span className="text-[9px] font-bold bg-[var(--qk-gold)]/20 text-[var(--qk-gold)] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                           <Crown className="w-2 h-2" fill="currentColor" stroke="none" /> PRO
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-white/50">{t.description}</p>
                   </div>
-                  <button
-                    onClick={() => toggle(t.key, !value, t.premium)}
-                    className={cn(
-                      'w-11 h-6 rounded-full transition-colors relative shrink-0',
-                      value ? 'bg-[#FF2D55]' : 'bg-white/10',
-                      isLocked && !value && 'opacity-60'
-                    )}
-                    role="switch"
-                    aria-checked={value}
-                  >
-                    <span
-                      className={cn(
-                        'absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform',
-                        value ? 'translate-x-[22px]' : 'translate-x-0.5'
-                      )}
-                    />
-                  </button>
+                  <div className={cn('shrink-0', isLocked && !value && 'opacity-60')}>
+                    <Toggle value={!!value} onChange={(v) => toggle(t.key, v, !!t.premium)} label={t.label} />
+                  </div>
                 </div>
                 {isLocked && !value && (
                   <button
                     onClick={() => showPaywall({ kind: 'private_photos' })}
-                    className="w-full text-left text-[10px] text-[#F5C570] flex items-center gap-1 px-4 pb-2 hover:underline"
+                    className="w-full text-left text-[10px] text-[var(--qk-gold)] flex items-center gap-1 px-4 pb-2 hover:underline"
                   >
                     <Lock className="w-2.5 h-2.5" /> Unlock with Premium
                   </button>

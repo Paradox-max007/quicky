@@ -86,6 +86,12 @@ export const api = {
       '/api/quicky/swipe',
       { method: 'POST', body: JSON.stringify({ toUserId, type }) }
     ),
+  swipeBatch: (swipes: { toUserId: string; type: 'like' | 'superlike' | 'pass' }[]) =>
+    jsonFetch<{
+      ok: boolean
+      results: { toUserId: string; ok: boolean; match?: { id: string; partnerId: string } | null; error?: string; paywall?: 'likes' | 'superlikes' }[]
+      limits?: any
+    }>('/api/quicky/swipe', { method: 'POST', body: JSON.stringify({ swipes }) }),
   matches: () => jsonFetch<{ matches: any[] }>('/api/quicky/matches'),
   likesYou: () =>
     jsonFetch<{ likes: any[]; isPremium: boolean; lockedCount: number }>('/api/quicky/likes-you'),

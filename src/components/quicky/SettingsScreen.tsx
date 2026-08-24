@@ -209,7 +209,7 @@ export function SettingsScreen() {
   ]
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 px-3 pt-3 pb-3 flex items-center gap-2 border-b border-white/5">
         <button
           onClick={() => setView('profile-me')}
@@ -230,7 +230,7 @@ export function SettingsScreen() {
             <h2 className="text-xs font-semibold text-white/50 uppercase tracking-wide px-3 mb-1.5">
               {section.title}
             </h2>
-            <div className="bg-[#1A1A2E] rounded-2xl overflow-hidden border border-white/5">
+            <div className="bg-[var(--qk-card)] rounded-2xl overflow-hidden border border-white/5">
               {section.rows.map((row, idx) => (
                 <button
                   key={row.id}
@@ -240,7 +240,7 @@ export function SettingsScreen() {
                     'w-full flex items-center gap-3 px-3 py-3.5 text-left transition-colors',
                     idx > 0 && 'border-t border-white/5',
                     row.destructive
-                      ? 'hover:bg-[#FF2D55]/10'
+                      ? 'hover:bg-[var(--qk-accent)]/10'
                       : row.disabled
                         ? 'opacity-50'
                         : 'hover:bg-white/5',
@@ -250,18 +250,18 @@ export function SettingsScreen() {
                   <div
                     className={cn(
                       'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
-                      row.destructive ? 'bg-[#FF2D55]/15' : 'bg-white/5'
+                      row.destructive ? 'bg-[var(--qk-accent)]/15' : 'bg-white/5'
                     )}
                   >
                     <row.icon
-                      className={cn('w-4 h-4', row.destructive ? 'text-[#FF2D55]' : 'text-white/70')}
+                      className={cn('w-4 h-4', row.destructive ? 'text-[var(--qk-accent)]' : 'text-white/70')}
                       strokeWidth={2}
                     />
                   </div>
                   <span
                     className={cn(
                       'flex-1 text-sm font-medium',
-                      row.destructive ? 'text-[#FF2D55]' : 'text-white'
+                      row.destructive ? 'text-[var(--qk-accent)]' : 'text-white'
                     )}
                   >
                     {row.label}
@@ -272,7 +272,7 @@ export function SettingsScreen() {
                     </span>
                   )}
                   {row.badge && (
-                    <span className="text-[10px] font-bold bg-[#F5C570]/20 text-[#F5C570] px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold bg-[var(--qk-gold)]/20 text-[var(--qk-gold)] px-2 py-0.5 rounded-full">
                       {row.badge}
                     </span>
                   )}
@@ -307,12 +307,12 @@ export function SettingsScreen() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-              className="bg-[#1A1A2E] rounded-3xl p-6 max-w-xs w-full border border-white/10"
+              className="bg-[var(--qk-card)] rounded-3xl p-6 max-w-xs w-full border border-white/10"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex flex-col items-center text-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-[#FF2D55]/15 flex items-center justify-center">
-                  <LogOut className="w-7 h-7 text-[#FF2D55]" />
+                <div className="w-14 h-14 rounded-full bg-[var(--qk-accent)]/15 flex items-center justify-center">
+                  <LogOut className="w-7 h-7 text-[var(--qk-accent)]" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">Log Out?</h2>
@@ -324,7 +324,7 @@ export function SettingsScreen() {
                   <button
                     onClick={handleLogout}
                     disabled={loggingOut}
-                    className="w-full bg-[#FF2D55] rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+                    className="w-full bg-[var(--qk-accent)] rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
                   >
                     {loggingOut ? (
                       <>

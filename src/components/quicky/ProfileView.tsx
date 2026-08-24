@@ -63,8 +63,8 @@ export function ProfileView() {
 
   if (loading) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#0F0F14]">
-        <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+      <div className="w-full h-full flex items-center justify-center bg-[var(--qk-bg)]">
+        <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
       </div>
     )
   }
@@ -74,7 +74,7 @@ export function ProfileView() {
   const tier = getScoreTier(profile.quickyScore ?? 0)
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-y-auto no-scrollbar">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-y-auto no-scrollbar">
       {/* Floating back button */}
       <header className="shrink-0 px-3 pt-3 pb-3 flex items-center justify-between absolute top-0 left-0 right-0 z-10">
         <button onClick={() => setView('chat')} className="p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60" aria-label="Back">
@@ -164,7 +164,7 @@ export function ProfileView() {
           <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-bold">{profile.name}, {profile.age}</h2>
-              {profile.isVerified && <BadgeCheck className="w-5 h-5 text-[#FF2D55]" fill="currentColor" stroke="white" />}
+              {profile.isVerified && <BadgeCheck className="w-5 h-5 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />}
               {profile.isPremium && (
                 <span className="text-gradient-gold">
                   <Crown className="w-4 h-4" fill="currentColor" stroke="none" />
@@ -181,8 +181,8 @@ export function ProfileView() {
           {/* Private photo notice */}
           {profile.hasPrivatePhotos && (
             <div className="absolute top-16 right-3 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
-              <Lock className="w-2.5 h-2.5 text-[#F5C570]" />
-              <span className="text-[10px] text-[#F5C570] font-semibold">Has private photos</span>
+              <Lock className="w-2.5 h-2.5 text-[var(--qk-gold)]" />
+              <span className="text-[10px] text-[var(--qk-gold)] font-semibold">Has private photos</span>
             </div>
           )}
         </div>
@@ -200,7 +200,7 @@ export function ProfileView() {
                   onClick={() => scrollTo(i)}
                   className={cn(
                     'flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all relative',
-                    i === selectedIdx ? 'border-[#FF2D55]' : 'border-transparent'
+                    i === selectedIdx ? 'border-[var(--qk-accent)]' : 'border-transparent'
                   )}
                   aria-label={`View photo ${i + 1}`}
                 >
@@ -244,7 +244,7 @@ export function ProfileView() {
             <div className="flex flex-col gap-2">
               {profile.prompts.map((p: any, i: number) => (
                 <div key={i} className="bg-white/5 rounded-2xl p-3">
-                  <p className="text-xs font-semibold text-[#FF5E7E] mb-1">{p.prompt}</p>
+                  <p className="text-xs font-semibold text-[var(--qk-accent-light)] mb-1">{p.prompt}</p>
                   <p className="text-sm text-white/80 text-pretty">{p.answer}</p>
                 </div>
               ))}

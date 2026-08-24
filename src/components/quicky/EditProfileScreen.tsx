@@ -116,14 +116,14 @@ export function EditProfileScreen() {
 
   if (loading) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#0F0F14]">
-        <div className="w-10 h-10 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+      <div className="w-full h-full flex items-center justify-center bg-[var(--qk-bg)]">
+        <div className="w-10 h-10 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-hidden">
       {/* Header with progress + back + save */}
       <header className="shrink-0 px-4 pt-3 pb-2 flex items-center gap-2 border-b border-white/5">
         <button onClick={back} className="p-2 hover:bg-white/5 rounded-full" aria-label="Back">
@@ -136,7 +136,7 @@ export function EditProfileScreen() {
         <button
           onClick={saveAll}
           disabled={saving}
-          className="text-[#FF5E7E] hover:text-[#FF2D55] text-sm font-semibold px-3 py-1.5 rounded-full hover:bg-[#FF2D55]/10 transition-colors disabled:opacity-50"
+          className="text-[var(--qk-accent-light)] hover:text-[var(--qk-accent)] text-sm font-semibold px-3 py-1.5 rounded-full hover:bg-[var(--qk-accent)]/10 transition-colors disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save'}
         </button>
@@ -150,7 +150,7 @@ export function EditProfileScreen() {
               key={s}
               className={cn(
                 'h-1 flex-1 rounded-full transition-all',
-                i < stepIdx ? 'bg-[#FF2D55]' : i === stepIdx ? 'bg-[#FF2D55]/60' : 'bg-white/10'
+                i < stepIdx ? 'bg-[var(--qk-accent)]' : i === stepIdx ? 'bg-[var(--qk-accent)]/60' : 'bg-white/10'
               )}
             />
           ))}
@@ -166,7 +166,7 @@ export function EditProfileScreen() {
                 value={name}
                 onChange={(e) => setName(e.target.value.slice(0, 50))}
                 placeholder="Your name"
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55]"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]"
               />
             </Field>
 
@@ -178,7 +178,7 @@ export function EditProfileScreen() {
                   value={dateOfBirth}
                   onChange={(e) => setDateOfBirth(e.target.value)}
                   max={new Date(Date.now() - 18 * 365.25 * 24 * 3600 * 1000).toISOString().slice(0, 10)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base focus:outline-none focus:border-[#FF2D55] [color-scheme:dark]"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base focus:outline-none focus:border-[var(--qk-accent)] [color-scheme:dark]"
                 />
               </div>
               {dateOfBirth && new Date().getFullYear() - new Date(dateOfBirth).getFullYear() < 18 && (
@@ -195,7 +195,7 @@ export function EditProfileScreen() {
                     className={cn(
                       'rounded-2xl border px-4 py-3 text-sm font-medium capitalize transition-all',
                       gender === g
-                        ? 'border-[#FF2D55] bg-[#FF2D55]/10 text-white'
+                        ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)]/10 text-white'
                         : 'border-white/10 bg-white/5 text-white/70'
                     )}
                   >
@@ -214,7 +214,7 @@ export function EditProfileScreen() {
                     className={cn(
                       'rounded-2xl border px-3 py-2.5 text-sm font-medium capitalize transition-all',
                       lookingFor === g
-                        ? 'border-[#FF2D55] bg-[#FF2D55]/10 text-white'
+                        ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)]/10 text-white'
                         : 'border-white/10 bg-white/5 text-white/70'
                     )}
                   >
@@ -230,7 +230,7 @@ export function EditProfileScreen() {
                 value={city}
                 onChange={(e) => setCity(e.target.value.slice(0, 100))}
                 placeholder="Brooklyn, NY"
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55]"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]"
               />
             </Field>
           </Section>
@@ -243,7 +243,7 @@ export function EditProfileScreen() {
               onChange={(e) => setBio(e.target.value.slice(0, 300))}
               rows={6}
               placeholder="Painter + part-time barista. Looking for late-night diners and gallery openings."
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] resize-none"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] resize-none"
             />
             <div className="flex justify-between text-xs text-white/40 mt-1">
               <span>Tell us something true.</span>
@@ -270,7 +270,7 @@ export function EditProfileScreen() {
                     className={cn(
                       'rounded-full border px-3 py-1.5 text-xs font-medium transition-all capitalize',
                       selected
-                        ? 'border-[#FF2D55] bg-[#FF2D55] text-white'
+                        ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white'
                         : 'border-white/10 bg-white/5 text-white/70',
                       disabled && 'opacity-30'
                     )}
@@ -312,7 +312,7 @@ export function EditProfileScreen() {
                         }}
                         className={cn(
                           'text-xs font-medium px-2 py-1 rounded',
-                          has ? 'text-[#FF2D55] bg-[#FF2D55]/10' : 'text-white/50 bg-white/5'
+                          has ? 'text-[var(--qk-accent)] bg-[var(--qk-accent)]/10' : 'text-white/50 bg-white/5'
                         )}
                       >
                         {has ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}

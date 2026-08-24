@@ -44,6 +44,7 @@ export async function GET() {
       prompts: full.prompts ? JSON.parse(full.prompts) : [],
       photos: full.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary, isPrivate: p.isPrivate, position: p.position })),
       isPremium: full.isPremium,
+      premiumUntil: full.premiumUntil,
       isVerified: full.isVerified,
       quickyScore: full.quickyScore,
       onboardedAt: full.onboardedAt,

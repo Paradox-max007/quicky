@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { applyThemeToDOM } from '@/lib/quicky/theme'
 
 type Theme = {
   id: string
@@ -26,6 +27,12 @@ const THEMES: Theme[] = [
     name: 'Midnight',
     description: 'Deep charcoal with coral accents',
     preview: { bg: '#0F0F14', card: '#1A1A2E', accent: '#FF2D55', text: '#F5F5F7' },
+  },
+  {
+    id: 'light',
+    name: 'Daylight',
+    description: 'Clean white with coral accents',
+    preview: { bg: '#F6F6F9', card: '#FFFFFF', accent: '#E0244B', text: '#16161D' },
   },
   {
     id: 'midnight',
@@ -61,6 +68,7 @@ export function AppearanceScreen() {
 
   const applyTheme = async (themeId: string) => {
     setSelected(themeId)
+    applyThemeToDOM(themeId)
     setSaving(true)
     try {
       await api.settings.update({ theme: themeId })
@@ -68,6 +76,9 @@ export function AppearanceScreen() {
       if (me.user) setUser(me.user)
       toast.success(`Theme set to ${THEMES.find(t => t.id === themeId)?.name}`)
     } catch (e: any) {
+      // Revert to the previously persisted theme on failure
+      applyThemeToDOM(user?.settings?.theme)
+      setSelected(user?.settings?.theme ?? 'dark')
       toast.error(e.body?.error ?? e.message ?? 'Failed to set theme')
     } finally {
       setSaving(false)
@@ -87,7 +98,7 @@ export function AppearanceScreen() {
               className={cn(
                 'relative rounded-2xl border-2 overflow-hidden transition-all text-left',
                 selected === theme.id
-                  ? 'border-[#FF2D55] glow-coral'
+                  ? 'border-[var(--qk-accent)] glow-coral'
                   : 'border-white/8 hover:border-white/20'
               )}
             >
@@ -110,13 +121,13 @@ export function AppearanceScreen() {
                 </div>
               </div>
               {/* Description */}
-              <div className="px-3 py-2.5 bg-[#0F0F14] flex items-center justify-between">
+              <div className="px-3 py-2.5 bg-[var(--qk-bg)] flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold">{theme.name}</p>
                   <p className="text-xs text-white/50">{theme.description}</p>
                 </div>
                 {selected === theme.id && (
-                  <div className="w-6 h-6 rounded-full bg-[#FF2D55] flex items-center justify-center shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-[var(--qk-accent)] flex items-center justify-center shrink-0">
                     <Check className="w-4 h-4 text-white" strokeWidth={3} />
                   </div>
                 )}

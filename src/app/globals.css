@@ -55,6 +55,81 @@
 }
 
 :root {
+  /* Quicky runtime theme tokens — swapped via [data-theme] on <html>.
+     These must stay in sync with THEMES in AppearanceScreen.tsx. */
+  --qk-bg: #0F0F14;
+  --qk-card: #1A1A2E;
+  --qk-elev: #25253a;
+  --qk-accent: #FF2D55;
+  --qk-accent-light: #FF5E7E;
+  --qk-purple: #B8A4FF;
+  --qk-gold: #F5C570;
+  --qk-text: #F5F5F7;
+}
+
+/* Light theme — swaps tokens and remaps the common white-alpha utility
+   classes (the UI hardcodes text-white / bg-white\/5 etc.) so dark-first
+   components render correctly on a white base. */
+html[data-theme='light'] {
+  --qk-bg: #F6F6F9;
+  --qk-card: #FFFFFF;
+  --qk-elev: #ECECF2;
+  --qk-accent: #E0244B;
+  --qk-accent-light: #FF2D55;
+  --qk-purple: #7A5CFF;
+  --qk-gold: #B8860B;
+  --qk-text: #16161D;
+  color-scheme: light;
+}
+html[data-theme='light'] .text-white { color: var(--qk-text); }
+html[data-theme='light'] .text-white\/80 { color: rgba(22, 22, 29, 0.8); }
+html[data-theme='light'] .text-white\/70 { color: rgba(22, 22, 29, 0.7); }
+html[data-theme='light'] .text-white\/60 { color: rgba(22, 22, 29, 0.6); }
+html[data-theme='light'] .text-white\/50 { color: rgba(22, 22, 29, 0.52); }
+html[data-theme='light'] .text-white\/40 { color: rgba(22, 22, 29, 0.42); }
+html[data-theme='light'] .text-white\/30 { color: rgba(22, 22, 29, 0.35); }
+html[data-theme='light'] .text-white\/20 { color: rgba(22, 22, 29, 0.3); }
+html[data-theme='light'] .bg-white\/5 { background-color: rgba(15, 15, 20, 0.04); }
+html[data-theme='light'] .bg-white\/8,
+html[data-theme='light'] .bg-white\/10 { background-color: rgba(15, 15, 20, 0.06); }
+html[data-theme='light'] .border-white\/5,
+html[data-theme='light'] .border-white\/8,
+html[data-theme='light'] .border-white\/10 { border-color: rgba(15, 15, 20, 0.1); }
+
+html[data-theme='midnight'] {
+  --qk-bg: #0A0E27;
+  --qk-card: #11173A;
+  --qk-elev: #1A2050;
+  --qk-accent: #FF2D55;
+  --qk-accent-light: #FF5E7E;
+  --qk-text: #E8E8F0;
+}
+html[data-theme='coral'] {
+  --qk-bg: #1A0F12;
+  --qk-card: #2A1A1F;
+  --qk-elev: #382229;
+  --qk-accent: #FF2D55;
+  --qk-accent-light: #FF5E7E;
+  --qk-text: #FFE8E8;
+}
+html[data-theme='lavender'] {
+  --qk-bg: #13101A;
+  --qk-card: #1F1A2E;
+  --qk-elev: #2A2340;
+  --qk-accent: #B8A4FF;
+  --qk-accent-light: #D0C3FF;
+  --qk-text: #F0EAFF;
+}
+html[data-theme='gold'] {
+  --qk-bg: #15110A;
+  --qk-card: #241E14;
+  --qk-elev: #332A1C;
+  --qk-accent: #F5C570;
+  --qk-accent-light: #FFDD9A;
+  --qk-text: #FFF4E0;
+}
+
+:root {
   --radius: 0.875rem;
   /* Quicky is dark-first. Light mode supported but secondary. */
   --background: #0F0F14;
@@ -135,11 +210,11 @@
     overscroll-behavior: none;
   }
   body {
-    /* Coral gradient ambience for premium feel */
+    /* Ambient gradient tinted by the active theme */
     background:
-      radial-gradient(circle at 0% 0%, rgba(255, 45, 85, 0.08) 0%, transparent 40%),
-      radial-gradient(circle at 100% 100%, rgba(184, 164, 255, 0.05) 0%, transparent 40%),
-      #0F0F14;
+      radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--qk-accent) 8%, transparent) 0%, transparent 40%),
+      radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--qk-purple, #B8A4FF) 5%, transparent) 0%, transparent 40%),
+      var(--qk-bg);
     background-attachment: fixed;
   }
 }
@@ -148,6 +223,21 @@
 @layer utilities {
   .text-balance { text-wrap: balance; }
   .text-pretty { text-wrap: pretty; }
+
+  /* Liquid glass surface — translucent, frosted, with an inner light edge.
+     Used for the bottom nav; sits over content so the blur shows through. */
+  .liquid-glass {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 45%, rgba(255, 255, 255, 0.03) 100%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+      0 -12px 40px rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-bottom: none;
+  }
 
   /* Hide scrollbars but keep functionality */
   .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -160,12 +250,12 @@
   .mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
 
 
-  /* Coral glow for primary CTA / quicky bubble */
+  /* Accent glow for primary CTA / quicky bubble */
   .glow-coral {
-    box-shadow: 0 0 24px -2px rgba(255, 45, 85, 0.55), 0 0 60px -10px rgba(255, 45, 85, 0.35);
+    box-shadow: 0 0 24px -2px color-mix(in srgb, var(--qk-accent) 55%, transparent), 0 0 60px -10px color-mix(in srgb, var(--qk-accent) 35%, transparent);
   }
   .glow-coral-strong {
-    box-shadow: 0 0 32px -2px rgba(255, 45, 85, 0.75), 0 0 80px -8px rgba(255, 45, 85, 0.45);
+    box-shadow: 0 0 32px -2px color-mix(in srgb, var(--qk-accent) 75%, transparent), 0 0 80px -8px color-mix(in srgb, var(--qk-accent) 45%, transparent);
   }
 
   /* Gold/lavender glow for premium accents */
@@ -204,10 +294,10 @@
 
   /* Premium-tier gradient backgrounds */
   .bg-premium-gradient {
-    background: linear-gradient(135deg, #1A1A2E 0%, #25253a 100%);
+    background: linear-gradient(135deg, var(--qk-card) 0%, var(--qk-elev) 100%);
   }
   .bg-coral-gradient {
-    background: linear-gradient(135deg, #FF2D55 0%, #D81E45 100%);
+    background: linear-gradient(135deg, var(--qk-accent) 0%, color-mix(in srgb, var(--qk-accent) 82%, black) 100%);
   }
   .bg-gold-gradient {
     background: linear-gradient(135deg, #F5C570 0%, #D4A857 100%);
@@ -291,5 +381,12 @@
     background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.04) 100%);
     background-size: 200% 100%;
     animation: shimmer 2.4s ease-in-out infinite;
+  }
+
+  /* Light sweep across premium buttons */
+  @keyframes sheen {
+    0% { transform: translateX(-80px); }
+    55% { transform: translateX(320px); }
+    100% { transform: translateX(320px); }
   }
 }

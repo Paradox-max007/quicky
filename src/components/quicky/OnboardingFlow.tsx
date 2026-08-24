@@ -97,7 +97,7 @@ export function OnboardingFlow() {
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-hidden">
       {/* Progress bar */}
       <div className="px-6 pt-2 pb-3 shrink-0">
         <div className="flex items-center gap-1">
@@ -106,7 +106,7 @@ export function OnboardingFlow() {
               key={s}
               className={cn(
                 'h-1 flex-1 rounded-full transition-all',
-                i < stepIdx ? 'bg-[#FF2D55]' : i === stepIdx ? 'bg-[#FF2D55]/60' : 'bg-white/10'
+                i < stepIdx ? 'bg-[var(--qk-accent)]' : i === stepIdx ? 'bg-[var(--qk-accent)]/60' : 'bg-white/10'
               )}
             />
           ))}
@@ -121,7 +121,7 @@ export function OnboardingFlow() {
               value={dob}
               onChange={(e) => setDob(e.target.value)}
               max={new Date(Date.now() - 18 * 365.25 * 24 * 3600 * 1000).toISOString().slice(0, 10)}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base focus:outline-none focus:border-[#FF2D55] [color-scheme:dark]"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base focus:outline-none focus:border-[var(--qk-accent)] [color-scheme:dark]"
             />
             {dob && new Date().getFullYear() - new Date(dob).getFullYear() < 18 && (
               <p className="text-[#FF3B30] text-sm mt-2">You must be 18 or older.</p>
@@ -139,7 +139,7 @@ export function OnboardingFlow() {
                   className={cn(
                     'rounded-2xl border px-4 py-3 text-sm font-medium capitalize transition-all',
                     gender === g
-                      ? 'border-[#FF2D55] bg-[#FF2D55]/10 text-white'
+                      ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)]/10 text-white'
                       : 'border-white/10 bg-white/5 text-white/70'
                   )}
                 >
@@ -156,7 +156,7 @@ export function OnboardingFlow() {
                   className={cn(
                     'rounded-2xl border px-3 py-2.5 text-sm font-medium capitalize transition-all',
                     lookingFor === g
-                      ? 'border-[#FF2D55] bg-[#FF2D55]/10 text-white'
+                      ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)]/10 text-white'
                       : 'border-white/10 bg-white/5 text-white/70'
                   )}
                 >
@@ -185,7 +185,7 @@ export function OnboardingFlow() {
                       <>
                         <img src={url} alt="" className="w-full h-full object-cover" />
                         {i === 0 && (
-                          <span className="absolute top-1 left-1 bg-[#FF2D55] text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                          <span className="absolute top-1 left-1 bg-[var(--qk-accent)] text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                             PRIMARY
                           </span>
                         )}
@@ -218,7 +218,7 @@ export function OnboardingFlow() {
               onChange={(e) => setBio(e.target.value.slice(0, 300))}
               placeholder="Painter + part-time barista. Looking for late-night diners and gallery openings."
               rows={5}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[#FF2D55] resize-none"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] resize-none"
             />
             <div className="flex justify-between text-xs text-white/40 mt-1">
               <span>Tell us something true.</span>
@@ -230,7 +230,7 @@ export function OnboardingFlow() {
               value={city}
               onChange={(e) => setCity(e.target.value)}
               placeholder="Brooklyn, NY"
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#FF2D55]"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--qk-accent)]"
             />
           </StepShell>
         )}
@@ -253,7 +253,7 @@ export function OnboardingFlow() {
                     className={cn(
                       'rounded-full border px-3 py-1.5 text-xs font-medium transition-all capitalize',
                       selected
-                        ? 'border-[#FF2D55] bg-[#FF2D55] text-white'
+                        ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white'
                         : 'border-white/10 bg-white/5 text-white/70',
                       disabled && 'opacity-30'
                     )}
@@ -287,7 +287,7 @@ export function OnboardingFlow() {
                         }}
                         className={cn(
                           'text-xs font-medium px-2 py-1 rounded',
-                          has ? 'text-[#FF2D55] bg-[#FF2D55]/10' : 'text-white/50 bg-white/5'
+                          has ? 'text-[var(--qk-accent)] bg-[var(--qk-accent)]/10' : 'text-white/50 bg-white/5'
                         )}
                       >
                         {has ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}

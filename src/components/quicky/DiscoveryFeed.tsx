@@ -5,7 +5,7 @@ import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from '
 import { useQuickyStore, DiscoveryCandidate } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock } from 'lucide-react'
+import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock, CalendarClock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getScoreTier } from '@/lib/quicky/constants'
 
@@ -23,7 +23,70 @@ export function DiscoveryFeed() {
   const [limits, setLimits] = useState<{ likes: number | 'unlimited'; superLikes: number; quicky: number | 'unlimited'; isPremium: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [topKey, setTopKey] = useState(0) // force remount of top card
-  const [swiping, setSwiping] = useState(false) // prevent double-swipe
+
+  // Pending swipes waiting to be flushed to the server in one batch request.
+  // Swiping is optimistic: the card leaves immediately and the API call
+  // happens in the background, so slow networks never block the next swipe.
+  const pendingSwipes = useRef<{ toUserId: string; type: 'like' | 'superlike' | 'pass'; candidate: DiscoveryCandidate }[]>([])
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flushing = useRef(false)
+
+  const flushPending = useCallback(async () => {
+    if (flushTimer.current) {
+      clearTimeout(flushTimer.current)
+      flushTimer.current = null
+    }
+    if (flushing.current || pendingSwipes.current.length === 0) return
+    const batch = pendingSwipes.current
+    pendingSwipes.current = []
+    flushing.current = true
+    try {
+      const res = await api.swipeBatch(batch.map(({ toUserId, type }) => ({ toUserId, type })))
+      if (res.limits) setLimits(res.limits)
+      for (const r of res.results ?? []) {
+        if (!r.ok && r.paywall) {
+          showPaywall({ kind: r.paywall })
+        } else if (r.match) {
+          const entry = batch.find((b) => b.toUserId === r.toUserId)
+          if (entry) {
+            showMatchCelebration({
+              matchId: r.match.id,
+              partnerId: entry.candidate.id,
+              partnerName: entry.candidate.name,
+              partnerPhoto: entry.candidate.photos[0]?.url ?? null,
+            })
+          }
+        }
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to save swipes')
+    } finally {
+      flushing.current = false
+      // More may have queued while the request was in flight
+      if (pendingSwipes.current.length > 0) scheduleFlush()
+    }
+  }, [])
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimer.current) return
+    flushTimer.current = setTimeout(() => {
+      flushTimer.current = null
+      flushPending()
+    }, 1500)
+  }, [flushPending])
+
+  // Don't lose queued swipes when leaving the feed / hiding the app
+  useEffect(() => {
+    const onHide = () => flushPending()
+    window.addEventListener('pagehide', onHide)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('pagehide', onHide)
+      document.removeEventListener('visibilitychange', onHide)
+      if (flushTimer.current) clearTimeout(flushTimer.current)
+      flushPending()
+    }
+  }, [flushPending])
 
   const refresh = async () => {
     setLoading(true)
@@ -42,9 +105,8 @@ export function DiscoveryFeed() {
     refresh()
   }, [])
 
-  const handleSwipe = async (candidate: DiscoveryCandidate, type: 'like' | 'superlike' | 'pass') => {
-    if (swiping) return false
-    // Check limits before sending
+  const handleSwipe = (candidate: DiscoveryCandidate, type: 'like' | 'superlike' | 'pass') => {
+    // Check limits locally before queueing
     if (type === 'like' && limits && limits.likes !== 'unlimited' && limits.likes <= 0) {
       showPaywall({ kind: 'likes' })
       return false
@@ -54,43 +116,26 @@ export function DiscoveryFeed() {
       return false
     }
 
-    setSwiping(true)
-    try {
-      const res = await api.swipe(candidate.id, type)
-      if (res.error === 'like_limit' || res.paywall === 'likes') {
-        showPaywall({ kind: 'likes' })
-        return false
-      }
-      if (res.error === 'superlike_limit' || res.paywall === 'superlikes') {
-        showPaywall({ kind: 'superlikes' })
-        return false
-      }
-      if (res.limits) setLimits(res.limits)
-      if (res.match) {
-        const partner = candidate
-        showMatchCelebration({
-          matchId: res.match.id,
-          partnerId: partner.id,
-          partnerName: partner.name,
-          partnerPhoto: partner.photos[0]?.url ?? null,
-        })
-      }
-      return true
-    } catch (e: any) {
-      if (e.status === 402) {
-        if (e.body?.paywall === 'likes') showPaywall({ kind: 'likes' })
-        else if (e.body?.paywall === 'superlikes') showPaywall({ kind: 'superlikes' })
-        return false
-      }
-      toast.error(e.message ?? 'Swipe failed')
-      return false
-    } finally {
-      setSwiping(false)
-    }
+    // Optimistic: queue the swipe, decrement local counters, advance immediately
+    pendingSwipes.current.push({ toUserId: candidate.id, type, candidate })
+    scheduleFlush()
+    setLimits((l) =>
+      l
+        ? {
+            ...l,
+            likes: l.likes === 'unlimited' ? l.likes : Math.max(0, (l.likes as number) - (type === 'like' ? 1 : 0)),
+            superLikes: Math.max(0, l.superLikes - (type === 'superlike' ? 1 : 0)),
+          }
+        : l
+    )
+    advanceQueue()
+    return true
   }
 
   const rewind = async () => {
     try {
+      // Make sure queued swipes are saved first, so we rewind the true last swipe
+      await flushPending()
       const res = await api.swipe('', 'rewind')
       if (res.ok) {
         toast.success('Last swipe undone')
@@ -111,14 +156,18 @@ export function DiscoveryFeed() {
   const next1 = queue[1]
   const next2 = queue[2]
   const viewerIsPremium = user?.isPremium ?? false
+  const premiumUntil = user?.premiumUntil ?? null
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white relative">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative">
       {/* Top bar with logo + score */}
       <header className="shrink-0 px-5 pt-3 pb-3 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xl font-bold tracking-tight">Quicky</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-[#FF2D55]" />
+        <div className="flex items-center gap-1">
+          {/* Logo mark doubles as the "Q" of the wordmark */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/quicky-logo.png" alt="" className="w-7 h-7 rounded-lg object-cover" />
+          <span className="text-xl font-bold tracking-tight">uicky</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--qk-accent)]" />
         </div>
         <button
           onClick={() => setView('profile-me')}
@@ -129,11 +178,51 @@ export function DiscoveryFeed() {
         </button>
       </header>
 
+      {/* Premium button — shows subscription expiry once active */}
+      <div className="shrink-0 px-4 pb-2">
+        <button
+          onClick={() => setView('premium')}
+          className="w-full relative overflow-hidden flex items-center gap-2.5 rounded-2xl p-2.5 border border-[var(--qk-gold)]/40 bg-gradient-to-r from-[var(--qk-gold)]/15 via-[var(--qk-accent)]/10 to-[var(--qk-purple)]/15 active:scale-[0.98] transition-transform"
+        >
+          {/* Sheen sweep */}
+          <span className="pointer-events-none absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12 animate-[sheen_2.8s_ease-in-out_infinite]" />
+          <div className="w-9 h-9 rounded-full bg-[var(--qk-gold)]/20 flex items-center justify-center shrink-0">
+            {viewerIsPremium ? (
+              <Crown className="w-5 h-5 text-gradient-gold" fill="currentColor" stroke="none" />
+            ) : (
+              <Crown className="w-5 h-5 text-[var(--qk-gold)]" />
+            )}
+          </div>
+          <div className="flex-1 text-left min-w-0">
+            <p className="text-sm font-semibold text-gradient-gold leading-tight">
+              {viewerIsPremium ? 'Premium Active' : 'Upgrade to Premium'}
+            </p>
+            <p className="text-[11px] text-white/60 leading-tight mt-0.5 flex items-center gap-1">
+              {viewerIsPremium ? (
+                <>
+                  <CalendarClock className="w-3 h-3 shrink-0" />
+                  {premiumUntil
+                    ? `Renews ${new Date(premiumUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                    : 'Manage subscription'}
+                </>
+              ) : (
+                'Unlimited likes, see who likes you & more'
+              )}
+            </p>
+          </div>
+          {!viewerIsPremium && (
+            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide bg-[var(--qk-gold)] text-black rounded-full px-2.5 py-1">
+              Go Gold
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Card stack */}
       <div className="flex-1 relative px-4 pb-2 min-h-0">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-12 h-12 rounded-full border-2 border-[#FF2D55] border-t-transparent animate-spin" />
+            <div className="w-12 h-12 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
           </div>
         )}
 
@@ -177,10 +266,9 @@ export function DiscoveryFeed() {
               candidate={top}
               viewerIsPremium={viewerIsPremium}
               showPaywall={() => showPaywall({ kind: 'generic' })}
-              onSwipe={async (dir) => {
+              onSwipe={(dir) => {
                 const type = dir === 'right' ? 'like' : dir === 'left' ? 'pass' : 'superlike'
-                const ok = await handleSwipe(top, type as 'like' | 'superlike' | 'pass')
-                if (ok) advanceQueue()
+                handleSwipe(top, type as 'like' | 'superlike' | 'pass')
               }}
             />
           </div>
@@ -198,21 +286,21 @@ export function DiscoveryFeed() {
             label="Rewind"
           />
           <ActionButton
-            onClick={() => handleSwipe(top, 'pass').then((ok) => { if (ok) advanceQueue() })}
+            onClick={() => handleSwipe(top, 'pass')}
             size="lg"
             color="white"
             icon={<X className="w-7 h-7" strokeWidth={3} />}
             label="Pass"
           />
           <ActionButton
-            onClick={() => handleSwipe(top, 'superlike').then((ok) => { if (ok) advanceQueue() })}
+            onClick={() => handleSwipe(top, 'superlike')}
             size="sm"
             color="blue"
             icon={<Star className="w-5 h-5" fill="currentColor" />}
             label="Super Like"
           />
           <ActionButton
-            onClick={() => handleSwipe(top, 'like').then((ok) => { if (ok) advanceQueue() })}
+            onClick={() => handleSwipe(top, 'like')}
             size="lg"
             color="coral"
             icon={<Heart className="w-7 h-7" fill="currentColor" strokeWidth={0} />}
@@ -261,10 +349,10 @@ function ActionButton({
   label: string
 }) {
   const colors = {
-    white: 'bg-white text-[#0F0F14] hover:scale-105',
-    coral: 'bg-[#FF2D55]/10 text-[#FF2D55] hover:bg-[#FF2D55]/20 border-[#FF2D55]/30',
-    amber: 'bg-[#F5C570]/10 text-[#F5C570] hover:bg-[#F5C570]/20 border-[#F5C570]/30',
-    blue: 'bg-[#B8A4FF]/10 text-[#B8A4FF] hover:bg-[#B8A4FF]/20 border-[#B8A4FF]/30',
+    white: 'bg-white text-[var(--qk-bg)] hover:scale-105',
+    coral: 'bg-[var(--qk-accent)]/10 text-[var(--qk-accent)] hover:bg-[var(--qk-accent)]/20 border-[var(--qk-accent)]/30',
+    amber: 'bg-[var(--qk-gold)]/10 text-[var(--qk-gold)] hover:bg-[var(--qk-gold)]/20 border-[var(--qk-gold)]/30',
+    blue: 'bg-[var(--qk-purple)]/10 text-[var(--qk-purple)] hover:bg-[var(--qk-purple)]/20 border-[var(--qk-purple)]/30',
   }
   const sizes = {
     sm: 'w-12 h-12',
@@ -357,7 +445,7 @@ function CardLayout({
 
   return (
     <div
-      className="absolute inset-x-4 top-0 bottom-0 rounded-3xl overflow-hidden bg-[#1A1A2E] border border-white/5 shadow-2xl"
+      className="absolute inset-x-4 top-0 bottom-0 rounded-3xl overflow-hidden bg-[var(--qk-card)] border border-white/5 shadow-2xl"
       style={style}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -403,8 +491,8 @@ function CardLayout({
       {/* Premium lock badge if limited */}
       {!viewerIsPremium && total > FREE_PHOTO_LIMIT && (
         <div className="absolute top-5 right-3 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
-          <Lock className="w-2.5 h-2.5 text-[#F5C570]" />
-          <span className="text-[10px] text-[#F5C570] font-semibold">{total - visibleLimit} locked</span>
+          <Lock className="w-2.5 h-2.5 text-[var(--qk-gold)]" />
+          <span className="text-[10px] text-[var(--qk-gold)] font-semibold">{total - visibleLimit} locked</span>
         </div>
       )}
 
@@ -425,7 +513,7 @@ function CardLayout({
                 {candidate.name}, <span className="font-normal text-white/80">{candidate.age}</span>
               </h2>
               {candidate.isVerified && (
-                <BadgeCheck className="w-5 h-5 text-[#FF2D55]" fill="currentColor" stroke="white" />
+                <BadgeCheck className="w-5 h-5 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />
               )}
               {candidate.isPremium && (
                 <span className="text-gradient-gold">
@@ -534,7 +622,7 @@ function SwipeCardWrapper({
         style={{ opacity: likeOpacity }}
         className="absolute top-8 left-6 -rotate-12 pointer-events-none"
       >
-        <span className="text-[#FF2D55] text-4xl font-extrabold border-4 border-[#FF2D55] rounded-xl px-3 py-1">
+        <span className="text-[var(--qk-accent)] text-4xl font-extrabold border-4 border-[var(--qk-accent)] rounded-xl px-3 py-1">
           LIKE
         </span>
       </motion.div>
@@ -552,7 +640,7 @@ function SwipeCardWrapper({
         style={{ opacity: superOpacity }}
         className="absolute top-1/3 left-1/2 -translate-x-1/2 pointer-events-none"
       >
-        <span className="text-[#B8A4FF] text-3xl font-extrabold border-4 border-[#B8A4FF] rounded-xl px-3 py-1">
+        <span className="text-[var(--qk-purple)] text-3xl font-extrabold border-4 border-[var(--qk-purple)] rounded-xl px-3 py-1">
           SUPER
         </span>
       </motion.div>

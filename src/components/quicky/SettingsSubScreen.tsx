@@ -15,7 +15,7 @@ export function SettingsSubScreen({
 }) {
   const setView = useQuickyStore((s) => s.setView)
   return (
-    <div className="w-full h-full flex flex-col bg-[#0F0F14] text-white">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 px-3 pt-3 pb-3 flex items-center gap-2 border-b border-white/5">
         <button
           onClick={onBack ?? (() => setView('settings'))}
