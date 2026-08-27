@@ -1,34 +1,52 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
- * QuickyViewer — full-screen immersive Quicky viewer with timer countdown.
- * Per PRD §8.1: full-screen, timer countdown, no pause, no save by default.
- * Screenshot detection: best-effort via keydown / visibility change.
+ * QuickyViewer — full-screen immersive Quicky viewer.
+ * Per PRD §6.2/6.3: countdown starts only when the media is fully loaded and
+ * visible; no pause, no scrubbing; closing early (or timer = 0) forfeits the
+ * remaining time and triggers `onConsumed` — the caller must permanently
+ * delete the media server-side. Screenshot detection is best-effort.
  */
 export function QuickyViewer({
   mediaUrl,
   duration,
   onClose,
+  onConsumed,
   onScreenshot,
 }: {
   mediaUrl: string
   duration: number
   onClose: () => void
+  onConsumed?: () => void
   onScreenshot?: () => void
 }) {
+  const [loaded, setLoaded] = useState(false)
   const [remaining, setRemaining] = useState(duration)
   const [closed, setClosed] = useState(false)
+  const [dragY, setDragY] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const consumedRef = useRef(false)
+  const startY = useRef<number | null>(null)
+
+  const consumeAndClose = () => {
+    if (consumedRef.current) return
+    consumedRef.current = true
+    // Permanently delete the media (server wipes the file + URL)
+    try {
+      onConsumed?.()
+    } catch {}
+    setClosed(true)
+    setTimeout(onClose, 180)
+  }
 
   // Detect screenshot attempts (best-effort)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Common screenshot keys: PrtSc, Cmd+Shift+3/4/5, Ctrl+Shift+S
       if (e.key === 'PrintScreen' || (e.metaKey && e.shiftKey && ['3', '4', '5'].includes(e.key))) {
         toast.error('Screenshot detected. Sender has been notified.')
         onScreenshot?.()
@@ -36,7 +54,6 @@ export function QuickyViewer({
     }
     const onVisibility = () => {
       if (document.hidden) {
-        // Tab hidden — likely screenshotting on iOS
         toast.error('Window hidden during Quicky. Sender has been notified.')
         onScreenshot?.()
       }
@@ -47,18 +64,17 @@ export function QuickyViewer({
       window.removeEventListener('keydown', onKey)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [onScreenshot])
+     
+  }, [])
 
+  // Countdown starts only when the media is loaded and visible
   useEffect(() => {
-    // Start countdown
+    if (!loaded || closed) return
     intervalRef.current = setInterval(() => {
       setRemaining((r) => {
         if (r <= 1) {
           if (intervalRef.current) clearInterval(intervalRef.current)
-          setTimeout(() => {
-            setClosed(true)
-            setTimeout(onClose, 200)
-          }, 200)
+          consumeAndClose()
           return 0
         }
         return r - 1
@@ -67,7 +83,8 @@ export function QuickyViewer({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [duration, onClose])
+     
+  }, [loaded, closed])
 
   // Lock body scroll
   useEffect(() => {
@@ -83,14 +100,55 @@ export function QuickyViewer({
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: closed ? 0 : 1, scale: closed ? 0.95 : 1 }}
-      transition={{ duration: 0.2 }}
-      className="absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center overflow-hidden"
+      animate={{ opacity: closed ? 0 : 1, y: dragY, scale: closed ? 0.95 : 1 }}
+      transition={{ duration: 0.18 }}
+      className="absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center overflow-hidden touch-none"
+      onPointerDown={(e) => {
+        startY.current = e.clientY
+      }}
+      onPointerMove={(e) => {
+        if (startY.current === null) return
+        const dy = e.clientY - startY.current
+        if (dy > 0) setDragY(dy)
+      }}
+      onPointerUp={(e) => {
+        if (startY.current === null) return
+        const dy = e.clientY - startY.current
+        startY.current = null
+        if (dy > 90) {
+          // Swipe down = close early; remaining time is forfeited
+          consumeAndClose()
+        } else {
+          setDragY(0)
+        }
+      }}
+      onPointerCancel={() => {
+        startY.current = null
+        setDragY(0)
+      }}
     >
-      {/* Media */}
-      <img src={mediaUrl} alt="Quicky" className="w-full h-full object-contain select-none pointer-events-none" draggable={false} />
+      {/* Media — timer starts once it is actually visible */}
+      {mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm') || mediaUrl.endsWith('.mov') ? (
+        <video
+          src={mediaUrl}
+          className="w-full h-full object-contain select-none pointer-events-none"
+          autoPlay
+          playsInline
+          muted
+          onLoadedData={() => setLoaded(true)}
+          draggable={false}
+        />
+      ) : (
+        <img
+          src={mediaUrl}
+          alt="Quicky"
+          className="w-full h-full object-contain select-none pointer-events-none"
+          draggable={false}
+          onLoad={() => setLoaded(true)}
+        />
+      )}
 
-      {/* Progress ring at top */}
+      {/* Loading / progress ring at top */}
       <div className="absolute top-12 left-1/2 -translate-x-1/2 flex items-center gap-3">
         <svg width="48" height="48" className="transform -rotate-90">
           <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
@@ -105,7 +163,7 @@ export function QuickyViewer({
             strokeLinecap="round"
           />
         </svg>
-        <span className="text-2xl font-bold text-white">{remaining}</span>
+        <span className="text-2xl font-bold text-white">{loaded ? remaining : '·'}</span>
       </div>
 
       {/* Quicky label */}
@@ -116,30 +174,17 @@ export function QuickyViewer({
 
       {/* Close */}
       <button
-        onClick={() => {
-          setClosed(true)
-          setTimeout(onClose, 200)
-        }}
-        className="absolute top-4 right-4 p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60"
+        onClick={consumeAndClose}
+        className="absolute top-4 right-4 p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60 z-10"
         aria-label="Close Quicky"
       >
         <X className="w-5 h-5 text-white" />
       </button>
 
       {/* Bottom hint */}
-      <div className="absolute bottom-8 left-0 right-0 text-center text-white/60 text-xs">
-        Tap anywhere to close · No saving allowed · Screenshots notify the sender
+      <div className="absolute bottom-8 left-0 right-0 text-center text-white/60 text-xs px-6">
+        {loaded ? 'Swipe down or tap ✕ to close · disappears forever' : 'Loading…'}
       </div>
-
-      {/* Click-to-close overlay (anywhere outside media area) */}
-      <button
-        onClick={() => {
-          setClosed(true)
-          setTimeout(onClose, 200)
-        }}
-        className="absolute inset-0 -z-0"
-        aria-label="Close"
-      />
     </motion.div>
   )
 }

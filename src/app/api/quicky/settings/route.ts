@@ -16,8 +16,12 @@ const DEFAULT_SETTINGS = {
   privacyHideDistance: false,
   privacyHideOnline: false,
   privacyHideTyping: false,
+  privacyHideReadReceipts: false,
   theme: 'dark' as const,
 }
+
+// Themes available to free users; the rest require Premium
+const FREE_THEMES = ['dark', 'light']
 
 export async function GET() {
   const me = await getCurrentUser()
@@ -39,11 +43,19 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.json()
 
-  // Premium gates: online status + typing indicator hide are premium-only
+  // Premium gates: online status / typing / read receipt hiding are premium-only
   if (!me.isPremium) {
-    if (body.privacyHideOnline === true || body.privacyHideTyping === true) {
+    if (body.privacyHideOnline === true || body.privacyHideTyping === true || body.privacyHideReadReceipts === true) {
       return NextResponse.json(
         { error: 'premium_required', paywall: 'privacy_premium' },
+        { status: 402 }
+      )
+    }
+    // Notification preferences are premium-only
+    const notifKeys = ['notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifProfileViews', 'notifSnackbars']
+    if (notifKeys.some((k) => body[k] !== undefined)) {
+      return NextResponse.json(
+        { error: 'premium_required', paywall: 'notifications' },
         { status: 402 }
       )
     }
@@ -53,14 +65,21 @@ export async function PATCH(req: NextRequest) {
   const allowed: Record<string, any> = {}
   const boolFields = [
     'notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifProfileViews', 'notifSnackbars',
-    'privacyHideAge', 'privacyHideDistance', 'privacyHideOnline', 'privacyHideTyping',
+    'privacyHideAge', 'privacyHideDistance', 'privacyHideOnline', 'privacyHideTyping', 'privacyHideReadReceipts',
   ]
   for (const f of boolFields) {
     if (body[f] !== undefined) allowed[f] = Boolean(body[f])
   }
   if (body.theme !== undefined) {
     const theme = String(body.theme)
-    if (['dark', 'light', 'midnight', 'coral', 'lavender', 'gold'].includes(theme)) {
+    if (!['dark', 'light', 'midnight', 'coral', 'lavender', 'gold'].includes(theme)) {
+      // invalid theme — ignore
+    } else if (!me.isPremium && !FREE_THEMES.includes(theme)) {
+      return NextResponse.json(
+        { error: 'premium_required', paywall: 'themes' },
+        { status: 402 }
+      )
+    } else {
       allowed.theme = theme
     }
   }

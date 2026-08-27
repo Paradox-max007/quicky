@@ -131,17 +131,18 @@ export async function PATCH(req: NextRequest) {
       data.prompts = JSON.stringify(prompts)
     }
 
-    // Discovery preferences (premium gates distance + age range)
+    // Discovery preferences (premium gates: distance, filters, wider age range)
+    // Free users: age 35–45, distance ≤ 50km, no verified-only / recently-active filters
     if (body.discoveryAgeMin !== undefined) {
       const min = Number(body.discoveryAgeMin)
-      if (!me.isPremium && (min < 18 || min > 50)) {
+      if (!me.isPremium && (min < 35 || min > 45)) {
         return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
       }
       data.discoveryAgeMin = min
     }
     if (body.discoveryAgeMax !== undefined) {
       const max = Number(body.discoveryAgeMax)
-      if (!me.isPremium && (max < 18 || max > 50)) {
+      if (!me.isPremium && (max < 35 || max > 45)) {
         return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
       }
       data.discoveryAgeMax = max
@@ -155,9 +156,15 @@ export async function PATCH(req: NextRequest) {
       data.discoveryDistanceKm = dist
     }
     if (body.discoveryShowVerifiedOnly !== undefined) {
+      if (!me.isPremium && body.discoveryShowVerifiedOnly === true) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
       data.discoveryShowVerifiedOnly = Boolean(body.discoveryShowVerifiedOnly)
     }
     if (body.discoveryRecentlyActive !== undefined) {
+      if (!me.isPremium && body.discoveryRecentlyActive === true) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
       data.discoveryRecentlyActive = Boolean(body.discoveryRecentlyActive)
     }
 

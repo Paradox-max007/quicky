@@ -121,12 +121,12 @@ export function LikesYouView() {
             isPremium={isPremium}
             lockedCount={lockedCount}
             onUnlock={() => showPaywall({ kind: 'see_likes' })}
-            onViewProfile={(userId) => openProfile(userId)}
+            onViewProfile={(userId) => openProfile(userId, 'likes-you')}
           />
         ) : (
           <ILikedSection
             liked={iLiked}
-            onViewProfile={(userId) => openProfile(userId)}
+            onViewProfile={(userId) => openProfile(userId, 'likes-you')}
           />
         )}
       </div>

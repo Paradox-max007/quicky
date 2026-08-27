@@ -5,7 +5,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
-import { Check } from 'lucide-react'
+import { Check, Crown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { applyThemeToDOM } from '@/lib/quicky/theme'
 
@@ -60,13 +60,24 @@ const THEMES: Theme[] = [
   },
 ]
 
+// Themes available to free users; the rest require Premium
+const FREE_THEME_IDS = ['dark', 'light']
+
 export function AppearanceScreen() {
   const user = useQuickyStore((s) => s.user)
   const setUser = useQuickyStore((s) => s.setUser)
+  const showPaywall = useQuickyStore((s) => s.showPaywall)
   const [selected, setSelected] = useState(user?.settings?.theme ?? 'dark')
   const [saving, setSaving] = useState(false)
 
+  const isPremium = user?.isPremium ?? false
+
   const applyTheme = async (themeId: string) => {
+    // Premium themes are locked for free users
+    if (!isPremium && !FREE_THEME_IDS.includes(themeId)) {
+      showPaywall({ kind: 'generic' })
+      return
+    }
     setSelected(themeId)
     applyThemeToDOM(themeId)
     setSaving(true)
@@ -88,18 +99,21 @@ export function AppearanceScreen() {
   return (
     <SettingsSubScreen title="Appearance / Theme">
       <div className="px-5 py-5">
-        <p className="text-xs text-white/50 mb-4 px-1">Pick a theme that feels like you. Your theme syncs across all your devices.</p>
+        <p className="text-xs text-white/50 mb-4 px-1">Pick a theme that feels like you. Midnight & Daylight are free — the rest are Premium.</p>
         <div className="flex flex-col gap-3">
-          {THEMES.map((theme) => (
+          {THEMES.map((theme) => {
+            const locked = !isPremium && !FREE_THEME_IDS.includes(theme.id)
+            return (
             <button
               key={theme.id}
               onClick={() => applyTheme(theme.id)}
               disabled={saving}
               className={cn(
                 'relative rounded-2xl border-2 overflow-hidden transition-all text-left',
-                selected === theme.id
+                selected === theme.id && !locked
                   ? 'border-[var(--qk-accent)] glow-coral'
-                  : 'border-white/8 hover:border-white/20'
+                  : 'border-white/8 hover:border-white/20',
+                locked && 'opacity-70'
               )}
             >
               {/* Preview swatch */}
@@ -123,17 +137,25 @@ export function AppearanceScreen() {
               {/* Description */}
               <div className="px-3 py-2.5 bg-[var(--qk-bg)] flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold">{theme.name}</p>
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
+                    {theme.name}
+                    {locked && (
+                      <span className="text-[9px] font-bold bg-[var(--qk-gold)]/20 text-[var(--qk-gold)] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                        <Crown className="w-2 h-2" fill="currentColor" stroke="none" /> PRO
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-white/50">{theme.description}</p>
                 </div>
-                {selected === theme.id && (
+                {selected === theme.id && !locked && (
                   <div className="w-6 h-6 rounded-full bg-[var(--qk-accent)] flex items-center justify-center shrink-0">
                     <Check className="w-4 h-4 text-white" strokeWidth={3} />
                   </div>
                 )}
               </div>
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
     </SettingsSubScreen>

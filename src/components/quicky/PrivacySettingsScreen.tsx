@@ -6,7 +6,7 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
 import { Toggle } from './Toggle'
-import { Eye, MapPin, Clock, Type, Crown, Lock } from 'lucide-react'
+import { Eye, MapPin, Clock, Type, Crown, Lock, CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type PrivacyToggle = {
@@ -22,6 +22,7 @@ const TOGGLES: PrivacyToggle[] = [
   { key: 'privacyHideDistance', label: 'Hide Distance', description: 'Your distance from others won\'t be shown', icon: MapPin },
   { key: 'privacyHideOnline', label: 'Hide Online Status', description: 'Don\'t show when you\'re online', icon: Eye, premium: true },
   { key: 'privacyHideTyping', label: 'Hide Typing Indicator', description: 'Don\'t show when you\'re typing in chat', icon: Type, premium: true },
+  { key: 'privacyHideReadReceipts', label: 'Hide Read Receipts', description: 'Others won\'t see when you\'ve read their messages', icon: CheckCheck, premium: true },
 ]
 
 export function PrivacySettingsScreen() {

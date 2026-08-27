@@ -9,6 +9,7 @@ import { db } from '@/lib/db'
 import { QUICKY } from '@/lib/quicky/constants'
 import { awardQuickyScore } from '@/lib/quicky/score'
 import { getRemainingLimits } from '@/lib/quicky/discovery'
+import { deleteUploadedMedia } from '@/lib/quicky/media-cleanup'
 
 // POST: send a Quicky
 export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: string }> }) {
@@ -123,7 +124,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
   })
 }
 
-// PATCH: open / replay / screenshot a Quicky
+// PATCH: open / replay / screenshot / consume a Quicky
+// 'consume' permanently deletes the media — there is no recovery path.
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: string }> }) {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -131,7 +133,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
 
   const body = await req.json()
   const messageId = String(body.messageId ?? '')
-  const action = String(body.action ?? '') as 'open' | 'replay' | 'screenshot'
+  const action = String(body.action ?? '') as 'open' | 'replay' | 'screenshot' | 'consume'
 
   const match = await db.match.findUnique({ where: { id: matchId } })
   if (!match || (match.userAId !== me.id && match.userBId !== me.id)) {
@@ -143,14 +145,41 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Only recipient can open/replay/screenshot
+  // Only recipient can open/replay/screenshot/consume
   if (msg.senderId === me.id) {
     return NextResponse.json({ error: 'Cannot open own quicky' }, { status: 400 })
   }
 
   const senderId = msg.senderId
 
+  if (action === 'consume') {
+    // Idempotent: consuming twice is a no-op. The media file is permanently
+    // deleted from storage and the DB record loses its URL — no recovery.
+    if (!msg.quickyConsumedAt) {
+      deleteUploadedMedia(msg.mediaUrl)
+      await db.message.update({
+        where: { id: messageId },
+        data: { quickyConsumedAt: new Date(), mediaUrl: null },
+      })
+    }
+    return NextResponse.json({ ok: true, consumed: true })
+  }
+
+  // A consumed Quicky can never be viewed again
+  if (msg.quickyConsumedAt) {
+    return NextResponse.json({ error: 'Quicky expired', consumed: true }, { status: 410 })
+  }
+
   if (action === 'open') {
+    if (msg.quickyExpiresAt && msg.quickyExpiresAt < new Date()) {
+      // TTL passed without a view — consume it now
+      deleteUploadedMedia(msg.mediaUrl)
+      await db.message.update({
+        where: { id: messageId },
+        data: { quickyConsumedAt: new Date(), mediaUrl: null },
+      })
+      return NextResponse.json({ error: 'Quicky expired', consumed: true }, { status: 410 })
+    }
     if (msg.quickyOpenedAt) {
       // Already opened; this is a replay — record as QuickyEvent
       await awardQuickyScore({ senderId: me.id, recipientId: senderId, eventType: 'replay', messageId: msg.id })

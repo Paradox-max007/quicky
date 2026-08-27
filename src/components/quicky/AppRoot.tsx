@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useQuickyStore } from '@/store/quicky'
+import { api } from '@/lib/quicky/api-client'
 import { applyThemeToDOM } from '@/lib/quicky/theme'
 import { AuthScreen } from './AuthScreen'
 import { OnboardingFlow } from './OnboardingFlow'
@@ -23,7 +24,7 @@ import { PrivacySettingsScreen } from './PrivacySettingsScreen'
 import { TermsOfServiceScreen, PrivacyPolicyScreen } from './LegalScreens'
 import { HelpSupportScreen } from './HelpSupportScreen'
 import { PremiumView } from './PremiumView'
-import { GamesScreen } from './GamesScreen'
+import { CommunityScreen } from './CommunityScreen'
 import { ProfileView } from './ProfileView'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
@@ -37,6 +38,28 @@ export function AppRoot() {
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
   }, [user?.settings?.theme])
+
+  // Keep the unread-messages badge fresh across all tabs
+  useEffect(() => {
+    if (!user) return
+    let stopped = false
+    const tick = async () => {
+      try {
+        const res = await api.matches()
+        if (!stopped && Array.isArray(res.matches)) {
+          useQuickyStore
+            .getState()
+            .setTotalUnread(res.matches.reduce((sum: number, m: any) => sum + (m.unreadCount ?? 0), 0))
+        }
+      } catch {}
+    }
+    tick()
+    const interval = setInterval(tick, 15000)
+    return () => {
+      stopped = true
+      clearInterval(interval)
+    }
+  }, [user?.id])
 
   if (!hydrated) {
     return (
@@ -80,12 +103,12 @@ export function AppRoot() {
           {view === 'settings-privacy-policy' && <PrivacyPolicyScreen />}
           {view === 'settings-help' && <HelpSupportScreen />}
           {view === 'premium' && <PremiumView />}
-          {view === 'games' && <GamesScreen />}
+          {view === 'community' && <CommunityScreen />}
           {view === 'chat' && <ChatView />}
           {view === 'profile-view' && <ProfileView />}
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings */}
-        {['discovery', 'matches', 'likes-you', 'profile-me', 'games'].includes(view) && <BottomNav />}
+        {['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && <BottomNav />}
       </div>
 
       {/* Overlays */}

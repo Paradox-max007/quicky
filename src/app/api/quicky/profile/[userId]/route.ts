@@ -31,6 +31,14 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
   // Filter private photos unless mutual match or own profile
   const photos = u.photos.filter((p) => !p.isPrivate || mutualMatch)
 
+  // Has this person already liked the viewer? (enables "like back")
+  const theyLikedMe =
+    me.id !== userId
+      ? await db.swipe.findFirst({
+          where: { fromUserId: userId, toUserId: me.id, type: { in: ['like', 'superlike'] } },
+        })
+      : null
+
   return NextResponse.json({
     profile: {
       id: u.id,
@@ -49,5 +57,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
       quickyScore: u.quickyScore,
     },
     isMe: me.id === u.id,
+    relationship: {
+      hasMatch: !!mutualMatch,
+      matchId: mutualMatch && mutualMatch !== true ? mutualMatch.id : null,
+      theyLikedMe: !!theyLikedMe,
+      superLike: theyLikedMe?.type === 'superlike',
+    },
   })
 }

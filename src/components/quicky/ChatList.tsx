@@ -10,30 +10,36 @@ import { motion } from 'framer-motion'
 
 export function ChatList() {
   const openChat = useQuickyStore((s) => s.openChat)
+  const setTotalUnread = useQuickyStore((s) => s.setTotalUnread)
   const [matches, setMatches] = useState<MatchPreview[]>([])
   const [loading, setLoading] = useState(true)
 
-  const refresh = async () => {
-    setLoading(true)
+  const refresh = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await api.matches()
       setMatches(res.matches)
+      // Total unread feeds the badge on the nav bar
+      setTotalUnread(res.matches.reduce((sum: number, m: any) => sum + (m.unreadCount ?? 0), 0))
     } catch (e: any) {
-      toast.error(e.message ?? 'Failed to load matches')
+      if (!silent) toast.error(e.message ?? 'Failed to load matches')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     refresh()
+    // Keep unread counts fresh while the list is open
+    const interval = setInterval(() => refresh(true), 8000)
+    return () => clearInterval(interval)
   }, [])
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 px-5 pt-3 pb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Chats</h1>
-        <button onClick={refresh} className="text-xs text-white/50 hover:text-white">Refresh</button>
+        <button onClick={() => refresh()} className="text-xs text-white/50 hover:text-white">Refresh</button>
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-4">
@@ -58,20 +64,23 @@ export function ChatList() {
                     m.unread && 'bg-white/[0.03]'
                   )}
                 >
-                  <div className="relative shrink-0">
-                    {m.partner.photo ? (
-                      <img src={m.partner.photo} alt={m.partner.name ?? ''} className="w-14 h-14 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-xl font-bold">
-                        {m.partner.name?.[0] ?? '?'}
-                      </div>
-                    )}
-                    {m.partner.isPremium && (
-                      <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[var(--qk-card)] flex items-center justify-center">
-                        <Crown className="w-3 h-3 text-gradient-gold" fill="currentColor" stroke="none" />
-                      </span>
-                    )}
-                  </div>
+                    <div className="relative shrink-0">
+                      {m.partner.photo ? (
+                        <img src={m.partner.photo} alt={m.partner.name ?? ''} className="w-14 h-14 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-xl font-bold">
+                          {m.partner.name?.[0] ?? '?'}
+                        </div>
+                      )}
+                      {m.partner.isPremium && (
+                        <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[var(--qk-card)] flex items-center justify-center">
+                          <Crown className="w-3 h-3 text-gradient-gold" fill="currentColor" stroke="none" />
+                        </span>
+                      )}
+                      {!m.partner.hideOnline && m.partner.lastActiveAt && Date.now() - new Date(m.partner.lastActiveAt).getTime() < 5 * 60 * 1000 && (
+                        <span className="absolute bottom-0 left-0 w-3.5 h-3.5 rounded-full bg-[#30D158] border-2 border-[var(--qk-bg)]" />
+                      )}
+                    </div>
                   <div className="flex-1 min-w-0 text-left">
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold truncate">{m.partner.name}, {m.partner.age}</span>
@@ -89,9 +98,13 @@ export function ChatList() {
                       <p className={cn('text-sm truncate flex-1', m.unread ? 'text-white' : 'text-white/50')}>
                         {m.preview}
                       </p>
-                      {m.unread && (
+                      {m.unreadCount > 0 ? (
+                        <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--qk-accent)] glow-coral flex items-center justify-center text-[10px] font-bold text-white">
+                          {m.unreadCount > 99 ? '99+' : m.unreadCount}
+                        </span>
+                      ) : m.unread ? (
                         <span className="w-2 h-2 rounded-full bg-[var(--qk-accent)] glow-coral shrink-0" />
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </button>

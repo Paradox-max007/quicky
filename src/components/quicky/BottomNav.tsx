@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuickyStore, AppView } from '@/store/quicky'
-import { Flame, Heart, MessageCircle, User, Gamepad2, Sparkles } from 'lucide-react'
+import { Flame, Heart, MessageCircle, User, UsersRound, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type BottomNavProps = { active: AppView }
@@ -9,14 +9,15 @@ export type BottomNavProps = { active: AppView }
 const TABS: { id: AppView; label: string; icon: typeof Heart }[] = [
   { id: 'discovery', label: 'Discover', icon: Flame },
   { id: 'likes-you', label: 'Likes', icon: Sparkles },
+  { id: 'community', label: 'Community', icon: UsersRound },
   { id: 'matches', label: 'Chats', icon: MessageCircle },
-  { id: 'games', label: 'Games', icon: Gamepad2 },
   { id: 'profile-me', label: 'Me', icon: User },
 ]
 
 export function BottomNav() {
   const view = useQuickyStore((s) => s.view)
   const setView = useQuickyStore((s) => s.setView)
+  const totalUnread = useQuickyStore((s) => s.totalUnread)
 
   return (
     <nav className="shrink-0 safe-area-bottom">
@@ -41,6 +42,12 @@ export function BottomNav() {
                 <Icon className="w-5 h-5" strokeWidth={active ? 2.5 : 2} />
                 {active && (
                   <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[var(--qk-accent)]" />
+                )}
+                {/* Unread messages badge on the Chats tab */}
+                {tab.id === 'matches' && totalUnread > 0 && (
+                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[var(--qk-accent)] flex items-center justify-center text-[9px] font-bold text-white border border-[var(--qk-bg)]">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
                 )}
               </div>
               <span className="text-[10px] font-medium tracking-tight">{tab.label}</span>

@@ -5,7 +5,7 @@ import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from '
 import { useQuickyStore, DiscoveryCandidate } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock, CalendarClock } from 'lucide-react'
+import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getScoreTier } from '@/lib/quicky/constants'
 
@@ -169,54 +169,42 @@ export function DiscoveryFeed() {
           <span className="text-xl font-bold tracking-tight">uicky</span>
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--qk-accent)]" />
         </div>
-        <button
-          onClick={() => setView('profile-me')}
-          className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full pl-2 pr-3 py-1"
-        >
-          <ScoreBadge score={user?.quickyScore ?? 0} />
-          <span className="text-xs font-semibold">{user?.quickyScore ?? 0}</span>
-        </button>
-      </header>
-
-      {/* Premium button — shows subscription expiry once active */}
-      <div className="shrink-0 px-4 pb-2">
-        <button
-          onClick={() => setView('premium')}
-          className="w-full relative overflow-hidden flex items-center gap-2.5 rounded-2xl p-2.5 border border-[var(--qk-gold)]/40 bg-gradient-to-r from-[var(--qk-gold)]/15 via-[var(--qk-accent)]/10 to-[var(--qk-purple)]/15 active:scale-[0.98] transition-transform"
-        >
-          {/* Sheen sweep */}
-          <span className="pointer-events-none absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12 animate-[sheen_2.8s_ease-in-out_infinite]" />
-          <div className="w-9 h-9 rounded-full bg-[var(--qk-gold)]/20 flex items-center justify-center shrink-0">
-            {viewerIsPremium ? (
-              <Crown className="w-5 h-5 text-gradient-gold" fill="currentColor" stroke="none" />
-            ) : (
-              <Crown className="w-5 h-5 text-[var(--qk-gold)]" />
+        <div className="flex items-center gap-2">
+          {/* Premium — sits next to the logo, right-aligned with the score */}
+          <button
+            onClick={() => setView('premium')}
+            className={cn(
+              'flex items-center gap-1 rounded-full border px-2.5 py-1 active:scale-95 transition-all',
+              viewerIsPremium
+                ? 'border-[var(--qk-gold)]/40 bg-[var(--qk-gold)]/10'
+                : 'border-[var(--qk-gold)]/30 bg-gradient-to-r from-[var(--qk-gold)]/10 to-[var(--qk-purple)]/10 relative overflow-hidden'
             )}
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <p className="text-sm font-semibold text-gradient-gold leading-tight">
-              {viewerIsPremium ? 'Premium Active' : 'Upgrade to Premium'}
-            </p>
-            <p className="text-[11px] text-white/60 leading-tight mt-0.5 flex items-center gap-1">
-              {viewerIsPremium ? (
-                <>
-                  <CalendarClock className="w-3 h-3 shrink-0" />
-                  {premiumUntil
-                    ? `Renews ${new Date(premiumUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
-                    : 'Manage subscription'}
-                </>
-              ) : (
-                'Unlimited likes, see who likes you & more'
-              )}
-            </p>
-          </div>
-          {!viewerIsPremium && (
-            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide bg-[var(--qk-gold)] text-black rounded-full px-2.5 py-1">
-              Go Gold
+            aria-label={viewerIsPremium ? 'Premium active' : 'Upgrade to Premium'}
+          >
+            {!viewerIsPremium && (
+              <span className="pointer-events-none absolute inset-y-0 w-10 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-[sheen_2.8s_ease-in-out_infinite]" />
+            )}
+            <Crown
+              className={cn('w-4 h-4 relative', viewerIsPremium ? 'text-gradient-gold' : 'text-[var(--qk-gold)]')}
+              fill={viewerIsPremium ? 'currentColor' : 'none'}
+            />
+            <span className={cn('relative text-[10px] font-bold', viewerIsPremium ? 'text-gradient-gold' : 'text-[var(--qk-gold)]')}>
+              {viewerIsPremium
+                ? premiumUntil
+                  ? new Date(premiumUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+                  : 'Premium'
+                : 'Premium'}
             </span>
-          )}
-        </button>
-      </div>
+          </button>
+          <button
+            onClick={() => setView('profile-me')}
+            className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full pl-2 pr-3 py-1"
+          >
+            <ScoreBadge score={user?.quickyScore ?? 0} />
+            <span className="text-xs font-semibold">{user?.quickyScore ?? 0}</span>
+          </button>
+        </div>
+      </header>
 
       {/* Card stack */}
       <div className="flex-1 relative px-4 pb-2 min-h-0">
@@ -581,8 +569,9 @@ function SwipeCardWrapper({
   const superOpacity = useTransform(y, [-120, -60, 0], [1, 0.6, 0])
 
   const handleDragEnd = (_: any, info: PanInfo) => {
-    const threshold = 80
-    const velocity = 400
+    // Lower thresholds so a light flick registers, not just big drags
+    const threshold = 70
+    const velocity = 350
     if (info.offset.x > threshold || info.velocity.x > velocity) {
       setGone(true)
       x.set(500)
@@ -601,9 +590,12 @@ function SwipeCardWrapper({
   return (
     <motion.div
       drag={!gone}
-      dragConstraints={{ left: -30, right: 30, top: -30, bottom: 30 }}
-      dragElastic={0.12}
+      // Zero constraints + high elasticity = the card follows the finger
+      // freely (classic Tinder-style drag) and springs back on release.
+      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+      dragElastic={0.9}
       dragMomentum={false}
+      dragTransition={{ bounceStiffness: 600, bounceDamping: 40 }}
       onDragEnd={handleDragEnd}
       style={{ x, y, rotate }}
       whileTap={{ cursor: 'grabbing' }}

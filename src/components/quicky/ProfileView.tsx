@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { cn } from '@/lib/utils'
 import useEmblaCarousel from 'embla-carousel-react'
@@ -16,10 +16,16 @@ export function ProfileView() {
   const userId = useQuickyStore((s) => s.activeProfileUserId)
   const currentUser = useQuickyStore((s) => s.user)
   const setView = useQuickyStore((s) => s.setView)
+  const returnView = useQuickyStore((s) => s.profileReturnView)
   const showPaywall = useQuickyStore((s) => s.showPaywall)
+  const showMatchCelebration = useQuickyStore((s) => s.showMatchCelebration)
   const [profile, setProfile] = useState<any | null>(null)
+  const [relationship, setRelationship] = useState<{ hasMatch: boolean; matchId: string | null; theyLikedMe: boolean; superLike: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [liking, setLiking] = useState(false)
+  const [dmText, setDmText] = useState('')
+  const [dmSending, setDmSending] = useState(false)
 
   const viewerIsPremium = currentUser?.isPremium ?? false
   const allPhotos: any[] = profile?.photos ?? []
@@ -53,6 +59,7 @@ export function ProfileView() {
       try {
         const res = await api.profile(userId)
         setProfile(res.profile)
+        setRelationship(res.relationship ?? null)
       } catch (e: any) {
         toast.error(e.message ?? 'Failed to load profile')
       } finally {
@@ -72,12 +79,59 @@ export function ProfileView() {
   if (!profile) return null
 
   const tier = getScoreTier(profile.quickyScore ?? 0)
+  const isMe = profile.id === currentUser?.id
+
+  // Like back — instant match when they already liked you
+  const likeBack = async () => {
+    if (!userId || liking) return
+    setLiking(true)
+    try {
+      const res = await api.swipe(userId, 'like')
+      if (res.match) {
+        showMatchCelebration({
+          matchId: res.match.id,
+          partnerId: userId,
+          partnerName: profile.name,
+          partnerPhoto: profile.photos?.[0]?.url ?? null,
+        })
+        setRelationship((r) => (r ? { ...r, hasMatch: true, matchId: res.match!.id, theyLikedMe: false } : r))
+      } else {
+        toast.success('Like sent')
+      }
+    } catch (e: any) {
+      if (e.status === 402 && e.body?.paywall) showPaywall({ kind: e.body.paywall === 'likes' ? 'likes' : 'generic' })
+      else toast.error(e.message ?? 'Failed to like')
+    } finally {
+      setLiking(false)
+    }
+  }
+
+  // Premium members can message without a mutual like (creates the chat)
+  const sendDm = async () => {
+    if (!userId) return
+    if (!dmText.trim()) return
+    if (!viewerIsPremium) {
+      showPaywall({ kind: 'generic' })
+      return
+    }
+    setDmSending(true)
+    try {
+      const res = await api.dm(userId, dmText.trim())
+      toast.success('Message sent')
+      useQuickyStore.getState().openChat(res.matchId)
+    } catch (e: any) {
+      if (e.status === 402) showPaywall({ kind: 'generic' })
+      else toast.error(e.message ?? 'Failed to send')
+    } finally {
+      setDmSending(false)
+    }
+  }
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-y-auto no-scrollbar">
       {/* Floating back button */}
       <header className="shrink-0 px-3 pt-3 pb-3 flex items-center justify-between absolute top-0 left-0 right-0 z-10">
-        <button onClick={() => setView('chat')} className="p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60" aria-label="Back">
+        <button onClick={() => setView(returnView)} className="p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60" aria-label="Back">
           <ArrowLeft className="w-5 h-5 text-white" />
         </button>
       </header>
@@ -265,6 +319,67 @@ export function ProfileView() {
                 {tier.current.name}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Actions: like back (if they liked you) + message (premium DM without a match) */}
+        {!isMe && (
+          <div className="flex flex-col gap-2 pt-1">
+            <div className="flex gap-2">
+              {relationship?.theyLikedMe && !relationship?.hasMatch && (
+                <button
+                  onClick={likeBack}
+                  disabled={liking}
+                  className="flex-1 bg-coral-gradient glow-coral rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+                >
+                  <Heart className="w-4 h-4" fill="currentColor" />
+                  {liking ? 'Liking...' : relationship.superLike ? 'Like Back — they Super Liked you!' : 'Like Back'}
+                </button>
+              )}
+              {relationship?.hasMatch && relationship?.matchId ? (
+                <button
+                  onClick={() => useQuickyStore.getState().openChat(relationship.matchId!)}
+                  className="flex-1 bg-coral-gradient glow-coral rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                >
+                  <MessageCircle className="w-4 h-4" /> Message
+                </button>
+              ) : (
+                <button
+                  onClick={() => (viewerIsPremium ? undefined : showPaywall({ kind: 'generic' }))}
+                  className={cn(
+                    'flex-1 rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform',
+                    viewerIsPremium
+                      ? 'bg-white/10 border border-white/15'
+                      : 'bg-white/5 border border-[var(--qk-gold)]/30'
+                  )}
+                >
+                  {!viewerIsPremium && <Crown className="w-4 h-4 text-[var(--qk-gold)]" />}
+                  <MessageCircle className="w-4 h-4" />
+                  {viewerIsPremium ? 'Message directly' : 'Message — Premium'}
+                </button>
+              )}
+            </div>
+            {/* Premium DM composer — only for premium users without a match yet */}
+            {!relationship?.hasMatch && viewerIsPremium && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={dmText}
+                  onChange={(e) => setDmText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendDm()}
+                  placeholder={`Say hi to ${profile.name ?? 'them'}...`}
+                  className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50"
+                />
+                <button
+                  onClick={sendDm}
+                  disabled={!dmText.trim() || dmSending}
+                  className="shrink-0 w-10 h-10 rounded-full bg-coral-gradient text-white disabled:opacity-30 active:scale-95 transition-all flex items-center justify-center"
+                  aria-label="Send message"
+                >
+                  <MessageCircle className="w-[18px] h-[18px]" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

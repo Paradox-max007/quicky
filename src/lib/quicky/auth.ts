@@ -11,6 +11,7 @@ export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30 // 30 days
 export type AuthUser = {
   id: string
   phone: string
+  email: string | null
   name: string | null
   age: number | null
   gender: string | null
@@ -35,15 +36,39 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     return null
   }
   const u = session.user
+
+  // Lazy premium expiry: once premiumUntil passes, downgrade and disable
+  // premium-only discovery filters the user had enabled.
+  let isPremium = u.isPremium
+  if (isPremium && u.premiumUntil && u.premiumUntil.getTime() < Date.now()) {
+    isPremium = false
+    await db.user
+      .update({
+        where: { id: u.id },
+        data: {
+          isPremium: false,
+          premiumTier: null,
+          premiumUntil: null,
+          discoveryShowVerifiedOnly: false,
+          discoveryRecentlyActive: false,
+          // Snap free users back into the free age window
+          ...(u.discoveryAgeMin !== null && u.discoveryAgeMin < 35 ? { discoveryAgeMin: 35 } : {}),
+          ...(u.discoveryAgeMax !== null && u.discoveryAgeMax > 45 ? { discoveryAgeMax: 45 } : {}),
+        },
+      })
+      .catch(() => {})
+  }
+
   const age = u.dateOfBirth ? computeAge(u.dateOfBirth) : u.age
   return {
     id: u.id,
     phone: u.phone,
+    email: u.email,
     name: u.name,
     age,
     gender: u.gender,
     lookingFor: u.lookingFor,
-    isPremium: u.isPremium,
+    isPremium,
     isVerified: u.isVerified,
     quickyScore: u.quickyScore,
     onboardedAt: u.onboardedAt,

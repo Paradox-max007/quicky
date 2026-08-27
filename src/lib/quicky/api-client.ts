@@ -55,6 +55,11 @@ export const api = {
       city?: string
       interests?: string[]
       prompts?: { prompt: string; answer: string }[]
+      discoveryAgeMin?: number
+      discoveryAgeMax?: number
+      discoveryDistanceKm?: number
+      discoveryShowVerifiedOnly?: boolean
+      discoveryRecentlyActive?: boolean
     }) =>
       jsonFetch<{ ok: boolean; user: any }>('/api/quicky/auth/me', {
         method: 'PATCH',
@@ -99,14 +104,19 @@ export const api = {
     jsonFetch<{ liked: any[]; count: number }>('/api/quicky/i-liked'),
   chat: {
     messages: (matchId: string) =>
-      jsonFetch<{ match: any; me: { id: string; isPremium: boolean }; messages: any[] }>(
+      jsonFetch<{ match: any; me: { id: string; isPremium: boolean }; messages: any[]; readMessageIds?: string[] }>(
         `/api/quicky/matches/${matchId}/messages`
       ),
-    send: (matchId: string, data: { type: 'text' | 'image' | 'video'; text?: string; mediaUrl?: string }) =>
+    send: (matchId: string, data: { type: 'text' | 'image' | 'video'; text?: string; mediaUrl?: string; replyToId?: string }) =>
       jsonFetch<{ ok: boolean; message: any }>(`/api/quicky/matches/${matchId}/messages`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    react: (matchId: string, messageId: string, emoji: string | null) =>
+      jsonFetch<{ ok: boolean; messageId: string; userId: string; emoji: string | null }>(
+        `/api/quicky/matches/${matchId}/messages/${messageId}/react`,
+        { method: 'POST', body: JSON.stringify({ emoji }) }
+      ),
   },
   quicky: {
     pending: (matchId: string) =>
@@ -116,7 +126,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    open: (matchId: string, messageId: string, action: 'open' | 'replay' | 'screenshot') =>
+    open: (matchId: string, messageId: string, action: 'open' | 'replay' | 'screenshot' | 'consume') =>
       jsonFetch(`/api/quicky/matches/${matchId}/quicky`, {
         method: 'PATCH',
         body: JSON.stringify({ messageId, action }),
@@ -137,8 +147,58 @@ export const api = {
   },
   unmatch: (matchId: string) =>
     jsonFetch(`/api/quicky/matches/${matchId}/unmatch`, { method: 'POST' }),
+  community: {
+    feed: () => jsonFetch<{ posts: any[] }>('/api/quicky/community/posts'),
+    create: (data: { mediaUrl: string; mediaType?: 'image' | 'video'; caption?: string; filter?: string }) =>
+      jsonFetch<{ ok: boolean; postId: string }>('/api/quicky/community/posts', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (postId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/community/posts/${postId}`, { method: 'DELETE' }),
+    like: (postId: string) =>
+      jsonFetch<{ ok: boolean; likedByMe: boolean; likeCount: number }>(
+        `/api/quicky/community/posts/${postId}/like`,
+        { method: 'POST' }
+      ),
+    comments: (postId: string) =>
+      jsonFetch<{ comments: any[] }>(`/api/quicky/community/posts/${postId}/comments`),
+    comment: (postId: string, text: string) =>
+      jsonFetch<{ ok: boolean; comment: any }>(`/api/quicky/community/posts/${postId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      }),
+  },
+  rolls: {
+    list: () =>
+      jsonFetch<{ isPremium: boolean; rolls: any[] }>('/api/quicky/rolls'),
+    create: (data: { mediaUrl: string; mediaType?: 'image' | 'video'; caption?: string; filter?: string }) =>
+      jsonFetch<{ ok: boolean; rollId: string }>('/api/quicky/rolls', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (rollId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/rolls/${rollId}`, { method: 'DELETE' }),
+    like: (rollId: string) =>
+      jsonFetch<{ ok: boolean; likedByMe: boolean; likeCount: number }>(
+        `/api/quicky/rolls/${rollId}/like`,
+        { method: 'POST' }
+      ),
+    comments: (rollId: string) =>
+      jsonFetch<{ comments: any[] }>(`/api/quicky/rolls/${rollId}/comments`),
+    comment: (rollId: string, text: string) =>
+      jsonFetch<{ ok: boolean; comment: any }>(`/api/quicky/rolls/${rollId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      }),
+  },
+  dm: (toUserId: string, text: string) =>
+    jsonFetch<{ ok: boolean; matchId: string; createdMatch: boolean }>(`/api/quicky/dm`, {
+      method: 'POST',
+      body: JSON.stringify({ toUserId, text }),
+    }),
   profile: (userId: string) =>
-    jsonFetch<{ profile: any; isMe: boolean }>(`/api/quicky/profile/${userId}`),
+    jsonFetch<{ profile: any; isMe: boolean; relationship?: { hasMatch: boolean; matchId: string | null; theyLikedMe: boolean; superLike: boolean } }>(`/api/quicky/profile/${userId}`),
   premium: {
     get: () => jsonFetch('/api/quicky/premium'),
     subscribe: (plan: string) =>

@@ -25,9 +25,10 @@ export function DiscoveryPreferencesScreen() {
   const [saving, setSaving] = useState(false)
 
   const isPremium = user?.isPremium ?? false
-  // Free users: age 18-50, distance max 50km
-  // Premium users: age 18-99, distance up to 500km
-  const maxAgeForUser = isPremium ? 99 : 50
+  // Free users: age 35–45, distance max 50km; verified-only & recently-active locked
+  // Premium users: age 18–99, distance up to 500km, all filters unlocked
+  const minAgeForUser = isPremium ? 18 : 35
+  const maxAgeForUser = isPremium ? 99 : 45
   const maxDistanceForUser = isPremium ? 500 : 50
 
   const save = async () => {
@@ -59,18 +60,32 @@ export function DiscoveryPreferencesScreen() {
   }
 
   const trySetAgeMin = (v: number) => {
-    if (!isPremium && v > 50) {
+    if (!isPremium && (v < 35 || v > 45)) {
       showPaywall({ kind: 'advanced_filters' })
       return
     }
-    setAgeMin(Math.min(v, ageMax - 1))
+    setAgeMin(Math.min(Math.max(v, minAgeForUser), ageMax - 1))
   }
   const trySetAgeMax = (v: number) => {
-    if (!isPremium && v > 50) {
+    if (!isPremium && (v < 35 || v > 45)) {
       showPaywall({ kind: 'advanced_filters' })
       return
     }
-    setAgeMax(Math.max(v, ageMin + 1))
+    setAgeMax(Math.max(Math.min(v, maxAgeForUser), ageMin + 1))
+  }
+  const trySetVerifiedOnly = (v: boolean) => {
+    if (v && !isPremium) {
+      showPaywall({ kind: 'advanced_filters' })
+      return
+    }
+    setVerifiedOnly(v)
+  }
+  const trySetRecentlyActive = (v: boolean) => {
+    if (v && !isPremium) {
+      showPaywall({ kind: 'advanced_filters' })
+      return
+    }
+    setRecentlyActive(v)
   }
   const trySetDistance = (v: number) => {
     if (!isPremium && v > 50) {
@@ -88,34 +103,34 @@ export function DiscoveryPreferencesScreen() {
           <div className="flex items-center gap-2 mb-3">
             <Users className="w-4 h-4 text-[var(--qk-accent-light)]" />
             <h3 className="text-sm font-semibold">Age Range</h3>
-            {!isPremium && <span className="ml-auto text-[10px] text-white/40">18–50 (Premium: 18–99)</span>}
+            {!isPremium && <span className="ml-auto text-[10px] text-white/40">35–45 (Premium: 18–99)</span>}
           </div>
           <div className="flex items-center gap-3 mb-2">
             <label className="text-xs text-white/60 w-12">Min</label>
             <input
               type="range"
-              min={18}
+              min={minAgeForUser}
               max={maxAgeForUser}
-              value={ageMin}
+              value={Math.max(ageMin, minAgeForUser)}
               onChange={(e) => trySetAgeMin(Number(e.target.value))}
               className="flex-1 accent-[var(--qk-accent)]"
             />
-            <span className="text-sm font-bold w-8 text-right">{ageMin}</span>
+            <span className="text-sm font-bold w-8 text-right">{Math.max(ageMin, minAgeForUser)}</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-xs text-white/60 w-12">Max</label>
             <input
               type="range"
-              min={18}
+              min={minAgeForUser}
               max={maxAgeForUser}
-              value={ageMax}
+              value={Math.min(ageMax, maxAgeForUser)}
               onChange={(e) => trySetAgeMax(Number(e.target.value))}
               className="flex-1 accent-[var(--qk-accent)]"
             />
-            <span className="text-sm font-bold w-8 text-right">{ageMax}</span>
+            <span className="text-sm font-bold w-8 text-right">{Math.min(ageMax, maxAgeForUser)}</span>
           </div>
           {!isPremium && (
-            <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} />
+            <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} label="Unlock ages 18–99 with Premium" />
           )}
         </div>
 
@@ -138,7 +153,7 @@ export function DiscoveryPreferencesScreen() {
             <span className="text-sm font-bold w-12 text-right">{distance} km</span>
           </div>
           {!isPremium && (
-            <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} />
+            <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} label="Unlock wider ranges with Premium" />
           )}
         </div>
 
@@ -199,22 +214,26 @@ export function DiscoveryPreferencesScreen() {
           </div>
         </div>
 
-        {/* Toggles */}
+        {/* Toggles — verified-only & recently-active are premium filters */}
         <div className="bg-white/5 rounded-2xl border border-white/8 overflow-hidden">
           <ToggleRow
-            icon={<Shield className="w-4 h-4 text-[var(--qk-accent-light)]" />}
+            icon={<Shield className={cn('w-4 h-4', !isPremium && 'text-[var(--qk-gold)]')} />}
             label="Verified profiles only"
             description="Only show profiles with a verified badge"
             value={verifiedOnly}
-            onChange={setVerifiedOnly}
+            onChange={trySetVerifiedOnly}
+            locked={!isPremium}
+            onUnlock={() => showPaywall({ kind: 'advanced_filters' })}
           />
           <div className="border-t border-white/5" />
           <ToggleRow
-            icon={<Clock className="w-4 h-4 text-[var(--qk-accent-light)]" />}
+            icon={<Clock className={cn('w-4 h-4', !isPremium && 'text-[var(--qk-gold)]')} />}
             label="Recently active"
             description="Only show users active in the last 7 days"
             value={recentlyActive}
-            onChange={setRecentlyActive}
+            onChange={trySetRecentlyActive}
+            locked={!isPremium}
+            onUnlock={() => showPaywall({ kind: 'advanced_filters' })}
           />
         </div>
 
@@ -231,33 +250,49 @@ export function DiscoveryPreferencesScreen() {
 }
 
 function ToggleRow({
-  icon, label, description, value, onChange,
+  icon, label, description, value, onChange, locked, onUnlock,
 }: {
   icon: React.ReactNode
   label: string
   description: string
   value: boolean
   onChange: (v: boolean) => void
+  locked?: boolean
+  onUnlock?: () => void
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center shrink-0">{icon}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm font-medium flex items-center gap-1">
+          {label}
+          {locked && (
+            <span className="text-[9px] font-bold bg-[var(--qk-gold)]/20 text-[var(--qk-gold)] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+              <Crown className="w-2 h-2" fill="currentColor" stroke="none" /> PRO
+            </span>
+          )}
+        </p>
         <p className="text-xs text-white/50">{description}</p>
+        {locked && (
+          <button onClick={onUnlock} className="text-[10px] text-[var(--qk-gold)] flex items-center gap-1 mt-0.5 hover:underline">
+            <Lock className="w-2.5 h-2.5" /> Unlock with Premium
+          </button>
+        )}
       </div>
-      <Toggle value={value} onChange={onChange} label={label} />
+      <div className={cn('shrink-0', locked && 'opacity-60')}>
+        <Toggle value={value} onChange={onChange} label={label} />
+      </div>
     </div>
   )
 }
 
-function PremiumHint({ onClick }: { onClick: () => void }) {
+function PremiumHint({ onClick, label }: { onClick: () => void; label?: string }) {
   return (
     <button
       onClick={onClick}
       className="mt-2 w-full text-left text-[10px] text-[var(--qk-gold)] flex items-center gap-1 hover:underline"
     >
-      <Crown className="w-3 h-3" /> Unlock wider ranges with Premium
+      <Crown className="w-3 h-3" /> {label ?? 'Unlock wider ranges with Premium'}
     </button>
   )
 }

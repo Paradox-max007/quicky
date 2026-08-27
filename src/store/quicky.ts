@@ -24,6 +24,7 @@ export type AppView =
   | 'settings-help'
   | 'premium'
   | 'games'
+  | 'community'
   | 'chat'
   | 'profile-view'
 
@@ -63,6 +64,7 @@ export type UserSettings = {
   privacyHideDistance: boolean
   privacyHideOnline: boolean
   privacyHideTyping: boolean
+  privacyHideReadReceipts: boolean
   theme: string
 }
 
@@ -91,10 +93,13 @@ export type MatchPreview = {
     isVerified: boolean
     quickyScore: number
     photo: string | null
+    lastActiveAt?: string | null
+    hideOnline?: boolean
   }
   streak: number
   preview: string
   unread: boolean
+  unreadCount: number
   lastMessageAt: string
 }
 
@@ -108,6 +113,7 @@ export type ChatMessage = {
   quickyOpenedAt?: string | null
   quickyExpiresAt?: string | null
   screenshotFlagged?: boolean
+  readAt?: string | null
   createdAt: string
 }
 
@@ -130,15 +136,21 @@ type State = {
   // active view targets
   activeMatchId: string | null
   activeProfileUserId: string | null
+  // view to return to when the profile view closes
+  profileReturnView: AppView
   pendingMatchPartner: { matchId: string; partnerId: string; partnerName: string | null; partnerPhoto: string | null } | null
   paywall: PaywallContext | null
+
+  // total unread messages across all chats (badge on the nav bar)
+  totalUnread: number
 
   // navigation
   setView: (v: AppView) => void
   setUser: (u: QuickyUser | null) => void
   setHydrated: (h: boolean) => void
   openChat: (matchId: string) => void
-  openProfile: (userId: string) => void
+  openProfile: (userId: string, returnView?: AppView) => void
+  setTotalUnread: (n: number) => void
   showMatchCelebration: (m: { matchId: string; partnerId: string; partnerName: string | null; partnerPhoto: string | null }) => void
   clearMatchCelebration: () => void
   showPaywall: (ctx: PaywallContext) => void
@@ -152,14 +164,18 @@ export const useQuickyStore = create<State>((set) => ({
   hydrated: false,
   activeMatchId: null,
   activeProfileUserId: null,
+  profileReturnView: 'discovery',
   pendingMatchPartner: null,
   paywall: null,
+  totalUnread: 0,
 
   setView: (v) => set({ view: v }),
   setUser: (u) => set({ user: u }),
   setHydrated: (h) => set({ hydrated: h }),
   openChat: (matchId) => set({ activeMatchId: matchId, view: 'chat' }),
-  openProfile: (userId) => set({ activeProfileUserId: userId, view: 'profile-view' }),
+  openProfile: (userId, returnView) =>
+    set({ activeProfileUserId: userId, view: 'profile-view', ...(returnView ? { profileReturnView: returnView } : {}) }),
+  setTotalUnread: (n) => set({ totalUnread: n }),
   showMatchCelebration: (m) => set({ pendingMatchPartner: m }),
   clearMatchCelebration: () => set({ pendingMatchPartner: null }),
   showPaywall: (ctx) => set({ paywall: ctx }),

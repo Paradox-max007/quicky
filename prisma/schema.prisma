@@ -54,6 +54,7 @@ model User {
   matchesA         Match[]  @relation("UserA")
   matchesB         Match[]  @relation("UserB")
   sentMessages     Message[]
+  messageReactions MessageReaction[] @relation("MessageReactions")
   quickySends      QuickyEvent[] @relation("SenderQuicky")
   quickyReceives   QuickyEvent[] @relation("RecipientQuicky")
   gameSessionsA    GameSession[] @relation("UserA_GS")
@@ -65,6 +66,12 @@ model User {
   blockedUsers     Block[]  @relation("Blocked")
   sessions         Session[]
   settings         UserSettings?
+  posts            CommunityPost[]
+  postLikes        PostLike[]      @relation("PostLikes")
+  postComments     PostComment[]   @relation("PostComments")
+  rolls            Roll[]
+  rollLikes        RollLike[]      @relation("RollLikes")
+  rollComments     RollComment[]   @relation("RollComments")
 }
 
 model Photo {
@@ -114,11 +121,39 @@ model Message {
   mediaUrl           String?
   quickyDuration     Int?
   quickyOpenedAt     DateTime?
+  // Set when the Quicky has been viewed — media file is permanently deleted
+  quickyConsumedAt   DateTime?
   quickyExpiresAt    DateTime?
   screenshotFlagged  Boolean   @default(false)
-  createdAt           DateTime  @default(now())
+  // Set when the recipient's device has the message (delivery tick)
+  deliveredAt        DateTime?
+  // Set when the recipient has read the message (read receipts)
+  readAt             DateTime?
+  // Reply / quote threading
+  replyToId          String?
+  replyTo            Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies            Message[] @relation("MessageReplies")
+  createdAt          DateTime  @default(now())
   match              Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
   sender             User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  reactions          MessageReaction[]
+
+  // Indexes for common query patterns
+  @@index([matchId, createdAt])                          // list messages in a match
+  @@index([matchId, senderId, readAt])                   // count unread per match
+  @@index([matchId, type, quickyConsumedAt, quickyExpiresAt]) // sweep expired quickies
+}
+
+// One reaction per user per message — latest wins (WhatsApp-style)
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User    @relation("MessageReactions", fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([messageId, userId])
 }
 
 model QuickyEvent {
@@ -247,9 +282,85 @@ model UserSettings {
   privacyHideDistance   Boolean  @default(false)
   privacyHideOnline     Boolean  @default(false) // premium
   privacyHideTyping     Boolean  @default(false) // premium
+  privacyHideReadReceipts Boolean @default(false) // premium
   // Theme: dark | midnight | coral | lavender | gold
   theme                String   @default("dark")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Community ────────────────────────────────────────────────────────────────
+
+// Instagram-style feed post. 'filter' stores the id of the client-side filter
+// preset (src/lib/quicky/filters.ts) so every viewer sees the same look.
+model CommunityPost {
+  id        String   @id @default(cuid())
+  userId    String
+  caption   String?
+  mediaUrl  String
+  // mediaType: "image" | "video"
+  mediaType String   @default("image")
+  filter    String?
+  createdAt DateTime @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes     PostLike[]
+  comments  PostComment[]
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User          @relation("PostLikes", fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([postId, userId])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User          @relation("PostComments", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Stories, called "Rolls" in Quicky — ephemeral 24h media.
+// Liking/commenting is gated server-side to premium users or mutual matches.
+model Roll {
+  id        String   @id @default(cuid())
+  userId    String
+  caption   String?
+  mediaUrl  String
+  // mediaType: "image" | "video"
+  mediaType String   @default("image")
+  filter    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes     RollLike[]
+  comments  RollComment[]
+}
+
+model RollLike {
+  id        String   @id @default(cuid())
+  rollId    String
+  userId    String
+  createdAt DateTime @default(now())
+  roll      Roll @relation(fields: [rollId], references: [id], onDelete: Cascade)
+  user      User @relation("RollLikes", fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([rollId, userId])
+}
+
+model RollComment {
+  id        String   @id @default(cuid())
+  rollId    String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  roll      Roll @relation(fields: [rollId], references: [id], onDelete: Cascade)
+  user      User @relation("RollComments", fields: [userId], references: [id], onDelete: Cascade)
 }
