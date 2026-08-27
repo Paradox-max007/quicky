@@ -111,6 +111,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
         quickyOpenedAt: m.quickyOpenedAt,
         quickyConsumedAt: m.quickyConsumedAt,
         quickyExpiresAt: m.quickyExpiresAt,
+        mediaDuration: m.mediaDuration,
         screenshotFlagged: m.screenshotFlagged,
         deliveredAt: m.deliveredAt,
         // Mask receipts when the reader of these messages (the partner) hides them
@@ -145,8 +146,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
   if (match.status !== 'active') return NextResponse.json({ error: 'Unmatched' }, { status: 410 })
 
   const body = await req.json()
-  const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'system'
-  if (!['text', 'image', 'video'].includes(type)) {
+  const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'system'
+  if (!['text', 'image', 'video', 'voice'].includes(type)) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
   }
   const text = body.text ? String(body.text).slice(0, 1000) : null
@@ -154,6 +155,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
   if (!text && !mediaUrl) {
     return NextResponse.json({ error: 'Empty message' }, { status: 400 })
   }
+  // Voice message duration in ms (clamped to the 60 s PRD limit)
+  const mediaDuration =
+    type === 'voice'
+      ? Math.max(0, Math.min(60000, Number.isFinite(Number(body.durationMs)) ? Number(body.durationMs) : 0))
+      : null
 
   // Optional reply / quote target
   let replyToId: string | null = null
@@ -170,7 +176,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
   }
 
   const msg = await db.message.create({
-    data: { matchId, senderId: me.id, type, text, mediaUrl, replyToId },
+    data: { matchId, senderId: me.id, type, text, mediaUrl, mediaDuration, replyToId },
   })
   await db.match.update({
     where: { id: matchId },
@@ -184,6 +190,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
       senderId: msg.senderId,
       type: msg.type,
       text: msg.text,
+      mediaDuration: msg.mediaDuration,
       mediaUrl: msg.mediaUrl,
       deliveredAt: null,
       readAt: null,

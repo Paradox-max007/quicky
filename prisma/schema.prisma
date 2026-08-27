@@ -91,6 +91,9 @@ model Swipe {
   toUserId   String
   // type: "like" | "superlike" | "pass"
   type       String
+  // Set when the recipient opened the liker's profile FROM the Likes page —
+  // drives the incoming-likes badge (cleared one-by-one only on that path)
+  viewedAt   DateTime?
   createdAt  DateTime @default(now())
   fromUser   User @relation("FromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser     User @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
@@ -124,6 +127,8 @@ model Message {
   // Set when the Quicky has been viewed — media file is permanently deleted
   quickyConsumedAt   DateTime?
   quickyExpiresAt    DateTime?
+  // Duration of a voice message in milliseconds
+  mediaDuration      Int?
   screenshotFlagged  Boolean   @default(false)
   // Set when the recipient's device has the message (delivery tick)
   deliveredAt        DateTime?
@@ -180,6 +185,8 @@ model GameSession {
   status         String    @default("active")
   currentTurn     Int       @default(0)
   currentPlayerId String?
+  // JSON game state blob (e.g. Ludo board) — authoritative server-side copy
+  state           String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   match          Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)

@@ -106,9 +106,11 @@ export type MatchPreview = {
 export type ChatMessage = {
   id: string
   senderId: string
-  type: 'text' | 'image' | 'video' | 'quicky' | 'system'
+  type: 'text' | 'image' | 'video' | 'voice' | 'quicky' | 'system'
   text: string | null
   mediaUrl: string | null
+  // Voice message duration in ms
+  mediaDuration?: number | null
   quickyDuration?: number | null
   quickyOpenedAt?: string | null
   quickyExpiresAt?: string | null
@@ -141,7 +143,12 @@ type State = {
   pendingMatchPartner: { matchId: string; partnerId: string; partnerName: string | null; partnerPhoto: string | null } | null
   paywall: PaywallContext | null
 
-  // total unread messages across all chats (badge on the nav bar)
+  // Per-chat unread counts — source of truth for the nav Chats badge and the
+  // per-row badges. Patched instantly on read events; reconciled from the
+  // server aggregate whenever the matches list refreshes.
+  unreadByMatch: Record<string, number>
+  // Incoming likes not yet viewed from the Likes page (nav Likes badge)
+  unviewedLikes: number
   totalUnread: number
 
   // navigation
@@ -150,7 +157,10 @@ type State = {
   setHydrated: (h: boolean) => void
   openChat: (matchId: string) => void
   openProfile: (userId: string, returnView?: AppView) => void
+  setUnreadMap: (map: Record<string, number>) => void
+  clearUnreadForMatch: (matchId: string) => void
   setTotalUnread: (n: number) => void
+  setUnviewedLikes: (n: number) => void
   showMatchCelebration: (m: { matchId: string; partnerId: string; partnerName: string | null; partnerPhoto: string | null }) => void
   clearMatchCelebration: () => void
   showPaywall: (ctx: PaywallContext) => void
@@ -167,6 +177,8 @@ export const useQuickyStore = create<State>((set) => ({
   profileReturnView: 'discovery',
   pendingMatchPartner: null,
   paywall: null,
+  unreadByMatch: {},
+  unviewedLikes: 0,
   totalUnread: 0,
 
   setView: (v) => set({ view: v }),
@@ -175,10 +187,24 @@ export const useQuickyStore = create<State>((set) => ({
   openChat: (matchId) => set({ activeMatchId: matchId, view: 'chat' }),
   openProfile: (userId, returnView) =>
     set({ activeProfileUserId: userId, view: 'profile-view', ...(returnView ? { profileReturnView: returnView } : {}) }),
+  setUnreadMap: (map) => {
+    const total = Object.values(map).reduce((s, n) => s + n, 0)
+    set({ unreadByMatch: map, totalUnread: total })
+  },
+  clearUnreadForMatch: (matchId) =>
+    set((prev) => {
+      const had = prev.unreadByMatch[matchId] ?? 0
+      if (!had && !prev.totalUnread) return prev
+      const map = { ...prev.unreadByMatch, [matchId]: 0 }
+      return { unreadByMatch: map, totalUnread: Math.max(0, prev.totalUnread - had) }
+    }),
+  // Legacy setter kept for callers that only know the aggregate; recomputes
+  // the per-match map proportionally is unnecessary — it just sets the total.
   setTotalUnread: (n) => set({ totalUnread: n }),
+  setUnviewedLikes: (n) => set({ unviewedLikes: n }),
   showMatchCelebration: (m) => set({ pendingMatchPartner: m }),
   clearMatchCelebration: () => set({ pendingMatchPartner: null }),
   showPaywall: (ctx) => set({ paywall: ctx }),
   clearPaywall: () => set({ paywall: null }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0 }),
 }))

@@ -165,3 +165,28 @@ export function getScoreTier(score: number) {
   const progressToNext = next ? Math.min(1, (score - current.min) / (next.min - current.min)) : 1
   return { current, next, progressToNext }
 }
+
+// Never Have I Ever statements (PRD §8) — drawn deterministically per
+// (sessionId, round) so both clients always show the same prompt.
+export const NHIE_STATEMENTS: string[] = [
+  'Never have I ever stalked a crush\u2019s social media at 3am',
+  'Never have I ever ghosted someone after a great first date',
+  'Never have I ever fallen asleep on a video call',
+  'Never have I ever sent a text to the wrong person',
+  'Never have I ever pretended to know a song I\u2019d never heard',
+  'Never have I ever lied about my hobbies on a dating profile',
+  'Never have I ever cried during a romantic movie',
+  'Never have I ever rehearsed what to say before a call',
+  'Never have I ever dated two people at once without them knowing',
+  'Never have I ever skinny dipped',
+  'Never have I ever said \u201cI love you\u201d just to end an argument',
+  'Never have I ever cheated in a game to impress someone',
+  'Never have I ever taken over 50 selfies for one post',
+  'Never have I ever swiped right just out of boredom',
+  'Never have I ever googled \u201chow to tell if someone likes me\u201d',
+  'Never have I ever worn matching underwear for a date I planned',
+  'Never have I ever drunk-texted an ex',
+  'Never have I ever faked being busy to avoid a date',
+  'Never have I ever laughed so hard I snorted in public',
+  'Never have I ever kept a secret for more than five years',
+]

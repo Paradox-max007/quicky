@@ -99,7 +99,11 @@ export const api = {
     }>('/api/quicky/swipe', { method: 'POST', body: JSON.stringify({ swipes }) }),
   matches: () => jsonFetch<{ matches: any[] }>('/api/quicky/matches'),
   likesYou: () =>
-    jsonFetch<{ likes: any[]; isPremium: boolean; lockedCount: number }>('/api/quicky/likes-you'),
+    jsonFetch<{ likes: any[]; isPremium: boolean; lockedCount: number; unviewedCount?: number }>('/api/quicky/likes-you'),
+  // PRD §3.1: viewing a liker's profile from the Likes page is the ONLY path
+  // that clears that like's badge entry
+  markLikeViewed: (swipeId: string) =>
+    jsonFetch<{ ok: boolean }>('/api/quicky/likes-you', { method: 'PATCH', body: JSON.stringify({ swipeId }) }),
   iLiked: () =>
     jsonFetch<{ liked: any[]; count: number }>('/api/quicky/i-liked'),
   chat: {
@@ -107,7 +111,7 @@ export const api = {
       jsonFetch<{ match: any; me: { id: string; isPremium: boolean }; messages: any[]; readMessageIds?: string[] }>(
         `/api/quicky/matches/${matchId}/messages`
       ),
-    send: (matchId: string, data: { type: 'text' | 'image' | 'video'; text?: string; mediaUrl?: string; replyToId?: string }) =>
+    send: (matchId: string, data: { type: 'text' | 'image' | 'video' | 'voice'; text?: string; mediaUrl?: string; durationMs?: number; replyToId?: string }) =>
       jsonFetch<{ ok: boolean; message: any }>(`/api/quicky/matches/${matchId}/messages`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -139,7 +143,12 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ gameType }),
       }),
-    action: (matchId: string, sessionId: string, action: 'truth' | 'dare' | 'skip' | 'answer', payload?: any) =>
+    action: (
+      matchId: string,
+      sessionId: string,
+      action: 'truth' | 'dare' | 'skip' | 'answer' | 'choice' | 'next_round',
+      payload?: any
+    ) =>
       jsonFetch(`/api/quicky/matches/${matchId}/game`, {
         method: 'PATCH',
         body: JSON.stringify({ sessionId, action, ...payload }),

@@ -28,6 +28,7 @@ type LikeYouPerson = {
   age: number | null
   photo: string | null
   superLike: boolean
+  viewedAt: string | null
   createdAt: string
 }
 
@@ -51,6 +52,8 @@ export function LikesYouView() {
       setIsPremium(lyRes.isPremium)
       setLockedCount(lyRes.lockedCount)
       setILiked(ilRes.liked)
+      // Prime the nav Likes badge with the unviewed count (PRD §3)
+      useQuickyStore.getState().setUnviewedLikes(lyRes.unviewedCount ?? 0)
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to load')
     } finally {
@@ -121,7 +124,13 @@ export function LikesYouView() {
             isPremium={isPremium}
             lockedCount={lockedCount}
             onUnlock={() => showPaywall({ kind: 'see_likes' })}
-            onViewProfile={(userId) => openProfile(userId, 'likes-you')}
+            onViewProfile={(userId, swipeId) => {
+              // Remember which like this profile open clears (PRD §3.1)
+              if (swipeId) {
+                try { sessionStorage.setItem(`qk_like_view_${userId}`, swipeId) } catch {}
+              }
+              openProfile(userId, 'likes-you')
+            }}
           />
         ) : (
           <ILikedSection
@@ -147,7 +156,7 @@ function LikesYouSection({
   isPremium: boolean
   lockedCount: number
   onUnlock: () => void
-  onViewProfile: (userId: string) => void
+  onViewProfile: (userId: string, swipeId?: string) => void
 }) {
   if (likesYou.length === 0) {
     return (
@@ -228,7 +237,7 @@ function LikesYouSection({
       {likesYou.map((l) => (
         <li key={l.id}>
           <button
-            onClick={() => onViewProfile(l.fromUserId)}
+            onClick={() => onViewProfile(l.fromUserId, l.id)}
             className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden bg-white/5 border border-white/8 active:scale-[0.97] transition-transform"
           >
             {l.photo ? (

@@ -18,6 +18,7 @@ export function BottomNav() {
   const view = useQuickyStore((s) => s.view)
   const setView = useQuickyStore((s) => s.setView)
   const totalUnread = useQuickyStore((s) => s.totalUnread)
+  const unviewedLikes = useQuickyStore((s) => s.unviewedLikes)
 
   return (
     <nav className="shrink-0 safe-area-bottom">
@@ -47,6 +48,12 @@ export function BottomNav() {
                 {tab.id === 'matches' && totalUnread > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[var(--qk-accent)] flex items-center justify-center text-[9px] font-bold text-white border border-[var(--qk-bg)]">
                     {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
+                {/* Unviewed incoming-likes badge on the Likes tab (PRD §3) */}
+                {tab.id === 'likes-you' && unviewedLikes > 0 && (
+                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[var(--qk-purple)] flex items-center justify-center text-[9px] font-bold text-white border border-[var(--qk-bg)]">
+                    {unviewedLikes > 99 ? '99+' : unviewedLikes}
                   </span>
                 )}
               </div>

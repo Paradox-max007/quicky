@@ -8,23 +8,47 @@ import { MessageCircle, Flame, Crown, BadgeCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 
+// Device cache (PRD §4.1): render the last-known matches list instantly, then
+// revalidate in the background. Kept small; keyed per device via localStorage.
+const MATCHES_CACHE_KEY = 'qk_matches_cache_v1'
+
+function loadCachedMatches(): MatchPreview[] {
+  try {
+    const raw = localStorage.getItem(MATCHES_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 export function ChatList() {
   const openChat = useQuickyStore((s) => s.openChat)
-  const setTotalUnread = useQuickyStore((s) => s.setTotalUnread)
-  const [matches, setMatches] = useState<MatchPreview[]>([])
-  const [loading, setLoading] = useState(true)
+  const setUnreadMap = useQuickyStore((s) => s.setUnreadMap)
+  const clearUnreadForMatch = useQuickyStore((s) => s.clearUnreadForMatch)
+  const unreadByMatch = useQuickyStore((s) => s.unreadByMatch)
+  const [matches, setMatches] = useState<MatchPreview[]>(() => loadCachedMatches())
+  const [loading, setLoading] = useState(() => loadCachedMatches().length === 0)
+
+  // Warm cache: paint before the first network byte. Reconcile badges with the
+  // live store so counts changed elsewhere (e.g. chat opened) aren't undone.
+  useEffect(() => {
+    try {
+      localStorage.setItem(MATCHES_CACHE_KEY, JSON.stringify(matches.slice(0, 50)))
+    } catch {}
+  }, [matches])
 
   const refresh = async (silent = false) => {
-    if (!silent) setLoading(true)
+    if (!silent || matches.length === 0) setLoading(true)
     try {
       const res = await api.matches()
       setMatches(res.matches)
-      // Total unread feeds the badge on the nav bar
-      setTotalUnread(res.matches.reduce((sum: number, m: any) => sum + (m.unreadCount ?? 0), 0))
+      setUnreadMap(Object.fromEntries(res.matches.map((m: any) => [m.id, m.unreadCount ?? 0])))
     } catch (e: any) {
       if (!silent) toast.error(e.message ?? 'Failed to load matches')
     } finally {
-      if (!silent) setLoading(false)
+      setLoading(false)
     }
   }
 
@@ -32,8 +56,28 @@ export function ChatList() {
     refresh()
     // Keep unread counts fresh while the list is open
     const interval = setInterval(() => refresh(true), 8000)
-    return () => clearInterval(interval)
+    // Catch up immediately when returning to the app/tab
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Opening a chat marks it read — drop its badge instantly (PRD §2.2)
+  const openWithClear = (m: MatchPreview) => {
+    clearUnreadForMatch(m.id)
+    setMatches((prev) => prev.map((r) => (r.id === m.id ? { ...r, unreadCount: 0, unread: false } : r)))
+    openChat(m.id)
+  }
+
+  // Badge shown for a row prefers the live store value (patched by ChatView /
+  // read receipts in real time) over the last server snapshot.
+  const badgeFor = (m: MatchPreview) => unreadByMatch[m.id] ?? m.unreadCount ?? 0
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
@@ -55,15 +99,18 @@ export function ChatList() {
           </div>
         ) : (
           <ul className="flex flex-col">
-            {matches.map((m) => (
-              <li key={m.id}>
-                <button
-                  onClick={() => openChat(m.id)}
-                  className={cn(
-                    'w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors',
-                    m.unread && 'bg-white/[0.03]'
-                  )}
-                >
+            {matches.map((m) => {
+              const badge = badgeFor(m)
+              return (
+                <li key={m.id}>
+                  <motion.button
+                    layout
+                    onClick={() => openWithClear(m)}
+                    className={cn(
+                      'w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors',
+                      badge > 0 && 'bg-white/[0.03]'
+                    )}
+                  >
                     <div className="relative shrink-0">
                       {m.partner.photo ? (
                         <img src={m.partner.photo} alt={m.partner.name ?? ''} className="w-14 h-14 rounded-full object-cover" />
@@ -81,35 +128,34 @@ export function ChatList() {
                         <span className="absolute bottom-0 left-0 w-3.5 h-3.5 rounded-full bg-[#30D158] border-2 border-[var(--qk-bg)]" />
                       )}
                     </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold truncate">{m.partner.name}, {m.partner.age}</span>
-                      {m.partner.isVerified && (
-                        <BadgeCheck className="w-4 h-4 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />
-                      )}
-                      {m.streak > 0 && (
-                        <span className="text-xs flex items-center gap-0.5 ml-auto shrink-0">
-                          <Flame className="w-3.5 h-3.5 text-[#FF9120] animate-flame" fill="currentColor" stroke="none" />
-                          <span className="text-[#FF9120] font-semibold">{m.streak}</span>
-                        </span>
-                      )}
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold truncate">{m.partner.name}, {m.partner.age}</span>
+                        {m.partner.isVerified && (
+                          <BadgeCheck className="w-4 h-4 text-[var(--qk-accent)]" fill="currentColor" stroke="white" />
+                        )}
+                        {m.streak > 0 && (
+                          <span className="text-xs flex items-center gap-0.5 ml-auto shrink-0">
+                            <Flame className="w-3.5 h-3.5 text-[#FF9120] animate-flame" fill="currentColor" stroke="none" />
+                            <span className="text-[#FF9120] font-semibold">{m.streak}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <p className={cn('text-sm truncate flex-1', badge > 0 ? 'text-white' : 'text-white/50')}>
+                          {m.preview}
+                        </p>
+                        {badge > 0 ? (
+                          <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--qk-accent)] glow-coral flex items-center justify-center text-[10px] font-bold text-white">
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <p className={cn('text-sm truncate flex-1', m.unread ? 'text-white' : 'text-white/50')}>
-                        {m.preview}
-                      </p>
-                      {m.unreadCount > 0 ? (
-                        <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--qk-accent)] glow-coral flex items-center justify-center text-[10px] font-bold text-white">
-                          {m.unreadCount > 99 ? '99+' : m.unreadCount}
-                        </span>
-                      ) : m.unread ? (
-                        <span className="w-2 h-2 rounded-full bg-[var(--qk-accent)] glow-coral shrink-0" />
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
+                  </motion.button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

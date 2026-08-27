@@ -8,13 +8,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Camera, Send, MoreVertical, BadgeCheck, Crown,
   ImagePlus, X, RotateCcw, Check, CheckCheck, Clock, AlertCircle,
-  Reply, Copy, ChevronDown,
+  Reply, Copy, ChevronDown, Mic, Play, Pause, Trash2, Square, Sparkles, Wine,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUICKY } from '@/lib/quicky/constants'
 import { joinMatchChannel, trackOnline, watchOnline, realtimeConfigured, MatchChannel } from '@/lib/quicky/realtime'
 import { QuickyViewer } from './QuickyViewer'
 import { TruthOrDareGame } from './TruthOrDareGame'
+import { NeverHaveIEver } from './NeverHaveIEver'
 import { ProfileSheet } from './ProfileSheet'
 
 // Messages arrive from several sources (server list, optimistic sends,
@@ -28,6 +29,30 @@ function dedupeById(list: Msg[]): Msg[] {
   })
 }
 
+// An optimistic bubble must never survive next to its confirmed twin. A
+// realtime echo (own broadcast or Postgres Changes INSERT) can arrive BEFORE
+// the send request resolves — replacing only on identical ids would leave the
+// "Sending" bubble visible alongside the real one for that gap. So a
+// confirmed copy of my own text takes the place of its oldest pending twin;
+// later identical pendings stay untouched.
+function asConfirmed(message: any): Msg {
+  return { ...message, deliveredAt: null, readAt: null, reactions: message.reactions ?? [] }
+}
+
+const isTwinOf = (confirmed: any) => (m: Msg) =>
+  !!m.clientTmp && m.senderId === confirmed.senderId && m.type === 'text' && !!m.text && m.text === confirmed.text
+
+function mergeOwnMessage(prev: Msg[], message: any): Msg[] {
+  if (prev.some((m) => m.id === message.id)) {
+    return prev.map((m) => (m.id === message.id ? asConfirmed(message) : m))
+  }
+  const twinIdx = prev.findIndex(isTwinOf(message))
+  if (twinIdx === -1) return [...prev, asConfirmed(message)]
+  const next = [...prev]
+  next[twinIdx] = asConfirmed(message)
+  return next
+}
+
 export type Reaction = { emoji: string; userId: string }
 export type ReplyRef = { id: string; senderId: string; type: string; snippet: string; duration: number | null } | null
 
@@ -39,6 +64,7 @@ export type Msg = ChatMessage & {
   replyTo?: ReplyRef
   reactions?: Reaction[]
   pendingText?: string
+  mediaDuration?: number | null
 }
 
 const REACTION_SET = ['❤️', '😂', '😮', '😢', '🔥', '👍']
@@ -87,10 +113,27 @@ function useLongPress(onLong: () => void, ms = 450) {
   }
 }
 
+// Warm device cache per conversation (PRD §4.1): the last fetched messages +
+// partner header are stored so reopening a chat paints instantly, then SWR-
+// style revalidation patches anything new.
+const chatCacheKey = (matchId: string) => `qk_chat_cache_${matchId}`
+function loadChatCache(matchId: string): { partner: any; messages: Msg[] } | null {
+  try {
+    const raw = localStorage.getItem(chatCacheKey(matchId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.partner || !Array.isArray(parsed.messages)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export function ChatView() {
   const matchId = useQuickyStore((s) => s.activeMatchId)
   const setView = useQuickyStore((s) => s.setView)
   const meUser = useQuickyStore((s) => s.user)
+  const clearUnreadForMatch = useQuickyStore((s) => s.clearUnreadForMatch)
   const [match, setMatch] = useState<{ id: string; partner: any; me: { id: string; isPremium: boolean } } | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])
   const [text, setText] = useState('')
@@ -99,12 +142,21 @@ export function ChatView() {
   const [showProfile, setShowProfile] = useState(false)
   const [pendingQuickies, setPendingQuickies] = useState<any[]>([])
   const [toDOpen, setToDOpen] = useState(false)
+  const [nhieOpen, setNhieOpen] = useState(false)
   const [durationPickerOpen, setDurationPickerOpen] = useState(false)
   const [pickedDuration, setPickedDuration] = useState<number | null>(null)
   const quickyFileRef = useRef<HTMLInputElement>(null)
   const galleryFileRef = useRef<HTMLInputElement>(null)
   const [pendingQuicky, setPendingQuicky] = useState<{ file: File; previewUrl: string } | null>(null)
   const [sendingQuicky, setSendingQuicky] = useState(false)
+
+  // Voice messages (PRD §5): tap mic to record, tap stop, then preview + send
+  // or discard. Max 60 s.
+  const VOICE_MAX_MS = 60000
+  const [recording, setRecording] = useState<{ recorder: MediaRecorder; stream: MediaStream; startedAt: number } | null>(null)
+  const [recElapsedMs, setRecElapsedMs] = useState(0)
+  const [voicePreview, setVoicePreview] = useState<{ url: string; blob: Blob; durationMs: number } | null>(null)
+  const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
@@ -124,6 +176,7 @@ export function ChatView() {
   const [partnerTyping, setPartnerTyping] = useState(false)
   const [partnerOnline, setPartnerOnline] = useState(false)
   const nearBottomRef = useRef(true)
+  const receiptSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const myHideTyping = !!meUser?.settings?.privacyHideTyping
   const myHideReceipts = !!meUser?.settings?.privacyHideReadReceipts
@@ -149,11 +202,32 @@ export function ChatView() {
       setMatch({ id: chatRes.match.id, partner: chatRes.match.partner, me: chatRes.me })
       // Keep unsent optimistic messages (sending / failed) across refreshes
       setMessages((prev) => {
-        const pending = prev.filter((m) => m.clientTmp)
+        // Keep unsent optimistic messages across refreshes, but drop any whose
+        // confirmed copy already arrived via realtime (avoids Sending+Sent twins)
+        const pending = prev.filter(
+          (m) => m.clientTmp && chatRes.messages.some((s) => s.senderId === m.senderId && m.type === 'text' && !!m.text && s.text === m.text) === false
+        )
         return dedupeById([...dedupeById(chatRes.messages), ...pending])
       })
       setPendingQuickies(qRes.quickies)
-      if (!myHideReceipts && (chatRes.readMessageIds?.length ?? 0) > 0) {
+      // Chat is open → the server just marked everything read; drop this
+      // chat's badge instantly so nav total + list stay correct without polls
+      clearUnreadForMatch(matchId)
+      // Warm-cache this conversation for instant reopen (PRD §4.1)
+      try {
+        localStorage.setItem(
+          chatCacheKey(matchId),
+          JSON.stringify({ partner: chatRes.match.partner, messages: chatRes.messages.slice(-100) })
+        )
+      } catch {}
+      // Push delivery + read receipts back to the partner over realtime so
+      // their ✓ / ✓✓ ticks update without waiting for their next refresh.
+      const myReceipts = !myHideReceipts
+      const deliveredIds = chatRes.messages
+        .filter((m) => m.senderId !== chatRes.me.id && !m.deliveredAt)
+        .map((m) => m.id)
+      if (deliveredIds.length > 0) channelRef.current?.sendDelivered(deliveredIds)
+      if (myReceipts && (chatRes.readMessageIds?.length ?? 0) > 0) {
         channelRef.current?.sendRead(chatRes.readMessageIds!)
       }
     } catch (e: any) {
@@ -161,10 +235,20 @@ export function ChatView() {
     } finally {
       setLoading(false)
     }
-     
-  }, [matchId])
+  }, [matchId, clearUnreadForMatch])
 
   useEffect(() => {
+    if (!matchId) return
+    // Paint from warm cache first (skeleton-free instant open), network
+    // response then reconciles via the dedupe-merge in refresh()
+    const cached = loadChatCache(matchId)
+    if (cached) {
+      setMatch({ id: matchId, partner: cached.partner, me: { id: meUser?.id ?? '', isPremium: !!meUser?.isPremium } })
+      setMessages(dedupeById(cached.messages))
+      setLoading(false)
+    }
+    // Opening the chat marks it read — drop the badge before first paint
+    clearUnreadForMatch(matchId)
     refresh()
 
     // When Supabase Realtime is active it pushes new messages instantly via
@@ -187,7 +271,7 @@ export function ChatView() {
       if (interval) clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refresh])
+  }, [refresh, matchId, meUser?.id, meUser?.isPremium, clearUnreadForMatch])
 
   const updateMsg = useCallback((id: string, fn: (m: Msg) => Msg) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? fn(m) : m)))
@@ -209,10 +293,23 @@ export function ChatView() {
     if (!matchId) return
     const ch = joinMatchChannel(matchId, {
       onMessage: (message) => {
-        if (!message?.id) return
-        setMessages((prev) =>
-          prev.some((m) => m.id === message.id) ? prev : [...prev, { ...message, reactions: message.reactions ?? [] }]
-        )
+        if (!message?.id || !message?.type) return
+        if (message.type === 'quicky') {
+          // Postgres Changes delivers raw rows without consumed/expired masking
+          // (and Quickies may already exist from a broadcast) — refresh instead
+          // of appending so the viewer-state logic stays authoritative.
+          if (receiptSyncTimer.current) clearTimeout(receiptSyncTimer.current)
+          receiptSyncTimer.current = setTimeout(refresh, 400)
+          return
+        }
+        setMessages((prev) => mergeOwnMessage(prev, message))
+        // Our device just received the partner's message — sync receipts so
+        // their ticks update live (debounced; covers messages missed by the
+        // sender's broadcast).
+        if (message.senderId !== meUser?.id) {
+          if (receiptSyncTimer.current) clearTimeout(receiptSyncTimer.current)
+          receiptSyncTimer.current = setTimeout(refresh, 400)
+        }
       },
       onTyping: (isTyping) => {
         if (typingExpireTimer.current) clearTimeout(typingExpireTimer.current)
@@ -229,6 +326,13 @@ export function ChatView() {
           prev.map((m) => (messageIds.includes(m.id) ? { ...m, readAt: m.readAt ?? new Date().toISOString() } : m))
         )
       },
+      onDelivered: (messageIds) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            messageIds.includes(m.id) ? { ...m, deliveredAt: m.deliveredAt ?? new Date().toISOString() } : m
+          )
+        )
+      },
       onReaction: (payload) => {
         if (!payload?.messageId) return
         if (payload.userId === meUser?.id) return // optimistic update already applied
@@ -239,8 +343,9 @@ export function ChatView() {
     return () => {
       ch?.unsubscribe()
       channelRef.current = null
+      if (receiptSyncTimer.current) clearTimeout(receiptSyncTimer.current)
     }
-  }, [matchId, meUser?.id, applyReaction])
+  }, [matchId, meUser?.id, applyReaction, refresh])
 
   // Announce my own online presence
   useEffect(() => {
@@ -269,6 +374,15 @@ export function ChatView() {
     setHighlightId(id)
     setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 1500)
   }
+
+  // Cleanup any live recording/preview timers on unmount
+  const recordingRef = useRef<typeof recording>(null)
+  recordingRef.current = recording
+  useEffect(() => () => {
+    stopVoiceTimer()
+    try { recordingRef.current?.recorder.stop() } catch {}
+    recordingRef.current?.stream.getTracks().forEach((t) => t.stop())
+  }, [])
 
   if (!matchId) {
     setView('matches')
@@ -346,6 +460,92 @@ export function ChatView() {
     } else if (!v.trim()) {
       if (typingStopTimer.current) clearTimeout(typingStopTimer.current)
       channelRef.current.sendTyping(false)
+    }
+  }
+
+  // ── Voice messages (PRD §5) ─────────────────────────────────────────────
+  const stopVoiceTimer = () => {
+    if (voiceTimerRef.current) clearInterval(voiceTimerRef.current)
+    voiceTimerRef.current = null
+  }
+
+  const startVoiceRecording = async () => {
+    if (recording || !matchId) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m))
+      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      const chunks: BlobPart[] = []
+      const startedAt = Date.now()
+      recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data)
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const durationMs = Math.min(VOICE_MAX_MS, Date.now() - startedAt)
+        // Too short — discard rather than sending a useless 0.2 s clip
+        if (durationMs < 400) {
+          setVoicePreview(null)
+          return
+        }
+        setVoicePreview({ url: URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType })), blob: new Blob(chunks, { type: recorder.mimeType }), durationMs })
+      }
+      recorder.start()
+      setRecording({ recorder, stream, startedAt })
+      setRecElapsedMs(0)
+      stopVoiceTimer()
+      voiceTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - startedAt
+        setRecElapsedMs(elapsed)
+        if (elapsed >= VOICE_MAX_MS) {
+          stopVoiceTimer()
+          try { recorder.stop() } catch {}
+          setRecording(null)
+        }
+      }, 200)
+      haptic()
+    } catch {
+      toast.error('Microphone permission denied')
+    }
+  }
+
+  const stopVoiceRecording = () => {
+    stopVoiceTimer()
+    setRecording(null)
+    try { recording?.recorder.stop() } catch {}
+  }
+
+  const cancelVoicePreview = () => {
+    if (voicePreview) URL.revokeObjectURL(voicePreview.url)
+    setVoicePreview(null)
+  }
+
+  const sendVoice = async () => {
+    if (!voicePreview || !matchId) return
+    const { url, blob, durationMs } = voicePreview
+    setVoicePreview(null)
+    const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tmpId, clientTmp: true, status: 'sending', senderId: meUser?.id ?? '',
+        type: 'voice', text: null, mediaUrl: url, mediaDuration: durationMs,
+        quickyDuration: null, quickyOpenedAt: null, quickyExpiresAt: null, quickyConsumedAt: null,
+        screenshotFlagged: false, readAt: null, deliveredAt: null, replyTo: null, reactions: [],
+        createdAt: new Date().toISOString(),
+      },
+    ])
+    nearBottomRef.current = true
+    haptic()
+    try {
+      const ext = blob.type.includes('mp4') ? 'm4a' : 'webm'
+      const up = await api.upload(new File([blob], `voice.${ext}`, { type: blob.type }), 'voice')
+      const res = await api.chat.send(matchId, { type: 'voice', mediaUrl: up.url, durationMs })
+      if (!res.ok) throw new Error('send failed')
+      setMessages((prev) => dedupeById(prev.map((m) => (m.id === tmpId ? { ...res.message, status: undefined, clientTmp: false } : m))))
+      channelRef.current?.sendMessage(res.message)
+      URL.revokeObjectURL(url)
+    } catch {
+      updateMsg(tmpId, (m) => ({ ...m, status: 'failed' }))
+      toast.error('Failed to send voice message')
     }
   }
 
@@ -655,6 +855,14 @@ export function ChatView() {
         >
           <Camera className="w-[18px] h-[18px]" />
         </button>
+        <button
+          onClick={startVoiceRecording}
+          disabled={!!recording || !!voicePreview || !!text.trim()}
+          className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 active:scale-95 transition-all flex items-center justify-center disabled:opacity-30"
+          aria-label="Record voice message"
+        >
+          <Mic className="w-[18px] h-[18px]" />
+        </button>
         <textarea
           ref={textAreaRef}
           rows={1}
@@ -670,16 +878,79 @@ export function ChatView() {
           autoComplete="off"
           className="flex-1 min-w-0 resize-none bg-white/5 border border-white/10 rounded-3xl px-4 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50 max-h-[120px] leading-snug"
         />
-        <button
-          onClick={() => sendText()}
-          disabled={!text.trim()}
-          className="shrink-0 w-10 h-10 rounded-full bg-coral-gradient text-white disabled:opacity-30 active:scale-95 transition-all flex items-center justify-center"
-          aria-label="Send"
-        >
-          <Send className="w-[18px] h-[18px]" />
-        </button>
+        {recording ? (
+          <button
+            onClick={stopVoiceRecording}
+            className="shrink-0 w-10 h-10 rounded-full bg-[#FF3B30] text-white animate-quicky-pulse active:scale-95 transition-all flex items-center justify-center"
+            aria-label="Stop recording"
+          >
+            <Square className="w-[18px] h-[18px]" fill="currentColor" stroke="none" />
+          </button>
+        ) : (
+          <button
+            onClick={() => sendText()}
+            disabled={!text.trim()}
+            className="shrink-0 w-10 h-10 rounded-full bg-coral-gradient text-white disabled:opacity-30 active:scale-95 transition-all flex items-center justify-center"
+            aria-label="Send"
+          >
+            <Send className="w-[18px] h-[18px]" />
+          </button>
+        )}
       </div>
       <div className="shrink-0 h-2 safe-area-bottom" />
+
+      {/* Voice recording bar */}
+      <AnimatePresence>
+        {recording && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 20, opacity: 0 }}
+            className="absolute left-0 right-0 bottom-16 mx-3 px-4 py-3 rounded-2xl bg-[var(--qk-card)] border border-[#FF3B30]/40 flex items-center gap-3 z-30"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-[#FF3B30] animate-quicky-pulse shrink-0" />
+            <span className="text-sm font-mono font-semibold text-white/90 tabular-nums">
+              {Math.floor(recElapsedMs / 60000)}:{String(Math.floor((recElapsedMs % 60000) / 1000)).padStart(2, '0')}
+            </span>
+            <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full bg-[#FF3B30] transition-all" style={{ width: `${Math.min(100, (recElapsedMs / VOICE_MAX_MS) * 100)}%` }} />
+            </div>
+            <span className="text-[10px] text-white/40 shrink-0">max {VOICE_MAX_MS / 1000}s</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Voice preview + send/discard */}
+      <AnimatePresence>
+        {voicePreview && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 20, opacity: 0 }}
+            className="absolute left-0 right-0 bottom-16 mx-3 px-4 py-3 rounded-2xl bg-[var(--qk-card)] border border-white/10 flex items-center gap-3 z-30"
+          >
+            <VoiceBubblePlayback url={voicePreview.url} durationMs={voicePreview.durationMs} compact />
+            <span className="text-xs text-white/50 shrink-0">
+              {Math.round(voicePreview.durationMs / 1000)}s
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={cancelVoicePreview}
+              className="p-2 rounded-full hover:bg-white/10 text-white/60"
+              aria-label="Discard voice message"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={sendVoice}
+              className="w-9 h-9 rounded-full bg-coral-gradient text-white flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+              aria-label="Send voice message"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Hidden file sources */}
       <input
@@ -878,6 +1149,24 @@ export function ChatView() {
                   color="white"
                 />
                 <SheetAction
+                  icon={<Sparkles className="w-5 h-5" />}
+                  label="Truth or Dare"
+                  color="lavender"
+                  onClick={() => {
+                    setShowActions(false)
+                    setToDOpen(true)
+                  }}
+                />
+                <SheetAction
+                  icon={<Wine className="w-5 h-5" />}
+                  label="Never Have I Ever"
+                  color="lavender"
+                  onClick={() => {
+                    setShowActions(false)
+                    setNhieOpen(true)
+                  }}
+                />
+                <SheetAction
                   icon={<X className="w-5 h-5" />}
                   label="Unmatch"
                   color="red"
@@ -901,6 +1190,11 @@ export function ChatView() {
       {/* ToD game overlay */}
       {toDOpen && matchId && (
         <TruthOrDareGame matchId={matchId} meId={me?.id ?? ''} partnerName={partner.name} onClose={() => setToDOpen(false)} />
+      )}
+
+      {/* Never Have I Ever game overlay */}
+      {nhieOpen && matchId && (
+        <NeverHaveIEver matchId={matchId} meId={me?.id ?? ''} partnerName={partner.name} onClose={() => setNhieOpen(false)} />
       )}
 
       {/* Profile sheet */}
@@ -1013,6 +1307,74 @@ function ReactionChips({
           {n > 1 && <span className="text-[10px] text-white/70">{n}</span>}
         </motion.button>
       ))}
+    </div>
+  )
+}
+
+// ─── Voice message playback (PRD §5.1) ─────────────────────────────────────
+// Audio element is created lazily per playback so React state stays simple;
+// progress bar updates via timeupdate.
+function VoiceBubblePlayback({ url, durationMs, compact }: { url: string; durationMs: number | null; compact?: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [speed, setSpeed] = useState<1 | 1.5 | 2>(1)
+
+  const toggle = () => {
+    if (!audioRef.current) {
+      const audio = new Audio(url)
+      audio.playbackRate = speed
+      audio.ontimeupdate = () => {
+        const total = audio.duration && isFinite(audio.duration) ? audio.duration : (durationMs ?? 0) / 1000
+        setProgress(total > 0 ? Math.min(1, audio.currentTime / total) : 0)
+      }
+      audio.onended = () => {
+        setPlaying(false)
+        setProgress(0)
+      }
+      audioRef.current = audio
+    }
+    if (playing) {
+      audioRef.current.pause()
+      setPlaying(false)
+    } else {
+      audioRef.current.playbackRate = speed
+      void audioRef.current.play().catch(() => setPlaying(false))
+      setPlaying(true)
+    }
+  }
+
+  const cycleSpeed = () => {
+    const next = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1
+    setSpeed(next)
+    if (audioRef.current) audioRef.current.playbackRate = next
+  }
+
+  useEffect(() => () => audioRef.current?.pause(), [])
+
+  const secs = Math.round((durationMs ?? 0) / 1000)
+  return (
+    <div className={cn('flex items-center gap-2', compact ? '' : 'w-52')}>
+      <button
+        onClick={toggle}
+        className="w-9 h-9 rounded-full bg-black/25 flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+        aria-label={playing ? 'Pause voice message' : 'Play voice message'}
+      >
+        {playing ? <Pause className="w-4 h-4" fill="currentColor" /> : <Play className="w-4 h-4 ml-0.5" fill="currentColor" />}
+      </button>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="h-1 rounded-full bg-white/25 overflow-hidden">
+          <div className="h-full bg-current rounded-full" style={{ width: `${progress * 100}%` }} />
+        </div>
+        {!compact && (
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] opacity-70">{secs}s</span>
+            <button onClick={cycleSpeed} className="text-[10px] font-semibold opacity-70 hover:opacity-100" aria-label="Playback speed">
+              {speed}x
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -1157,6 +1519,30 @@ function MessageBubble({
           {m.mediaUrl && (
             <img src={m.mediaUrl} alt="" className="max-h-60 object-cover" />
           )}
+        </div>
+      </div>
+    )
+  }
+
+  if (m.type === 'voice') {
+    return wrap(
+      <div className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}>
+        <div
+          onPointerDown={press.onPointerDown}
+          onPointerUp={press.onPointerUp}
+          onPointerLeave={press.onPointerLeave}
+          onPointerCancel={press.onPointerCancel}
+          className={cn(bubbleShell, 'min-w-[13rem]', m.clientTmp && m.status === 'failed' && 'border border-[#FF3B30]/60 bg-[#FF3B30]/10')}
+        >
+          {m.mediaUrl ? (
+            <VoiceBubblePlayback url={m.mediaUrl} durationMs={m.mediaDuration ?? null} />
+          ) : (
+            <span className="text-xs opacity-60">Voice message unavailable</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-white/30 mt-0.5 px-1">{timeLabel(m.createdAt)}</span>
+          {isMe && <StatusTicks m={m} />}
         </div>
       </div>
     )

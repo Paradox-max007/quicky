@@ -68,6 +68,21 @@ export function ProfileView() {
     })()
   }, [userId])
 
+  // PRD §3.1: opening a liker's profile FROM the Likes page is the only path
+  // that clears that like's badge entry. The swipeId is stashed by the Likes
+  // list right before navigating here.
+  useEffect(() => {
+    if (!userId || returnView !== 'likes-you') return
+    let swipeId: string | null = null
+    try {
+      swipeId = sessionStorage.getItem(`qk_like_view_${userId}`)
+    } catch {}
+    if (!swipeId) return
+    try { sessionStorage.removeItem(`qk_like_view_${userId}`) } catch {}
+    useQuickyStore.setState((s) => ({ unviewedLikes: Math.max(0, s.unviewedLikes - 1) }))
+    api.markLikeViewed(swipeId).catch(() => {})
+  }, [userId, returnView])
+
   if (loading) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-[var(--qk-bg)]">

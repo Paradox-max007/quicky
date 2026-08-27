@@ -25,13 +25,18 @@ export function realtimeConfigured(): boolean {
   return !!getClient()
 }
 
-// ─── Per-match channel: messages, typing, read receipts ────────────────────
+// ─── Per-match channel: messages, typing, read/delivery receipts ────────────
+// Broadcast events are the instant push path (sender fires them directly).
+// Postgres Changes acts as the safety net below: if a broadcast was missed
+// (recipient offline, transient disconnect) the committed row still arrives,
+// matching receipts broadcast back give the sender live ✓✓ status.
 
 export type MatchChannel = {
   channel: RealtimeChannel
   sendTyping: (isTyping: boolean) => void
   sendMessage: (message: unknown) => void
   sendRead: (messageIds: string[]) => void
+  sendDelivered: (messageIds: string[]) => void
   sendReaction: (payload: { messageId: string; userId: string; emoji: string | null }) => void
   unsubscribe: () => Promise<void>
 }
@@ -40,6 +45,7 @@ type MatchHandlers = {
   onMessage?: (message: any) => void
   onTyping?: (isTyping: boolean) => void
   onRead?: (messageIds: string[]) => void
+  onDelivered?: (messageIds: string[]) => void
   onReaction?: (payload: { messageId: string; userId: string; emoji: string | null }) => void
 }
 
@@ -83,6 +89,19 @@ export function joinMatchChannel(
           })
         )
       )
+      .on('broadcast', { event: 'delivered' }, ({ payload }) =>
+        matchHandlerRegistry.get(topic)?.forEach((h) => h.onDelivered?.((payload as any)?.messageIds ?? []))
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Message',
+          filter: `matchId=eq.${matchId}`,
+        },
+        (payload) => matchHandlerRegistry.get(topic)?.forEach((h) => h.onMessage?.((payload as any).new))
+      )
       .subscribe()
   }
 
@@ -96,6 +115,9 @@ export function joinMatchChannel(
     },
     sendRead: (messageIds) => {
       channel!.send({ type: 'broadcast', event: 'read', payload: { messageIds } })
+    },
+    sendDelivered: (messageIds) => {
+      channel!.send({ type: 'broadcast', event: 'delivered', payload: { messageIds } })
     },
     sendReaction: (payload) => {
       channel!.send({ type: 'broadcast', event: 'reaction', payload })
