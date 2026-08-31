@@ -142,6 +142,8 @@ type State = {
   profileReturnView: AppView
   pendingMatchPartner: { matchId: string; partnerId: string; partnerName: string | null; partnerPhoto: string | null } | null
   paywall: PaywallContext | null
+  // Post to scroll to & highlight when the Community tab next opens
+  communityFocusPostId: string | null
 
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
@@ -165,6 +167,8 @@ type State = {
   clearMatchCelebration: () => void
   showPaywall: (ctx: PaywallContext) => void
   clearPaywall: () => void
+  openCommunityPost: (postId: string) => void
+  clearCommunityFocus: () => void
   logout: () => void
 }
 
@@ -177,6 +181,7 @@ export const useQuickyStore = create<State>((set) => ({
   profileReturnView: 'discovery',
   pendingMatchPartner: null,
   paywall: null,
+  communityFocusPostId: null,
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -206,5 +211,7 @@ export const useQuickyStore = create<State>((set) => ({
   clearMatchCelebration: () => set({ pendingMatchPartner: null }),
   showPaywall: (ctx) => set({ paywall: ctx }),
   clearPaywall: () => set({ paywall: null }),
+  openCommunityPost: (postId) => set({ communityFocusPostId: postId, view: 'community' }),
+  clearCommunityFocus: () => set({ communityFocusPostId: null }),
   logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0 }),
 }))

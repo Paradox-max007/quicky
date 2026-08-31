@@ -28,6 +28,7 @@ import { CommunityScreen } from './CommunityScreen'
 import { ProfileView } from './ProfileView'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
+import { GameInvitePopup } from './GameInvitePopup'
 import { Toaster as SonnerToaster } from 'sonner'
 
 export function AppRoot() {
@@ -54,7 +55,7 @@ export function AppRoot() {
       } catch {}
     }
     tick()
-    const interval = setInterval(tick, 15000)
+    const interval = setInterval(tick, 30000)
     return () => {
       stopped = true
       clearInterval(interval)
@@ -114,6 +115,7 @@ export function AppRoot() {
       {/* Overlays */}
       <MatchCelebration />
       <PaywallModal />
+      <GameInvitePopup />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
           phone frame on desktop and respects safe-area on mobile.

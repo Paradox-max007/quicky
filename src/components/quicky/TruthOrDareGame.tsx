@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Sparkles, Send } from 'lucide-react'
+import { X, Sparkles, Send, DoorOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { joinMatchChannel, MatchChannel } from '@/lib/quicky/realtime'
+import { GameShareCard, GamePostInfo } from './GameShareCard'
 
 type Step = 'pick_truth_or_dare' | 'prompt' | 'answer'
 type Session = {
@@ -34,17 +36,22 @@ export function TruthOrDareGame({
   const [answerText, setAnswerText] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [gamePost, setGamePost] = useState<GamePostInfo | null>(null)
+  const channelRef = useRef<MatchChannel | null>(null)
+  const sessionRef = useRef<Session | null>(null)
+  sessionRef.current = session
 
   const refresh = async () => {
     try {
       const res = await api.game.get(matchId)
-      if (!res.session) {
-        await api.game.start(matchId, 'truth_or_dare')
-        const r2 = await api.game.get(matchId)
-        if (r2.session) {
-          setSession(r2.session)
+      if (!res.session && !sessionRef.current) {
+        const started = await api.game.start(matchId, 'truth_or_dare')
+        if (started?.session) {
+          setSession(started.session)
+          setCurrentTurn(null)
+          return
         }
-      } else {
+      } else if (res.session) {
         setSession(res.session)
         // Find current unresolved turn
         const last = res.session.turns[res.session.turns.length - 1]
@@ -63,9 +70,28 @@ export function TruthOrDareGame({
 
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 3000)
+    // Safety-net poll only — live updates arrive via the 'game' broadcast
+    const interval = setInterval(refresh, 10000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId])
+
+  // Opponent actions ping this side to refresh instantly
+  useEffect(() => {
+    const ch = joinMatchChannel(matchId, {
+      onGame: (payload) => {
+        if (payload?.ping) refresh()
+      },
+    })
+    channelRef.current = ch
+    return () => {
+      ch?.unsubscribe()
+      channelRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId])
+
+  const pingPartner = () => channelRef.current?.sendGame({ ping: 'truth_or_dare' })
 
   const pick = async (choice: 'truth' | 'dare') => {
     if (!session) return
@@ -74,7 +100,8 @@ export function TruthOrDareGame({
       const res = await api.game.action(matchId, session.id, choice)
       if (res.ok && res.turn) {
         setCurrentTurn(res.turn)
-        await refresh()
+        setSession((s) => (s ? { ...s, turns: [...s.turns, res.turn] } : s))
+        pingPartner()
       }
     } catch (e: any) {
       toast.error(e.message ?? 'Failed')
@@ -91,7 +118,23 @@ export function TruthOrDareGame({
       if (res.ok) {
         setAnswerText('')
         setCurrentTurn(null)
-        await refresh()
+        // PATCH response already carries the fresh session state — apply it
+        if (res.session) {
+          setSession((s) =>
+            s
+              ? {
+                  ...s,
+                  currentTurn: res.session.currentTurn,
+                  currentPlayerId: res.session.currentPlayerId,
+                  isMyTurn: false,
+                  turns: s.turns.map((t: any) =>
+                    t.id === currentTurn.id ? { ...t, answerText } : t
+                  ),
+                }
+              : s
+          )
+        }
+        pingPartner()
         toast.success('Answer sent! It’s their turn now.')
       }
     } catch (e: any) {
@@ -108,7 +151,20 @@ export function TruthOrDareGame({
       const res = await api.game.action(matchId, session.id, 'skip')
       if (res.ok) {
         setCurrentTurn(null)
-        await refresh()
+        if (res.session) {
+          setSession((s) =>
+            s
+              ? {
+                  ...s,
+                  currentTurn: res.session.currentTurn,
+                  currentPlayerId: res.session.currentPlayerId,
+                  isMyTurn: false,
+                  turns: s.turns.map((t: any) => (t.id === currentTurn.id ? { ...t, skipped: true } : t)),
+                }
+              : s
+          )
+        }
+        pingPartner()
         toast.success('Skipped. Their turn now.')
       }
     } catch (e: any) {
@@ -116,6 +172,14 @@ export function TruthOrDareGame({
     } finally {
       setBusy(false)
     }
+  }
+
+  const endGame = async () => {
+    if (!session) return
+    try {
+      const res = await api.game.action(matchId, session.id, 'end')
+      if (res.gamePost) setGamePost(res.gamePost)
+    } catch {}
   }
 
   const isMyTurn = session?.currentPlayerId === meId
@@ -141,10 +205,32 @@ export function TruthOrDareGame({
             <p className="text-xs text-white/50">Turn {session?.currentTurn ?? 1}</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full" aria-label="Close">
+        <button onClick={endGame} className="p-2 hover:bg-white/5 rounded-full text-white/50" aria-label="End game">
+          <DoorOpen className="w-5 h-5" />
+        </button>
+        <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full -ml-4" aria-label="Close">
           <X className="w-5 h-5" />
         </button>
       </header>
+
+      {/* Post-game share card overlay */}
+      <AnimatePresence>
+        {gamePost && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 z-[160] bg-[var(--qk-bg)]/95 backdrop-blur flex items-center justify-center p-5 overflow-y-auto"
+          >
+            <GameShareCard
+              matchId={matchId}
+              sessionId={session?.id ?? ''}
+              post={gamePost}
+              partnerName={partnerName}
+              onClose={onClose}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-4">
         {loading ? (

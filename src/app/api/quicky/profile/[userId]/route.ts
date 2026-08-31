@@ -39,6 +39,23 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
         })
       : null
 
+  // Posts grid (own + mutual game posts), Instagram-style
+  const posts = await db.communityPost.findMany({
+    where: { OR: [{ userId }, { coOwnerId: userId }] },
+    orderBy: { createdAt: 'desc' },
+    take: 24,
+    select: {
+      id: true,
+      mediaUrl: true,
+      mediaType: true,
+      gameType: true,
+      gameTitle: true,
+      emoji: true,
+      caption: true,
+      createdAt: true,
+    },
+  })
+
   return NextResponse.json({
     profile: {
       id: u.id,
@@ -55,6 +72,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
       isPremium: u.isPremium,
       isVerified: u.isVerified,
       quickyScore: u.quickyScore,
+      posts,
+      postCount: posts.length,
     },
     isMe: me.id === u.id,
     relationship: {

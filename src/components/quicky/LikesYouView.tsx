@@ -37,15 +37,31 @@ export function LikesYouView() {
   const showPaywall = useQuickyStore((s) => s.showPaywall)
   const openProfile = useQuickyStore((s) => s.openProfile)
 
-  const [iLiked, setILiked] = useState<LikedPerson[]>([])
-  const [likesYou, setLikesYou] = useState<LikeYouPerson[]>([])
+  // Warm cache: paint the last-known likes instantly, revalidate below
+  const [iLiked, setILiked] = useState<LikedPerson[]>(() => {
+    try {
+      const raw = localStorage.getItem('qk_likes_cache_v1')
+      const parsed = raw ? JSON.parse(raw) : null
+      return Array.isArray(parsed?.liked) ? parsed.liked : []
+    } catch {
+      return []
+    }
+  })
+  const [likesYou, setLikesYou] = useState<LikeYouPerson[]>(() => {
+    try {
+      const raw = localStorage.getItem('qk_likes_cache_v1')
+      const parsed = raw ? JSON.parse(raw) : null
+      return Array.isArray(parsed?.likes) ? parsed.likes : []
+    } catch {
+      return []
+    }
+  })
   const [isPremium, setIsPremium] = useState(false)
   const [lockedCount, setLockedCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => likesYou.length === 0 && iLiked.length === 0)
   const [tab, setTab] = useState<'likes-you' | 'i-liked'>('likes-you')
 
   const refresh = useCallback(async () => {
-    setLoading(true)
     try {
       const [lyRes, ilRes] = await Promise.all([api.likesYou(), api.iLiked()])
       setLikesYou(lyRes.likes)
@@ -54,6 +70,12 @@ export function LikesYouView() {
       setILiked(ilRes.liked)
       // Prime the nav Likes badge with the unviewed count (PRD §3)
       useQuickyStore.getState().setUnviewedLikes(lyRes.unviewedCount ?? 0)
+      try {
+        localStorage.setItem(
+          'qk_likes_cache_v1',
+          JSON.stringify({ likes: lyRes.likes, liked: ilRes.liked })
+        )
+      } catch {}
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to load')
     } finally {

@@ -5,7 +5,7 @@
 // where you can like them and (premium) message directly.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Heart,
   MessageCircle,
@@ -15,6 +15,7 @@ import {
   Crown,
   ImagePlus,
   Film,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
@@ -30,28 +31,61 @@ type Author = { id: string; name: string | null; avatar: string | null; isPremiu
 type Post = {
   id: string
   caption: string | null
-  mediaUrl: string
+  mediaUrl: string | null
   mediaType: 'image' | 'video' | string
   filter: string | null
   createdAt: string
   author: Author
+  coOwner: Author | null
+  gameType?: string | null
+  gameTitle?: string | null
+  gameBody?: string | null
+  emoji?: string | null
   likeCount: number
   commentCount: number
   likedByMe: boolean
 }
 
+// Catchy template gradients per game type for game-result posts
+const GAME_GRADIENTS: Record<string, string> = {
+  ludo: 'from-[#7C3AED] via-[#A855F7] to-[#EC4899]',
+  truth_or_dare: 'from-[#FF5A79] via-[#F43F5E] to-[#F97316]',
+  never_have_i_ever: 'from-[#0EA5E9] via-[#6366F1] to-[#8B5CF6]',
+}
+
 export function CommunityScreen() {
   const openProfile = useQuickyStore((s) => s.openProfile)
   const meId = useQuickyStore((s) => s.user?.id)
+  const focusPostId = useQuickyStore((s) => s.communityFocusPostId)
+  const clearCommunityFocus = useQuickyStore((s) => s.clearCommunityFocus)
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null)
 
-  const [posts, setPosts] = useState<Post[]>([])
+  const [posts, setPosts] = useState<Post[]>(() => {
+    // Paint the last-known feed instantly, revalidate below (SWR)
+    try {
+      const raw = localStorage.getItem('qk_community_cache_v1')
+      const parsed = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
   const [groups, setGroups] = useState<RollGroup[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('qk_community_cache_v1')
+    } catch {
+      return true
+    }
+  })
 
   // overlays
   const [composerMode, setComposerMode] = useState<'post' | 'roll' | null>(null)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const [commentsTarget, setCommentsTarget] = useState<{ kind: 'post' | 'roll'; id: string } | null>(null)
+  // delete confirmation
+  const [confirmDeletePostId, setConfirmDeletePostId] = useState<string | null>(null)
+  const [deletingPost, setDeletingPost] = useState(false)
   // groups already watched this session → gray out their rings
   const [seenGroups, setSeenGroups] = useState<Set<string>>(new Set())
 
@@ -60,6 +94,9 @@ export function CommunityScreen() {
       const [feed, rolls] = await Promise.all([api.community.feed(), api.rolls.list()])
       setPosts(feed.posts)
       setGroups(groupRolls(rolls.rolls))
+      try {
+        localStorage.setItem('qk_community_cache_v1', JSON.stringify(feed.posts.slice(0, 30)))
+      } catch {}
     } catch (e: any) {
       if (e?.status !== 401) toast.error(e?.message ?? 'Failed to load community')
     } finally {
@@ -70,6 +107,22 @@ export function CommunityScreen() {
   useEffect(() => {
     load()
   }, [load])
+
+  // Scroll to focused post from profile
+  useEffect(() => {
+    if (!focusPostId || posts.length === 0) return
+    const targetId = focusPostId
+    const t = setTimeout(() => {
+      const el = document.getElementById(`community-post-${targetId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setHighlightedPostId(targetId)
+        clearCommunityFocus()
+        setTimeout(() => setHighlightedPostId((curr) => (curr === targetId ? null : curr)), 2500)
+      }
+    }, 200)
+    return () => clearTimeout(t)
+  }, [focusPostId, posts, clearCommunityFocus])
 
   // Light background refresh while the tab is idle
   useEffect(() => {
@@ -93,13 +146,22 @@ export function CommunityScreen() {
     }
   }
 
-  const deletePost = async (postId: string) => {
+  const deletePost = (postId: string) => {
+    setConfirmDeletePostId(postId)
+  }
+
+  const executeDeletePost = async () => {
+    if (!confirmDeletePostId || deletingPost) return
+    setDeletingPost(true)
     try {
-      await api.community.remove(postId)
-      setPosts((prev) => prev.filter((p) => p.id !== postId))
+      await api.community.remove(confirmDeletePostId)
+      setPosts((prev) => prev.filter((p) => p.id !== confirmDeletePostId))
       toast.success('Post deleted')
+      setConfirmDeletePostId(null)
     } catch {
       toast.error('Failed to delete post')
+    } finally {
+      setDeletingPost(false)
     }
   }
 
@@ -205,31 +267,54 @@ export function CommunityScreen() {
           </div>
         ) : (
           <div className="flex flex-col gap-6 pt-3">
-            {posts.map((post) => (
-              <article key={post.id}>
-                {/* Card header */}
-                <div className="flex items-center gap-2.5 px-4 pb-2">
-                  <Avatar
-                    src={post.author.avatar}
-                    name={post.author.name}
-                    size={38}
-                    onClick={() => openProfile(post.author.id, 'community')}
-                  />
+            {posts.map((post) => {
+              const isHighlighted = highlightedPostId === post.id
+              return (
+                <article
+                  key={post.id}
+                  id={`community-post-${post.id}`}
+                  className={cn(
+                    'transition-all duration-500 rounded-3xl pb-2',
+                    isHighlighted && 'ring-2 ring-[var(--qk-accent)] bg-white/[0.04] shadow-2xl scale-[1.01]'
+                  )}
+                >
+                  {/* Card header — game posts show both owners */}
+                  <div className="flex items-center gap-2.5 px-4 pb-2">
+                  <div className="flex -space-x-2">
+                    <Avatar
+                      src={post.author.avatar}
+                      name={post.author.name}
+                      size={38}
+                      onClick={() => openProfile(post.author.id, 'community')}
+                    />
+                    {post.coOwner && (
+                      <Avatar
+                        src={post.coOwner.avatar}
+                        name={post.coOwner.name}
+                        size={38}
+                        onClick={() => openProfile(post.coOwner!.id, 'community')}
+                      />
+                    )}
+                  </div>
                   <button
                     onClick={() => openProfile(post.author.id, 'community')}
                     className="flex items-center gap-1 min-w-0"
                   >
-                    <span className="text-sm font-semibold truncate">{post.author.name ?? 'Someone'}</span>
+                    <span className="text-sm font-semibold truncate">
+                      {post.coOwner
+                        ? `${post.author.name ?? 'Someone'} & ${post.coOwner.name ?? 'Someone'}`
+                        : post.author.name ?? 'Someone'}
+                    </span>
                     {post.author.isVerified && (
                       <BadgeCheck className="w-4 h-4 text-[var(--qk-accent)] shrink-0" fill="currentColor" stroke="black" />
                     )}
                   </button>
-                  {post.author.isPremium && (
+                  {(post.author.isPremium || post.coOwner?.isPremium) && (
                     <Crown className="w-3.5 h-3.5 text-[var(--qk-gold)] shrink-0" fill="currentColor" stroke="none" />
                   )}
                   <span className="text-xs text-white/40 shrink-0">{timeAgo(post.createdAt)}</span>
                   <div className="flex-1" />
-                  {post.author.id === meId && (
+                  {(post.author.id === meId || post.coOwner?.id === meId) && (
                     <button
                       onClick={() => deletePost(post.id)}
                       className="p-1.5 rounded-full hover:bg-white/10 text-white/40"
@@ -240,28 +325,42 @@ export function CommunityScreen() {
                   )}
                 </div>
 
-                {/* Media */}
-                <div className="relative w-full aspect-square bg-black">
-                  {post.mediaType === 'video' ? (
-                    <video
-                      src={post.mediaUrl}
-                      style={{ filter: filterCss(post.filter) }}
-                      className="w-full h-full object-cover"
-                      controls
-                      playsInline
-                      loop
-                      preload="metadata"
-                    />
-                  ) : (
-                    <img
-                      src={post.mediaUrl}
-                      alt={post.caption ?? 'Community post'}
-                      style={{ filter: filterCss(post.filter) }}
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  )}
-                </div>
+                {/* Media — or a catchy game-result template card */}
+                {post.gameType ? (
+                  <div
+                    className={cn(
+                      'relative w-full aspect-square bg-gradient-to-br p-6 flex flex-col justify-center text-white',
+                      GAME_GRADIENTS[post.gameType] ?? 'from-[var(--qk-purple)] to-[var(--qk-accent)]'
+                    )}
+                  >
+                    <p className="text-6xl">{post.emoji ?? '🎮'}</p>
+                    <h3 className="text-3xl font-black mt-4">{post.gameTitle}</h3>
+                    <p className="text-base text-white/90 mt-3 leading-relaxed">{post.gameBody}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/60 mt-6">Quicky Games</p>
+                  </div>
+                ) : (
+                  <div className="relative w-full aspect-square bg-black">
+                    {post.mediaType === 'video' ? (
+                      <video
+                        src={post.mediaUrl ?? ''}
+                        style={{ filter: filterCss(post.filter) }}
+                        className="w-full h-full object-cover"
+                        controls
+                        playsInline
+                        loop
+                        preload="metadata"
+                      />
+                    ) : (
+                      <img
+                        src={post.mediaUrl ?? ''}
+                        alt={post.caption ?? 'Community post'}
+                        style={{ filter: filterCss(post.filter) }}
+                        className="w-full h-full object-cover"
+                        draggable={false}
+                      />
+                    )}
+                  </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex items-center gap-4 px-4 pt-2.5">
@@ -300,7 +399,8 @@ export function CommunityScreen() {
                   </button>
                 </div>
               </article>
-            ))}
+            )
+          })}
           </div>
         )}
 
@@ -338,6 +438,65 @@ export function CommunityScreen() {
             setPosts={setPosts}
             onClose={() => setCommentsTarget(null)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirmation popup */}
+      <AnimatePresence>
+        {confirmDeletePostId && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm"
+              onClick={() => {
+                if (!deletingPost) setConfirmDeletePostId(null)
+              }}
+            />
+            <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 10 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                className="w-full max-w-sm bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 shadow-2xl pointer-events-auto flex flex-col items-center text-center"
+              >
+                <div className="w-14 h-14 rounded-full bg-[#FF3B30]/15 flex items-center justify-center text-[#FF3B30] mb-4">
+                  <Trash2 className="w-7 h-7" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-1.5">Delete Post?</h3>
+                <p className="text-sm text-white/60 mb-6 leading-relaxed">
+                  This post will be permanently removed from the community feed. This action cannot be undone.
+                </p>
+
+                <div className="flex w-full gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeletePostId(null)}
+                    disabled={deletingPost}
+                    className="flex-1 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-sm font-semibold text-white/80 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeDeletePost}
+                    disabled={deletingPost}
+                    className="flex-1 py-3 rounded-2xl bg-[#FF3B30] hover:bg-[#FF3B30]/90 text-sm font-semibold text-white flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-[#FF3B30]/20 disabled:opacity-50"
+                  >
+                    {deletingPost ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Deleting...
+                      </>
+                    ) : (
+                      'Delete'
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
         )}
       </AnimatePresence>
     </div>

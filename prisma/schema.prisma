@@ -66,7 +66,9 @@ model User {
   blockedUsers     Block[]  @relation("Blocked")
   sessions         Session[]
   settings         UserSettings?
-  posts            CommunityPost[]
+  posts            CommunityPost[] @relation("PostOwner")
+  coOwnedPosts     CommunityPost[] @relation("PostCoOwner")
+  gamePosts        GamePost[]
   postLikes        PostLike[]      @relation("PostLikes")
   postComments     PostComment[]   @relation("PostComments")
   rolls            Roll[]
@@ -190,6 +192,9 @@ model GameSession {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   match          Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  posts          GamePost[]
+
+  @@index([matchId, status])
   userA          User       @relation("UserA_GS", fields: [userAId], references: [id], onDelete: Cascade)
   userB          User       @relation("UserB_GS", fields: [userBId], references: [id], onDelete: Cascade)
   turns          GameTurn[]
@@ -304,15 +309,52 @@ model UserSettings {
 model CommunityPost {
   id        String   @id @default(cuid())
   userId    String
+  // Mutual game posts have two owners — both players' ids are shown
+  coOwnerId String?
   caption   String?
-  mediaUrl  String
+  // Game-result posts render as a catchy text template card (no media)
+  mediaUrl  String?
   // mediaType: "image" | "video"
   mediaType String   @default("image")
   filter    String?
+  // gameType: "truth_or_dare" | "never_have_i_ever" | "ludo" (null = normal post)
+  gameType      String?
+  gameTitle     String?
+  gameBody      String?
+  emoji         String?
+  gameSessionId String?
   createdAt DateTime @default(now())
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User          @relation("PostOwner", fields: [userId], references: [id], onDelete: Cascade)
+  coOwner   User?         @relation("PostCoOwner", fields: [coOwnerId], references: [id], onDelete: SetNull)
   likes     PostLike[]
   comments  PostComment[]
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([coOwnerId])
+}
+
+// A shareable game-result post generated for BOTH players when a game
+// session ends. Each player can publish their copy to the Community; when
+// both publish, the two CommunityPosts become mutual (coOwnerId set).
+model GamePost {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String
+  matchId   String
+  gameType  String
+  title     String
+  body      String
+  emoji     String   @default("🎮")
+  // shared → the user published their copy to the Community feed
+  shared    Boolean  @default(false)
+  postId    String?
+  createdAt DateTime @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session   GameSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([userId, shared])
 }
 
 model PostLike {

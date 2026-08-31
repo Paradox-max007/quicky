@@ -20,6 +20,14 @@ export async function GET() {
   })
   if (!full) return NextResponse.json({ user: null }, { status: 200 })
 
+  // Posts grid (own + mutual game posts)
+  const posts = await db.communityPost.findMany({
+    where: { OR: [{ userId: full.id }, { coOwnerId: full.id }] },
+    orderBy: { createdAt: 'desc' },
+    take: 24,
+    select: { id: true, mediaUrl: true, mediaType: true, caption: true, gameType: true, gameTitle: true, emoji: true, createdAt: true },
+  })
+
   // Auto-create settings if missing
   let settings = full.settings
   if (!settings) {
@@ -47,6 +55,8 @@ export async function GET() {
       premiumUntil: full.premiumUntil,
       isVerified: full.isVerified,
       quickyScore: full.quickyScore,
+      posts,
+      postCount: posts.length,
       onboardedAt: full.onboardedAt,
       // Discovery preferences
       discoveryAgeMin: full.discoveryAgeMin,

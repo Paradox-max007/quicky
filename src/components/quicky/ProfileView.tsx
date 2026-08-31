@@ -6,6 +6,7 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
+import { ProfilePostsGrid } from './ProfilePostsGrid'
 import { cn } from '@/lib/utils'
 import useEmblaCarousel from 'embla-carousel-react'
 
@@ -336,6 +337,8 @@ export function ProfileView() {
             </div>
           </div>
         )}
+
+        <ProfilePostsGrid posts={profile.posts} />
 
         {/* Actions: like back (if they liked you) + message (premium DM without a match) */}
         {!isMe && (

@@ -9,13 +9,18 @@ import {
   ArrowLeft, Camera, Send, MoreVertical, BadgeCheck, Crown,
   ImagePlus, X, RotateCcw, Check, CheckCheck, Clock, AlertCircle,
   Reply, Copy, ChevronDown, Mic, Play, Pause, Trash2, Square, Sparkles, Wine,
+  Grid3X3, Gamepad2, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUICKY } from '@/lib/quicky/constants'
 import { joinMatchChannel, trackOnline, watchOnline, realtimeConfigured, MatchChannel } from '@/lib/quicky/realtime'
+import { notifyGameInvite, watchGameInvites, GameInvitePayload } from '@/lib/quicky/game-invites'
+import { requestMicPermission, requestCameraPermission } from '@/lib/quicky/media-permissions'
+import { compressImage } from '@/lib/quicky/image'
 import { QuickyViewer } from './QuickyViewer'
 import { TruthOrDareGame } from './TruthOrDareGame'
 import { NeverHaveIEver } from './NeverHaveIEver'
+import { LudoGame } from './LudoGame'
 import { ProfileSheet } from './ProfileSheet'
 
 // Messages arrive from several sources (server list, optimistic sends,
@@ -65,6 +70,7 @@ export type Msg = ChatMessage & {
   reactions?: Reaction[]
   pendingText?: string
   mediaDuration?: number | null
+  uploadPct?: number
 }
 
 const REACTION_SET = ['❤️', '😂', '😮', '😢', '🔥', '👍']
@@ -143,6 +149,10 @@ export function ChatView() {
   const [pendingQuickies, setPendingQuickies] = useState<any[]>([])
   const [toDOpen, setToDOpen] = useState(false)
   const [nhieOpen, setNhieOpen] = useState(false)
+  const [ludoOpen, setLudoOpen] = useState(false)
+  // Game invite flow: when I propose a game the partner gets an in-app popup;
+  // I wait for their join/cancel before the game opens on my side.
+  const [pendingInviteGame, setPendingInviteGame] = useState<GameInvitePayload['gameType'] | null>(null)
   const [durationPickerOpen, setDurationPickerOpen] = useState(false)
   const [pickedDuration, setPickedDuration] = useState<number | null>(null)
   const quickyFileRef = useRef<HTMLInputElement>(null)
@@ -375,6 +385,62 @@ export function ChatView() {
     setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 1500)
   }
 
+  const openGame = (gameType: 'truth_or_dare' | 'never_have_i_ever' | 'ludo') => {
+    setPendingInviteGame(null)
+    if (gameType === 'truth_or_dare') setToDOpen(true)
+    else if (gameType === 'never_have_i_ever') setNhieOpen(true)
+    else setLudoOpen(true)
+  }
+
+  // Propose a game: both players must be online; the partner receives an
+  // in-app popup and I wait for their Join / Cancel.
+  const proposeGame = (gameType: 'truth_or_dare' | 'never_have_i_ever' | 'ludo') => {
+    if (!match?.partner?.id) return
+    if (!partnerOnline) {
+      toast.error(`${partner?.name ?? 'They'} is offline — games need both players online`)
+      return
+    }
+    setPendingInviteGame(gameType)
+    notifyGameInvite(match.partner.id, {
+      matchId: matchId ?? '',
+      gameType,
+      fromId: meUser?.id ?? '',
+      fromName: meUser?.name ?? 'Someone',
+    })
+  }
+
+  // Hear the partner's join/cancel for a game I proposed
+  useEffect(() => {
+    if (!meUser?.id) return
+    return watchGameInvites(meUser.id, {
+      onResponse: (res) => {
+        if (!res || res.matchId !== matchId) return
+        const game = res.gameType as GameInvitePayload['gameType']
+        setPendingInviteGame(null)
+        if (res.accepted) {
+          openGame(game)
+        } else {
+          toast(`${res.fromName || 'They'} declined the ${game === 'ludo' ? 'Ludo' : game === 'never_have_i_ever' ? 'Never Have I Ever' : 'Truth or Dare'} invite`)
+        }
+      },
+    })
+  }, [meUser?.id, matchId])
+
+  // Receiver side: if I joined from the invite popup, the pending game is
+  // stashed in sessionStorage — auto-open it once this chat mounts.
+  useEffect(() => {
+    if (!matchId || !meUser?.id) return
+    const key = `qk_pending_game_${matchId}`
+    try {
+      const game = sessionStorage.getItem(key)
+      if (game === 'truth_or_dare' || game === 'never_have_i_ever' || game === 'ludo') {
+        sessionStorage.removeItem(key)
+        // Give the handshake a beat so the accept broadcast reaches the inviter
+        setTimeout(() => openGame(game), 400)
+      }
+    } catch {}
+  }, [matchId, meUser?.id])
+
   // Cleanup any live recording/preview timers on unmount
   const recordingRef = useRef<typeof recording>(null)
   recordingRef.current = recording
@@ -471,6 +537,13 @@ export function ChatView() {
 
   const startVoiceRecording = async () => {
     if (recording || !matchId) return
+    // Ask for the microphone up front — on mobile this triggers the OS
+    // permission dialog before any recording UI appears.
+    const perm = await requestMicPermission()
+    if (perm !== 'granted') {
+      toast.error(perm === 'denied' ? 'Microphone access denied — enable it in your device settings' : 'Microphone unavailable on this device')
+      return
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m))
@@ -569,8 +642,14 @@ export function ChatView() {
     }
   }
 
-  const openQuickyCapture = () => {
+  const openQuickyCapture = async () => {
     setShowActions(false)
+    // Camera permission prompt fires before the capture sheet opens
+    const perm = await requestCameraPermission()
+    if (perm !== 'granted') {
+      toast.error(perm === 'denied' ? 'Camera access denied — enable it in your device settings' : 'Camera unavailable on this device')
+      return
+    }
     quickyFileRef.current?.click()
   }
 
@@ -594,34 +673,68 @@ export function ChatView() {
   const sendQuicky = async () => {
     if (!matchId || !pendingQuicky || sendingQuicky) return
     const duration = (pickedDuration ?? QUICKY.quickyDefaultDuration) as 3 | 5 | 8 | 10
-    setSendingQuicky(true)
+    // Close the sheet immediately — the upload continues in the chat bubble
+    // so the user can keep chatting while the image is still sending.
+    const file = pendingQuicky.file
+    const previewUrl = pendingQuicky.previewUrl
+    setDurationPickerOpen(false)
+    setPendingQuicky(null)
+    setSendingQuicky(false)
+
+    const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tmpId,
+        clientTmp: true,
+        status: 'sending',
+        senderId: meUser?.id ?? '',
+        type: 'quicky',
+        text: null,
+        mediaUrl: previewUrl,
+        quickyDuration: duration,
+        quickyOpenedAt: null,
+        quickyExpiresAt: null,
+        quickyConsumedAt: null,
+        screenshotFlagged: false,
+        readAt: null,
+        deliveredAt: null,
+        replyTo: null,
+        reactions: [],
+        createdAt: new Date().toISOString(),
+        uploadPct: 0,
+      },
+    ])
+    nearBottomRef.current = true
+    haptic()
+
+    const setPct = (pct: number) =>
+      setMessages((prev) => prev.map((m) => (m.id === tmpId ? { ...m, uploadPct: pct } : m)))
+
     try {
-      const uploadRes = await api.upload(pendingQuicky.file, 'quicky')
-      if (!uploadRes.url) {
-        toast.error('Upload failed')
-        return
-      }
-      const sendRes = await api.quicky.send(matchId, {
-        mediaUrl: uploadRes.url,
-        duration,
-      })
+      // Compress on-device first — camera JPEGs shrink 3–8 MB → a few hundred KB
+      const { blob, filename } = await compressImage(file, 1440, 0.82)
+      const uploadRes = await api.uploadWithProgress(blob, 'quicky', filename, setPct)
+      if (!uploadRes.url) throw new Error('Upload failed')
+      setPct(100)
+      const sendRes = await api.quicky.send(matchId, { mediaUrl: uploadRes.url, duration })
       if (sendRes.ok) {
+        URL.revokeObjectURL(previewUrl)
         setMessages((prev) =>
-          prev.some((m) => m.id === sendRes.message.id) ? prev : [...prev, { ...sendRes.message, reactions: [] }]
+          dedupeById(prev.map((m) => (m.id === tmpId ? { ...sendRes.message, reactions: [] } : m)))
         )
         channelRef.current?.sendMessage(sendRes.message)
         toast.success('Quicky sent!')
-        cancelQuicky()
-        refresh()
       }
     } catch (e: any) {
+      URL.revokeObjectURL(previewUrl)
       if (e.status === 402 && e.body?.paywall === 'quicky') {
+        setMessages((prev) => prev.filter((m) => m.id !== tmpId))
         useQuickyStore.getState().showPaywall({ kind: 'quicky' })
       } else {
+        setMessages((prev) => prev.filter((m) => (m.id === tmpId ? { ...m, status: 'failed' } : m)))
         toast.error(e.message ?? 'Failed to send Quicky')
       }
-    } finally {
-      setSendingQuicky(false)
     }
   }
 
@@ -795,6 +908,33 @@ export function ChatView() {
           </div>
         </div>
       )}
+
+      {/* Game invite sent — waiting for the partner to join or cancel */}
+      <AnimatePresence>
+        {pendingInviteGame && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="shrink-0 overflow-hidden"
+          >
+            <div className="px-4 py-2 bg-[var(--qk-purple)]/10 border-b border-[var(--qk-purple)]/30 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <Gamepad2 className="w-4 h-4 text-[var(--qk-purple)] animate-quicky-pulse" />
+                <span className="text-[var(--qk-purple)] font-medium">
+                  Invite sent — waiting for {partner?.name ?? 'them'}…
+                </span>
+              </div>
+              <button
+                onClick={() => setPendingInviteGame(null)}
+                className="text-xs text-white/50 hover:text-white px-2 py-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Messages */}
       <div
@@ -1041,7 +1181,7 @@ export function ChatView() {
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
               className="absolute left-0 right-0 bottom-0 bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl p-4 z-[61] safe-area-bottom"
             >
               <div className="flex justify-between gap-1.5 mb-4">
@@ -1050,7 +1190,9 @@ export function ChatView() {
                   return (
                     <motion.button
                       key={emoji}
-                      whileTap={{ scale: 1.3 }}
+                      whileHover={{ scale: 1.2 }}
+                      whileTap={{ scale: 1.4 }}
+                      transition={{ type: 'spring', stiffness: 600, damping: 18 }}
                       onClick={() => reactToMessage(menuFor, emoji)}
                       className={cn(
                         'flex-1 aspect-square rounded-2xl flex items-center justify-center text-2xl transition-all',
@@ -1154,7 +1296,7 @@ export function ChatView() {
                   color="lavender"
                   onClick={() => {
                     setShowActions(false)
-                    setToDOpen(true)
+                    proposeGame('truth_or_dare')
                   }}
                 />
                 <SheetAction
@@ -1163,7 +1305,16 @@ export function ChatView() {
                   color="lavender"
                   onClick={() => {
                     setShowActions(false)
-                    setNhieOpen(true)
+                    proposeGame('never_have_i_ever')
+                  }}
+                />
+                <SheetAction
+                  icon={<Grid3X3 className="w-5 h-5" />}
+                  label="Ludo"
+                  color="white"
+                  onClick={() => {
+                    setShowActions(false)
+                    proposeGame('ludo')
                   }}
                 />
                 <SheetAction
@@ -1195,6 +1346,11 @@ export function ChatView() {
       {/* Never Have I Ever game overlay */}
       {nhieOpen && matchId && (
         <NeverHaveIEver matchId={matchId} meId={me?.id ?? ''} partnerName={partner.name} onClose={() => setNhieOpen(false)} />
+      )}
+
+      {/* Ludo game room overlay */}
+      {ludoOpen && matchId && (
+        <LudoGame matchId={matchId} meId={me?.id ?? ''} partnerName={partner.name} onClose={() => setLudoOpen(false)} />
       )}
 
       {/* Profile sheet */}
@@ -1404,22 +1560,75 @@ function MessageBubble({
 }) {
   const isMe = m.senderId === meId
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [dragOffset, setDragOffset] = useState(0)
+  const hapticFired = useRef(false)
   const press = useLongPress(onLongPress)
 
   const wrap = (node: React.ReactNode) => (
-    <div
+    <motion.div
       id={`msg-${m.id}`}
+      initial={{ opacity: 0, y: 10, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 450, damping: 28 }}
       className={cn(
-        'flex flex-col gap-0.5 max-w-[85%]',
+        'relative flex flex-col gap-0.5 max-w-[85%] select-none',
         isMe ? 'self-end items-end' : 'self-start items-start',
         highlighted && 'rounded-2xl ring-2 ring-[var(--qk-accent)] ring-offset-2 ring-offset-[var(--qk-bg)]'
       )}
     >
-      {node}
+      <div className="relative w-full overflow-visible">
+        {/* Swipe-to-reply icon indicator that emerges as bubble slides right */}
+        <motion.div
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2 -left-9 w-7 h-7 rounded-full flex items-center justify-center pointer-events-none transition-all duration-150',
+            dragOffset > 10 ? 'opacity-100' : 'opacity-0',
+            dragOffset >= 42
+              ? 'bg-[var(--qk-accent)] text-white scale-110 shadow-lg glow-coral'
+              : 'bg-white/15 text-white/70 scale-90'
+          )}
+          style={{
+            transform: `translateY(-50%) translateX(${Math.min(dragOffset * 0.4, 16)}px)`,
+          }}
+        >
+          <Reply className="w-3.5 h-3.5" />
+        </motion.div>
+
+        {/* Draggable bubble container for swipe-to-reply sideways */}
+        <motion.div
+          drag="x"
+          dragDirectionLock
+          dragConstraints={{ left: 0, right: 65 }}
+          dragElastic={0.25}
+          onDrag={(_, info) => {
+            if (info.offset.x > 0) {
+              setDragOffset(info.offset.x)
+              if (info.offset.x >= 42 && !hapticFired.current) {
+                hapticFired.current = true
+                haptic()
+              } else if (info.offset.x < 42) {
+                hapticFired.current = false
+              }
+            }
+          }}
+          onDragEnd={(_, info) => {
+            if (info.offset.x >= 40 || info.velocity.x > 160) {
+              haptic()
+              onReply()
+            }
+            setDragOffset(0)
+            hapticFired.current = false
+          }}
+          animate={{ x: 0 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        >
+          {node}
+        </motion.div>
+      </div>
+
       <div className={isMe ? 'flex flex-col items-end' : 'flex flex-col items-start'}>
         <ReactionChips reactions={m.reactions ?? []} meId={meId} onTap={(emoji) => onReact(emoji)} />
       </div>
-    </div>
+    </motion.div>
   )
 
   if (m.type === 'system') {
@@ -1438,6 +1647,7 @@ function MessageBubble({
   if (m.type === 'quicky') {
     const consumed = !!m.quickyConsumedAt || !m.mediaUrl
     const isUnopened = !isMe && !m.quickyOpenedAt && !consumed
+    const sending = isMe && m.clientTmp && m.status === 'sending'
     return wrap(
       <>
         <div className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
@@ -1448,12 +1658,13 @@ function MessageBubble({
             onPointerCancel={press.onPointerCancel}
             onClick={() => {
               if (press.consumed()) return // long-press already opened the menu
+              if (isMe) return // the sender can't open their own Quicky
               if (consumed) return // expired — nothing to view
               if (isUnopened) onOpenQuicky(m)
               setViewerOpen(true)
             }}
             className={cn(
-              'max-w-[80%] rounded-3xl p-2 border-2 flex items-center gap-2',
+              'relative max-w-[80%] rounded-3xl p-2 border-2 flex items-center gap-2',
               consumed
                 ? 'border-white/10 bg-white/5 opacity-70'
                 : 'border-[var(--qk-accent)] bg-[var(--qk-accent)]/10',
@@ -1461,37 +1672,58 @@ function MessageBubble({
               isUnopened && 'animate-quicky-pulse glow-coral'
             )}
           >
-            <div className="w-14 h-18 rounded-2xl bg-black/30 flex items-center justify-center overflow-hidden">
+            <div className="relative w-14 h-18 rounded-2xl bg-black/30 flex items-center justify-center overflow-hidden">
               {m.mediaUrl && (m.quickyOpenedAt || isMe) ? (
                 <img src={m.mediaUrl} alt="" className="w-full h-full object-cover blur-[6px]" />
               ) : (
                 <Camera className={cn('w-6 h-6', consumed ? 'text-white/30' : 'text-[var(--qk-accent)]')} />
               )}
+              {sending && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 text-white animate-spin" />
+                </div>
+              )}
+              {/* Duration as a small badge, bottom-left corner */}
+              <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/70 text-white rounded-full px-1.5 py-[1px] tabular-nums">
+                {m.quickyDuration}s
+              </span>
             </div>
             <div className="flex flex-col items-start gap-0.5 pr-2">
               <span className={cn('text-xs font-semibold', consumed ? 'text-white/40' : 'text-[var(--qk-accent-light)]')}>
-                {isMe
-                  ? m.quickyOpenedAt
-                    ? 'Opened'
-                    : 'Quicky · tap to view'
-                  : consumed
-                    ? 'Expired'
-                    : m.quickyOpenedAt
-                      ? 'Replay'
-                      : 'Tap to view'}
+                {sending
+                  ? `Sending… ${m.uploadPct ?? 0}%`
+                  : isMe
+                    ? m.status === 'failed'
+                      ? 'Failed to send'
+                      : m.quickyOpenedAt
+                        ? 'Opened'
+                        : "Sent · they haven't seen it"
+                    : consumed
+                      ? 'Expired'
+                      : m.quickyOpenedAt
+                        ? 'Replay'
+                        : 'Tap to view'}
               </span>
-              <span className="text-[10px] text-white/50">
-                {m.quickyDuration}s{m.screenshotFlagged && ' · screenshot flagged'}
-              </span>
+              {m.screenshotFlagged && (
+                <span className="text-[10px] text-white/50">screenshot flagged</span>
+              )}
             </div>
           </button>
         </div>
+        {sending && (
+          <div className="w-[80%] max-w-[240px] h-1 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full bg-[var(--qk-accent)] transition-all duration-200"
+              style={{ width: `${m.uploadPct ?? 0}%` }}
+            />
+          </div>
+        )}
         {isMe && !m.clientTmp && (
           <span className="text-[10px] text-white/40 px-1">
             {m.quickyOpenedAt ? 'Opened by them' : 'Delivered'}
           </span>
         )}
-        {viewerOpen && m.mediaUrl && (
+        {viewerOpen && m.mediaUrl && !isMe && (
           <QuickyViewer
             mediaUrl={m.mediaUrl}
             duration={m.quickyDuration ?? 5}

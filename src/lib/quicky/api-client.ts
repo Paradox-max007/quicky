@@ -34,6 +34,35 @@ async function uploadFile(file: File, kind: 'photo' | 'quicky' | 'voice' = 'phot
   return data
 }
 
+// XHR-based upload so the UI can show real progress (fetch can't report
+// upload progress). Same contract as uploadFile.
+function uploadFileWithProgress(
+  file: File | Blob,
+  kind: 'photo' | 'quicky' | 'voice',
+  filename?: string,
+  onProgress?: (pct: number) => void
+): Promise<{ ok: boolean; url: string; filename?: string; kind?: string }> {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData()
+    fd.append('file', file, filename ?? (file instanceof File ? file.name : 'blob'))
+    fd.append('kind', kind)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/quicky/upload')
+    xhr.withCredentials = true
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      let data: any = {}
+      try { data = JSON.parse(xhr.responseText) } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data)
+      else reject(new Error(data?.error || `Upload failed (${xhr.status})`))
+    }
+    xhr.onerror = () => reject(new Error('Upload failed — network error'))
+    xhr.send(fd)
+  })
+}
+
 export const api = {
   auth: {
     otp: (phone: string) => jsonFetch<{ ok: boolean; phone: string; demoCode: string }>('/api/quicky/auth/otp', {
@@ -146,13 +175,23 @@ export const api = {
     action: (
       matchId: string,
       sessionId: string,
-      action: 'truth' | 'dare' | 'skip' | 'answer' | 'choice' | 'next_round',
+      action:
+        | 'truth' | 'dare' | 'skip' | 'answer' | 'choice' | 'next_round'
+        | 'roll' | 'move' | 'end',
       payload?: any
     ) =>
       jsonFetch(`/api/quicky/matches/${matchId}/game`, {
         method: 'PATCH',
         body: JSON.stringify({ sessionId, action, ...payload }),
       }),
+  },
+  gamePosts: {
+    list: () => jsonFetch<{ posts: any[] }>('/api/quicky/game-posts'),
+    share: (sessionId: string) =>
+      jsonFetch<{ ok: boolean; postId: string; mutual?: boolean; alreadyShared?: boolean }>(
+        '/api/quicky/game-posts/share',
+        { method: 'POST', body: JSON.stringify({ sessionId }) }
+      ),
   },
   unmatch: (matchId: string) =>
     jsonFetch(`/api/quicky/matches/${matchId}/unmatch`, { method: 'POST' }),
@@ -162,6 +201,11 @@ export const api = {
       jsonFetch<{ ok: boolean; postId: string }>('/api/quicky/community/posts', {
         method: 'POST',
         body: JSON.stringify(data),
+      }),
+    edit: (postId: string, caption: string) =>
+      jsonFetch<{ ok: boolean; caption: string | null }>(`/api/quicky/community/posts/${postId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ caption }),
       }),
     remove: (postId: string) =>
       jsonFetch<{ ok: boolean }>(`/api/quicky/community/posts/${postId}`, { method: 'DELETE' }),
@@ -252,4 +296,5 @@ export const api = {
     },
   },
   upload: uploadFile,
+  uploadWithProgress: uploadFileWithProgress,
 }

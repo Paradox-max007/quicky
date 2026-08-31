@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { motion } from 'framer-motion'
-import { X, Sparkles } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { X, Sparkles, DoorOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { joinMatchChannel, MatchChannel } from '@/lib/quicky/realtime'
+import { GameShareCard, GamePostInfo } from './GameShareCard'
 
 // Never Have I Ever (PRD §8): Premium×2 game — both players secretly answer
 // Yes/No each round, answers reveal simultaneously once both have locked in.
@@ -33,6 +35,10 @@ export function NeverHaveIEver({
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [gamePost, setGamePost] = useState<GamePostInfo | null>(null)
+  const channelRef = useRef<MatchChannel | null>(null)
+  const sessionRef = useRef<Session | null>(null)
+  sessionRef.current = session
   // Local optimistic pick so my choice shows instantly while it syncs
   const [myPick, setMyPick] = useState<'yes' | 'no' | null>(null)
   const [reveal, setReveal] = useState<{ mine: 'yes' | 'no'; theirs: 'yes' | 'no' } | null>(null)
@@ -40,8 +46,12 @@ export function NeverHaveIEver({
   const load = async () => {
     try {
       let res = await api.game.get(matchId)
-      if (!res.session || res.session.gameType !== 'never_have_i_ever') {
-        await api.game.start(matchId, 'never_have_i_ever')
+      if (!res.session && !sessionRef.current) {
+        const started = await api.game.start(matchId, 'never_have_i_ever')
+        if (started?.session) {
+          applyState({ ...started.session, gameType: 'never_have_i_ever', turns: [] })
+          return
+        }
         res = await api.game.get(matchId)
       }
       if (res.session) {
@@ -75,8 +85,25 @@ export function NeverHaveIEver({
 
   useEffect(() => {
     load()
-    const interval = setInterval(load, 3000)
+    // Safety-net poll only — live updates arrive via the 'game' broadcast
+    const interval = setInterval(load, 10000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId])
+
+  // Opponent locked in / advanced a round → refresh instantly
+  useEffect(() => {
+    const ch = joinMatchChannel(matchId, {
+      onGame: (payload) => {
+        if (payload?.ping) load()
+      },
+    })
+    channelRef.current = ch
+    return () => {
+      ch?.unsubscribe()
+      channelRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId])
 
   const pick = async (choice: 'yes' | 'no') => {
@@ -86,11 +113,26 @@ export function NeverHaveIEver({
     haptic()
     try {
       const res = await api.game.action(matchId, session.id, 'answer', { choice })
-      if (res.ok && res.reveal) {
-        setReveal({ mine: choice, theirs: res.partnerChoice })
+      if (res.ok) {
+        // The answer PATCH already tells us whether the partner revealed —
+        // no follow-up GET needed.
+        setSession((s) =>
+          s
+            ? {
+                ...s,
+                iAnswered: true,
+                turns: [
+                  ...s.turns,
+                  { id: `local_${Date.now()}`, playerId: meId, promptDeck: `round:${s.currentTurn}`, promptText: s.roundStatement ?? '', choice },
+                ],
+              }
+            : s
+        )
+        if (res.reveal) {
+          setReveal({ mine: choice, theirs: res.partnerChoice })
+        }
+        channelRef.current?.sendGame({ ping: 'never_have_i_ever' })
       }
-      const fresh = await api.game.get(matchId)
-      if (fresh.session) applyState(fresh.session)
     } catch (e: any) {
       toast.error(e.message ?? 'Failed')
       setMyPick(null)
@@ -105,14 +147,35 @@ export function NeverHaveIEver({
     setMyPick(null)
     setReveal(null)
     try {
-      await api.game.action(matchId, session.id, 'next_round')
-      const fresh = await api.game.get(matchId)
-      if (fresh.session) applyState(fresh.session)
+      const res = await api.game.action(matchId, session.id, 'next_round')
+      if (res.ok) {
+        // next_round response already carries the new round's statement
+        setSession((s) =>
+          s
+            ? {
+                ...s,
+                currentTurn: res.round ?? s.currentTurn + 1,
+                roundStatement: res.roundStatement ?? s.roundStatement,
+                iAnswered: false,
+                partnerAnswered: false,
+              }
+            : s
+        )
+        channelRef.current?.sendGame({ ping: 'never_have_i_ever' })
+      }
     } catch (e: any) {
       toast.error(e.message ?? 'Failed')
     } finally {
       setBusy(false)
     }
+  }
+
+  const endGame = async () => {
+    if (!session) return
+    try {
+      const res = await api.game.action(matchId, session.id, 'end')
+      if (res.gamePost) setGamePost(res.gamePost)
+    } catch {}
   }
 
   function haptic() {
@@ -142,10 +205,32 @@ export function NeverHaveIEver({
             <p className="text-xs text-white/50">Round {session?.currentTurn ?? 1} · with {partnerName ?? 'them'}</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full" aria-label="Close">
+        <button onClick={endGame} className="p-2 hover:bg-white/5 rounded-full text-white/50" aria-label="End game">
+          <DoorOpen className="w-5 h-5" />
+        </button>
+        <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full -ml-4" aria-label="Close">
           <X className="w-5 h-5" />
         </button>
       </header>
+
+      {/* Post-game share card overlay */}
+      <AnimatePresence>
+        {gamePost && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 z-[160] bg-[var(--qk-bg)]/95 backdrop-blur flex items-center justify-center p-5 overflow-y-auto"
+          >
+            <GameShareCard
+              matchId={matchId}
+              sessionId={session?.id ?? ''}
+              post={gamePost}
+              partnerName={partnerName}
+              onClose={onClose}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-6">
         {loading ? (

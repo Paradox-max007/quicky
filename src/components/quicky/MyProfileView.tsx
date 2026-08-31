@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Loader2, Pencil, Trash2 } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
+import { ProfilePostsGrid } from './ProfilePostsGrid'
 import { cn } from '@/lib/utils'
 import { PhotoVerification } from './PhotoVerification'
 import useEmblaCarousel from 'embla-carousel-react'
@@ -129,11 +131,18 @@ export function MyProfileView() {
   const setUser = useQuickyStore((s) => s.setUser)
   const setView = useQuickyStore((s) => s.setView)
   const showPaywall = useQuickyStore((s) => s.showPaywall)
+  const openCommunityPost = useQuickyStore((s) => s.openCommunityPost)
   const [profile, setProfile] = useState<any | null>(null)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [showVerify, setShowVerify] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // Caption edit sheet for own posts
+  const [editingPost, setEditingPost] = useState<{ id: string; caption: string } | null>(null)
+  const [savingCaption, setSavingCaption] = useState(false)
+  // Delete confirmation popup
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingPost, setDeletingPost] = useState(false)
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, dragFree: false })
 
@@ -238,6 +247,40 @@ export function MyProfileView() {
     } catch {
       toast.error('Failed to save order')
       refresh()
+    }
+  }
+
+  const handleDeletePost = (postId: string) => {
+    setConfirmDeleteId(postId)
+  }
+
+  const executeDeletePost = async () => {
+    if (!confirmDeleteId || deletingPost) return
+    setDeletingPost(true)
+    try {
+      await api.community.remove(confirmDeleteId)
+      toast.success('Post deleted')
+      setConfirmDeleteId(null)
+      refresh()
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to delete post')
+    } finally {
+      setDeletingPost(false)
+    }
+  }
+
+  const handleSaveCaption = async () => {
+    if (!editingPost || savingCaption) return
+    setSavingCaption(true)
+    try {
+      await api.community.edit(editingPost.id, editingPost.caption)
+      toast.success('Caption updated')
+      setEditingPost(null)
+      refresh()
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to update caption')
+    } finally {
+      setSavingCaption(false)
     }
   }
 
@@ -473,6 +516,17 @@ export function MyProfileView() {
         </div>
       )}
 
+      {/* Posts grid (own + mutual game posts) */}
+      <div className="px-4 pb-4">
+        <ProfilePostsGrid
+          posts={profile.posts}
+          own={true}
+          onOpen={(post) => openCommunityPost(post.id)}
+          onEdit={(post) => setEditingPost({ id: post.id, caption: post.caption ?? '' })}
+          onDelete={(post) => handleDeletePost(post.id)}
+        />
+      </div>
+
       {/* Manage Photos — drag to reorder */}
       {photos.length > 0 && (
         <div className="px-4 pb-4">
@@ -508,6 +562,146 @@ export function MyProfileView() {
       )}
 
       <div className="h-4" />
+
+      {/* Edit caption modal */}
+      <AnimatePresence>
+        {editingPost && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[190] bg-black/70 backdrop-blur-sm"
+              onClick={() => {
+                if (!savingCaption) setEditingPost(null)
+              }}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+              className="fixed inset-x-0 bottom-0 z-[191] bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl p-5 safe-area-bottom shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-[var(--qk-accent)]/20 flex items-center justify-center text-[var(--qk-accent)]">
+                    <Pencil className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold">Edit Caption</h3>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!savingCaption) setEditingPost(null)
+                  }}
+                  className="p-1 rounded-full text-white/40 hover:text-white"
+                  disabled={savingCaption}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <textarea
+                value={editingPost.caption}
+                onChange={(e) => setEditingPost({ ...editingPost, caption: e.target.value })}
+                rows={3}
+                placeholder="Write a caption..."
+                maxLength={500}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/60 resize-none transition-colors"
+                autoFocus
+              />
+              <div className="flex justify-between items-center mt-1 mb-4 text-[11px] text-white/40 px-1">
+                <span>Keep it short & fun</span>
+                <span>{editingPost.caption.length}/500</span>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingPost(null)}
+                  disabled={savingCaption}
+                  className="flex-1 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-sm font-semibold text-white/70 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCaption}
+                  disabled={savingCaption}
+                  className="flex-1 py-3 rounded-2xl bg-coral-gradient glow-coral text-sm font-semibold text-white flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {savingCaption ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    'Save changes'
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirmation popup */}
+      <AnimatePresence>
+        {confirmDeleteId && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm"
+              onClick={() => {
+                if (!deletingPost) setConfirmDeleteId(null)
+              }}
+            />
+            <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 10 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                className="w-full max-w-sm bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 shadow-2xl pointer-events-auto flex flex-col items-center text-center"
+              >
+                <div className="w-14 h-14 rounded-full bg-[#FF3B30]/15 flex items-center justify-center text-[#FF3B30] mb-4">
+                  <Trash2 className="w-7 h-7" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-1.5">Delete Post?</h3>
+                <p className="text-sm text-white/60 mb-6 leading-relaxed">
+                  This post will be permanently removed from your profile and the community feed. This cannot be undone.
+                </p>
+
+                <div className="flex w-full gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(null)}
+                    disabled={deletingPost}
+                    className="flex-1 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-sm font-semibold text-white/80 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeDeletePost}
+                    disabled={deletingPost}
+                    className="flex-1 py-3 rounded-2xl bg-[#FF3B30] hover:bg-[#FF3B30]/90 text-sm font-semibold text-white flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-[#FF3B30]/20 disabled:opacity-50"
+                  >
+                    {deletingPost ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Deleting...
+                      </>
+                    ) : (
+                      'Delete'
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
 
       {showVerify && <PhotoVerification onClose={() => setShowVerify(false)} onVerified={() => refresh()} />}
     </div>

@@ -21,6 +21,9 @@ function getClient(): SupabaseClient | null {
   return client
 }
 
+// Shared with sibling modules (e.g. game-invites) that need the same client
+export { getClient }
+
 export function realtimeConfigured(): boolean {
   return !!getClient()
 }
@@ -38,6 +41,7 @@ export type MatchChannel = {
   sendRead: (messageIds: string[]) => void
   sendDelivered: (messageIds: string[]) => void
   sendReaction: (payload: { messageId: string; userId: string; emoji: string | null }) => void
+  sendGame: (payload: unknown) => void
   unsubscribe: () => Promise<void>
 }
 
@@ -47,6 +51,7 @@ type MatchHandlers = {
   onRead?: (messageIds: string[]) => void
   onDelivered?: (messageIds: string[]) => void
   onReaction?: (payload: { messageId: string; userId: string; emoji: string | null }) => void
+  onGame?: (payload: any) => void
 }
 
 const matchChannels = new Map<string, RealtimeChannel>()
@@ -92,6 +97,9 @@ export function joinMatchChannel(
       .on('broadcast', { event: 'delivered' }, ({ payload }) =>
         matchHandlerRegistry.get(topic)?.forEach((h) => h.onDelivered?.((payload as any)?.messageIds ?? []))
       )
+      .on('broadcast', { event: 'game' }, ({ payload }) =>
+        matchHandlerRegistry.get(topic)?.forEach((h) => h.onGame?.(payload))
+      )
       .on(
         'postgres_changes',
         {
@@ -121,6 +129,9 @@ export function joinMatchChannel(
     },
     sendReaction: (payload) => {
       channel!.send({ type: 'broadcast', event: 'reaction', payload })
+    },
+    sendGame: (payload) => {
+      channel!.send({ type: 'broadcast', event: 'game', payload })
     },
     unsubscribe: async () => {
       matchHandlerRegistry.get(topic)?.delete(handlers)

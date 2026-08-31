@@ -6,8 +6,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { TOD_DECKS, NHIE_STATEMENTS } from '@/lib/quicky/constants'
+import {
+  LudoState, initialLudoState, legalMoves, applyMove, nextTurnColor,
+  TURN_TIMEOUT_MS,
+} from '@/lib/quicky/ludo'
+import { createGamePostsForSession } from '@/lib/quicky/game-posts'
 
-const GAME_TYPES = ['truth_or_dare', 'never_have_i_ever']
+const GAME_TYPES = ['truth_or_dare', 'never_have_i_ever', 'ludo']
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: string }> }) {
   const me = await getCurrentUser()
@@ -48,6 +53,26 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
       skipped: t.skipped,
       createdAt: t.createdAt,
     })),
+  }
+
+  // For Ludo include the authoritative board state + my color
+  if (session.gameType === 'ludo') {
+    const ludoState: LudoState | null = session.state ? JSON.parse(session.state) : null
+    const myColor = match.userAId === me.id ? ('A' as const) : ('B' as const)
+    const turnColor: 'A' | 'B' | null =
+      session.currentPlayerId === match.userAId ? 'A' : session.currentPlayerId === match.userBId ? 'B' : null
+    const rolling = !!(ludoState && turnColor && ludoState.pendingDice)
+    return NextResponse.json({
+      session: {
+        ...base,
+        isMyTurn: session.currentPlayerId === me.id,
+        myColor,
+        turnColor,
+        status: session.status,
+        ludoState,
+        moves: rolling && turnColor ? legalMoves(ludoState!, turnColor, ludoState!.pendingDice!) : [],
+      },
+    })
   }
 
   // For NHIE include the deterministic statement of the active round
@@ -103,11 +128,29 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
     const partnerId = match.userAId === me.id ? match.userBId : match.userAId
     const partner = await db.user.findUnique({
       where: { id: partnerId },
-      select: { isPremium: true, premiumUntil: true },
+      select: { isPremium: true, premiumUntil: true, name: true },
     })
     if (!partner?.isPremium || (partner.premiumUntil && partner.premiumUntil < new Date())) {
       return NextResponse.json(
-        { error: 'partner_premium_required', message: 'They need Premium too to play Never Have I Ever.' },
+        { error: 'partner_premium_required', message: `${partner?.name ?? 'They'} needs Premium too to play Never Have I Ever.` },
+        { status: 402 }
+      )
+    }
+  }
+
+  // Ludo (PRD §9.1): both players must have active Premium before the room starts
+  if (gameType === 'ludo') {
+    if (!me.isPremium) {
+      return NextResponse.json({ error: 'premium_required', paywall: 'games', which: 'me' }, { status: 402 })
+    }
+    const partnerId = match.userAId === me.id ? match.userBId : match.userAId
+    const partner = await db.user.findUnique({
+      where: { id: partnerId },
+      select: { isPremium: true, premiumUntil: true, name: true },
+    })
+    if (!partner?.isPremium || (partner.premiumUntil && partner.premiumUntil < new Date())) {
+      return NextResponse.json(
+        { error: 'partner_premium_required', message: `${partner?.name ?? 'They'} needs Premium to play Ludo.`, which: 'partner' },
         { status: 402 }
       )
     }
@@ -153,6 +196,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
     })
   }
 
+  if (gameType === 'ludo') {
+    const myColor: 'A' | 'B' = match.userAId === me.id ? 'A' : 'B'
+    const state = initialLudoState(myColor)
+    await db.gameSession.update({ where: { id: session.id }, data: { state: JSON.stringify(state) } })
+    return NextResponse.json({
+      ok: true,
+      session: {
+        id: session.id,
+        gameType,
+        currentTurn: 1,
+        currentPlayerId: me.id,
+        isMyTurn: true,
+        partnerId,
+        myColor,
+        turnColor: myColor,
+        ludoState: state,
+        moves: [],
+      },
+    })
+  }
+
   return NextResponse.json({
     ok: true,
     session: {
@@ -181,7 +245,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
 
   const body = await req.json()
   const sessionId = String(body.sessionId ?? '')
-  const action = String(body.action ?? '') as 'truth' | 'dare' | 'skip' | 'answer' | 'next_round'
+  const action = String(body.action ?? '') as 'truth' | 'dare' | 'skip' | 'answer' | 'next_round' | 'roll' | 'move' | 'end'
   const answerText = body.answerText ? String(body.answerText) : null
   const answerMediaUrl = body.answerMediaUrl ? String(body.answerMediaUrl) : null
 
@@ -191,6 +255,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
   })
   if (!session || session.matchId !== matchId || session.status !== 'active') {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+  }
+
+  // ── End session (any game) — ends the room + generates a shareable post
+  // for BOTH players with a per-game catchy template.
+  if (action === 'end' && session.gameType !== 'ludo') {
+    await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
+    const posts = await createGamePostsForSession(session, null)
+    return NextResponse.json({ ok: true, ended: true, gamePost: posts[me.id] ?? null })
   }
 
   // ── Never Have I Ever actions — both players act every round, no turn owner
@@ -248,6 +320,150 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
     }
 
     return NextResponse.json({ error: 'Invalid action for never_have_i_ever' }, { status: 400 })
+  }
+
+  // ── Ludo actions — server-generated dice + validated moves (PRD §9.4) ────
+  if (session.gameType === 'ludo') {
+    const partnerId = match.userAId === me.id ? match.userBId : match.userAId
+    const myColor = match.userAId === me.id ? ('A' as const) : ('B' as const)
+    const oppColor = myColor === 'A' ? ('B' as const) : ('A' as const)
+
+    let state: LudoState = session.state
+      ? JSON.parse(session.state)
+      : initialLudoState(myColor)
+
+    // Single atomic write for the state blob + any session fields
+    const saveState = async (extra: Record<string, unknown> = {}) => {
+      await db.gameSession.update({
+        where: { id: session.id },
+        data: { state: JSON.stringify(state), updatedAt: new Date(), ...extra },
+      })
+    }
+
+    // Turn timer (PRD §9.2): if the active player stalled with a rolled dice,
+    // auto-pass their turn on the next request from either player.
+    const autoSkipIfTimedOut = async () => {
+      if (
+        state.pendingDice &&
+        session.currentPlayerId &&
+        Date.now() - (state.lastActedAt ?? 0) > TURN_TIMEOUT_MS
+      ) {
+        state.pendingDice = null
+        state.lastActedAt = Date.now()
+        await saveState({
+          currentPlayerId: session.currentPlayerId === match.userAId ? match.userBId : match.userAId,
+        })
+      }
+    }
+
+    if (action === 'end') {
+      await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
+      const posts = await createGamePostsForSession(session, state.winner ?? null)
+      return NextResponse.json({ ok: true, ended: true, gamePost: posts[me.id] ?? null })
+    }
+
+    if (state.winner) {
+      await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
+      const posts = await createGamePostsForSession(session, state.winner)
+      return NextResponse.json({
+        ok: true,
+        winner: state.winner,
+        ludoState: state,
+        moves: [],
+        turnColor: state.winner,
+        isMyTurn: false,
+        gamePost: posts[me.id] ?? null,
+      })
+    }
+
+    if (Date.now() - state.lastActedAt > TURN_TIMEOUT_MS && !state.winner) {
+      await autoSkipIfTimedOut()
+    }
+
+    if (session.currentPlayerId !== me.id && !['end'].includes(action)) {
+      return NextResponse.json({ error: 'Not your turn' }, { status: 400 })
+    }
+
+    if (action === 'roll') {
+      if (state.pendingDice) return NextResponse.json({ error: 'Dice already rolled — make a move' }, { status: 400 })
+      const dice = 1 + Math.floor(Math.random() * 6)
+      // Three consecutive 6s: the third six is cancelled and the turn passes
+      if (dice === 6) {
+        state.sixStreak += 1
+        if (state.sixStreak >= 3) {
+          state.sixStreak = 0
+          state.lastActedAt = Date.now()
+          await saveState({ currentPlayerId: partnerId })
+          return NextResponse.json({
+            ok: true, dice, cancelledSix: true, extraRoll: false,
+            ludoState: state, moves: [], turnColor: oppColor, isMyTurn: false,
+          })
+        }
+      } else {
+        state.sixStreak = 0
+      }
+      state.rollsThisTurn += 1
+      const moves = legalMoves(state, myColor, dice)
+      if (moves.length === 0) {
+        // No legal move with this roll → auto-skip (turn passes unless a 6 gave another roll... but re-roll happens with new dice, so only pass on non-6 chains stays simple: pass on any no-move roll)
+        state.pendingDice = null
+        state.lastActedAt = Date.now()
+        const next = nextTurnColor(dice, myColor)
+        await saveState({ currentPlayerId: next === 'A' ? match.userAId : match.userBId })
+        return NextResponse.json({
+          ok: true, dice, moves: [], passed: true, nextTurn: next,
+          ludoState: state, turnColor: next, isMyTurn: false,
+        })
+      }
+      state.pendingDice = dice
+      state.lastActedAt = Date.now()
+      await saveState()
+      return NextResponse.json({
+        ok: true, dice, moves,
+        ludoState: state, turnColor: myColor, isMyTurn: true,
+      })
+    }
+
+    if (action === 'move') {
+      if (!state.pendingDice) return NextResponse.json({ error: 'Roll first' }, { status: 400 })
+      const tokenId = Number(body.tokenId)
+      const dice = state.pendingDice
+      const moves = legalMoves(state, myColor, dice)
+      const chosen = moves.find((m) => m.tokenId === tokenId)
+      if (!chosen) return NextResponse.json({ error: 'Illegal move' }, { status: 400 })
+
+      const result = applyMove(state, myColor, tokenId, dice)
+      state = result.state
+      state.lastActedAt = Date.now()
+
+      let winnerColor: string | null = null
+      if (state.winner) {
+        winnerColor = state.winner
+      }
+
+      const next = nextTurnColor(dice, myColor)
+      state.pendingDice = null
+      state.lastActedAt = Date.now()
+      await saveState(winnerColor ? {} : { currentPlayerId: next === 'A' ? match.userAId : match.userBId })
+      if (winnerColor) {
+        await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
+      }
+      const posts = winnerColor ? await createGamePostsForSession(session, winnerColor) : null
+      return NextResponse.json({
+        ok: true,
+        ludoState: state,
+        events: result.events,
+        nextTurn: next,
+        extraRoll: next === myColor,
+        winner: winnerColor,
+        moves: [],
+        turnColor: winnerColor ? winnerColor : next,
+        isMyTurn: !winnerColor && next === myColor,
+        gamePost: posts?.[me.id] ?? null,
+      })
+    }
+
+    return NextResponse.json({ error: 'Invalid action for ludo' }, { status: 400 })
   }
 
   // ── Truth or Dare actions (turn-based) ──────────────────────────────────

@@ -148,22 +148,22 @@ export function QuickyViewer({
         />
       )}
 
-      {/* Loading / progress ring at top */}
-      <div className="absolute top-12 left-1/2 -translate-x-1/2 flex items-center gap-3">
-        <svg width="48" height="48" className="transform -rotate-90">
-          <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
+      {/* Timer — small badge in the bottom-left corner */}
+      <div className="absolute bottom-8 left-4 flex items-center gap-2 bg-black/50 backdrop-blur rounded-full pl-1.5 pr-3 py-1.5">
+        <svg width="26" height="26" className="transform -rotate-90">
+          <circle cx="13" cy="13" r="10" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2.5" />
           <circle
-            cx="24"
-            cy="24"
-            r="20"
+            cx="13"
+            cy="13"
+            r="10"
             fill="none"
             stroke="var(--qk-accent)"
-            strokeWidth="3"
-            strokeDasharray={`${2 * Math.PI * 20 * progress} ${2 * Math.PI * 20}`}
+            strokeWidth="2.5"
+            strokeDasharray={`${2 * Math.PI * 10 * progress} ${2 * Math.PI * 10}`}
             strokeLinecap="round"
           />
         </svg>
-        <span className="text-2xl font-bold text-white">{loaded ? remaining : '·'}</span>
+        <span className="text-sm font-bold text-white tabular-nums">{loaded ? remaining : '·'}</span>
       </div>
 
       {/* Quicky label */}

@@ -19,9 +19,24 @@ export function DiscoveryFeed() {
   const showMatchCelebration = useQuickyStore((s) => s.showMatchCelebration)
   const showPaywall = useQuickyStore((s) => s.showPaywall)
 
-  const [queue, setQueue] = useState<DiscoveryCandidate[]>([])
-  const [limits, setLimits] = useState<{ likes: number | 'unlimited'; superLikes: number; quicky: number | 'unlimited'; isPremium: boolean } | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Warm cache: paint the last-known deck instantly, refresh() revalidates
+  const [queue, setQueue] = useState<DiscoveryCandidate[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('qk_discovery_cache_v1') ?? 'null')
+      return Array.isArray(parsed?.queue) ? parsed.queue : []
+    } catch {
+      return []
+    }
+  })
+  const [limits, setLimits] = useState<{ likes: number | 'unlimited'; superLikes: number; quicky: number | 'unlimited'; isPremium: boolean } | null>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('qk_discovery_cache_v1') ?? 'null')
+      return parsed?.limits ?? null
+    } catch {
+      return null
+    }
+  })
+  const [loading, setLoading] = useState(() => queue.length === 0)
   const [topKey, setTopKey] = useState(0) // force remount of top card
 
   // Pending swipes waiting to be flushed to the server in one batch request.
@@ -89,11 +104,13 @@ export function DiscoveryFeed() {
   }, [flushPending])
 
   const refresh = async () => {
-    setLoading(true)
     try {
       const res = await api.discovery()
       setQueue(res.queue)
       setLimits(res.limits)
+      try {
+        localStorage.setItem('qk_discovery_cache_v1', JSON.stringify({ queue: res.queue.slice(0, 10), limits: res.limits }))
+      } catch {}
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to load discovery')
     } finally {

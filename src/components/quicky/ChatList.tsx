@@ -65,7 +65,6 @@ export function ChatList() {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisible)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Opening a chat marks it read — drop its badge instantly (PRD §2.2)
