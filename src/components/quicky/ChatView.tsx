@@ -119,6 +119,28 @@ function useLongPress(onLong: () => void, ms = 450) {
   }
 }
 
+// Double-tap detector (works on web + Capacitor WebView). Triggers `onDouble`
+// only when two taps land within `window` ms and inside `radius` px. Ignores
+// the second tap if the user is actually long-pressing.
+function useDoubleTap(onDouble: () => void, window = 300, radius = 30) {
+  const last = useRef<{ t: number; x: number; y: number } | null>(null)
+  return {
+    onPointerUp: (e: React.PointerEvent) => {
+      const now = Date.now()
+      const prev = last.current
+      last.current = { t: now, x: e.clientX, y: e.clientY }
+      if (
+        prev &&
+        now - prev.t < window &&
+        Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < radius
+      ) {
+        last.current = null
+        onDouble()
+      }
+    },
+  }
+}
+
 // Warm device cache per conversation (PRD §4.1): the last fetched messages +
 // partner header are stored so reopening a chat paints instantly, then SWR-
 // style revalidation patches anything new.
@@ -825,6 +847,10 @@ export function ChatView() {
           textAreaRef.current?.focus()
         }}
         onRetry={() => sendText(m)}
+        onDoubleTapReact={() => {
+          // Quick ❤️ reaction — same path as the long-press picker
+          reactToMessage(m, '❤️')
+        }}
         onOpenQuicky={async (q) => {
           try {
             const res = await api.quicky.open(matchId, q.id, 'open')
@@ -1546,6 +1572,7 @@ function MessageBubble({
   onOpenQuicky,
   onConsumeQuicky,
   onJumpTo,
+  onDoubleTapReact,
 }: {
   m: Msg
   meId: string
@@ -1557,12 +1584,20 @@ function MessageBubble({
   onOpenQuicky: (q: Msg) => Promise<void> | void
   onConsumeQuicky: () => void
   onJumpTo: (id: string) => void
+  onDoubleTapReact?: () => void
 }) {
   const isMe = m.senderId === meId
   const [viewerOpen, setViewerOpen] = useState(false)
   const [dragOffset, setDragOffset] = useState(0)
+  const [burst, setBurst] = useState(0)
   const hapticFired = useRef(false)
   const press = useLongPress(onLongPress)
+  // Double-tap on any bubble type → heart reaction with a quick overlay
+  const dbl = useDoubleTap(() => {
+    if (!onDoubleTapReact) return
+    onDoubleTapReact()
+    setBurst((b) => b + 1)
+  })
 
   const wrap = (node: React.ReactNode) => (
     <motion.div
@@ -1618,9 +1653,30 @@ function MessageBubble({
             setDragOffset(0)
             hapticFired.current = false
           }}
+          onPointerDown={press.onPointerDown}
+          onPointerUp={(e) => {
+            press.onPointerUp()
+            dbl.onPointerUp(e)
+          }}
+          onPointerLeave={press.onPointerLeave}
+          onPointerCancel={press.onPointerCancel}
           animate={{ x: 0 }}
           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
         >
+          {/* Heart-burst overlay for double-tap reactions */}
+          {burst > 0 && (
+            <motion.span
+              key={burst}
+              initial={{ opacity: 0, scale: 0.5, y: 0 }}
+              animate={{ opacity: [0, 1, 0], scale: [0.5, 1.4, 1.8], y: [0, -20, -50] }}
+              transition={{ duration: 0.75, ease: 'easeOut' }}
+              onAnimationComplete={() => setBurst(0)}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-4xl pointer-events-none z-30"
+              aria-hidden
+            >
+              ❤️
+            </motion.span>
+          )}
           {node}
         </motion.div>
       </div>
