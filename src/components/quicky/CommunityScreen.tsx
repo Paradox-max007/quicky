@@ -16,11 +16,13 @@ import {
   ImagePlus,
   Film,
   Loader2,
+  Dices,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { filterCss, timeAgo } from '@/lib/quicky/filters'
+import { useDoubleTap } from '@/lib/quicky/useDoubleTap'
 import { Avatar, CommentsSheet, CommentItem } from './CommentsSheet'
 import { MediaComposer } from './MediaComposer'
 import { RollsViewer, RollGroup } from './RollsViewer'
@@ -41,6 +43,7 @@ type Post = {
   gameTitle?: string | null
   gameBody?: string | null
   emoji?: string | null
+  commentsEnabled: boolean
   likeCount: number
   commentCount: number
   likedByMe: boolean
@@ -83,6 +86,8 @@ export function CommunityScreen() {
   const [composerMode, setComposerMode] = useState<'post' | 'roll' | null>(null)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const [commentsTarget, setCommentsTarget] = useState<{ kind: 'post' | 'roll'; id: string } | null>(null)
+  // postId -> bump counter; used to remount the heart-burst overlay on each double-tap
+  const [burstFor, setBurstFor] = useState<{ id: string; n: number } | null>(null)
   // delete confirmation
   const [confirmDeletePostId, setConfirmDeletePostId] = useState<string | null>(null)
   const [deletingPost, setDeletingPost] = useState(false)
@@ -146,6 +151,13 @@ export function CommunityScreen() {
     }
   }
 
+  // Double-tap on post media: Instagram-style "always like" + heart-burst.
+  // (Tapping the heart icon still toggles off — only the double-tap shortcut is one-way.)
+  const doubleTapLike = (post: Post) => {
+    setBurstFor((curr) => (curr?.id === post.id ? { id: post.id, n: curr.n + 1 } : { id: post.id, n: 1 }))
+    if (!post.likedByMe) togglePostLike(post)
+  }
+
   const deletePost = (postId: string) => {
     setConfirmDeletePostId(postId)
   }
@@ -188,6 +200,24 @@ export function CommunityScreen() {
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pb-4">
+        {/* ── Spin the Bottle promo card ───────────────────────────── */}
+        <button
+          onClick={() => useQuickyStore.getState().setView('spin-bottle')}
+          className="w-[calc(100%-2rem)] mx-4 mt-3 mb-2 relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--qk-accent)] to-[var(--qk-purple)] glow-coral active:scale-[0.99] transition-transform"
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_50%)]" />
+          <div className="relative flex items-center gap-3 p-4">
+            <div className="w-12 h-12 rounded-2xl bg-black/25 flex items-center justify-center">
+              <Dices className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-black text-white">Spin the Bottle</p>
+              <p className="text-[11px] text-white/80">Up to 12 players · system-controlled spin</p>
+            </div>
+            <span className="text-[10px] font-bold bg-white/25 text-white rounded-full px-2.5 py-1">PLAY</span>
+          </div>
+        </button>
+
         {/* ── Rolls tray ─────────────────────────────────────────────── */}
         <div className="px-4 pt-2 pb-3 border-b border-white/5">
           <div className="flex gap-3.5 overflow-x-auto no-scrollbar py-1">
@@ -339,27 +369,7 @@ export function CommunityScreen() {
                     <p className="text-xs uppercase tracking-[0.2em] text-white/60 mt-6">Quicky Games</p>
                   </div>
                 ) : (
-                  <div className="relative w-full aspect-square bg-black">
-                    {post.mediaType === 'video' ? (
-                      <video
-                        src={post.mediaUrl ?? ''}
-                        style={{ filter: filterCss(post.filter) }}
-                        className="w-full h-full object-cover"
-                        controls
-                        playsInline
-                        loop
-                        preload="metadata"
-                      />
-                    ) : (
-                      <img
-                        src={post.mediaUrl ?? ''}
-                        alt={post.caption ?? 'Community post'}
-                        style={{ filter: filterCss(post.filter) }}
-                        className="w-full h-full object-cover"
-                        draggable={false}
-                      />
-                    )}
-                  </div>
+                  <PostMedia post={post} onDoubleTapLike={() => doubleTapLike(post)} burst={burstFor?.id === post.id ? burstFor.n : 0} />
                 )}
 
                 {/* Actions */}
@@ -374,13 +384,15 @@ export function CommunityScreen() {
                       fill={post.likedByMe ? 'currentColor' : 'none'}
                     />
                   </button>
-                  <button
-                    onClick={() => setCommentsTarget({ kind: 'post', id: post.id })}
-                    className="active:scale-90 transition-transform"
-                    aria-label="Comment on post"
-                  >
-                    <MessageCircle className="w-7 h-7" />
-                  </button>
+                  {post.commentsEnabled && (
+                    <button
+                      onClick={() => setCommentsTarget({ kind: 'post', id: post.id })}
+                      className="active:scale-90 transition-transform"
+                      aria-label="Comment on post"
+                    >
+                      <MessageCircle className="w-7 h-7" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Meta */}
@@ -391,12 +403,14 @@ export function CommunityScreen() {
                       <span className="font-semibold text-white">{post.author.name ?? 'Someone'}</span> {post.caption}
                     </p>
                   )}
-                  <button
-                    onClick={() => setCommentsTarget({ kind: 'post', id: post.id })}
-                    className="text-left text-xs text-white/40 hover:text-white/60"
-                  >
-                    View all {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
-                  </button>
+                  {post.commentsEnabled && post.commentCount > 0 && (
+                    <button
+                      onClick={() => setCommentsTarget({ kind: 'post', id: post.id })}
+                      className="text-left text-xs text-white/40 hover:text-white/60"
+                    >
+                      View all {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
+                    </button>
+                  )}
                 </div>
               </article>
             )
@@ -540,6 +554,51 @@ function AuthorAvatar({ author }: { author: Author }) {
         <img src={author.avatar} alt="" className="w-full h-full object-cover" />
       ) : (
         <span className="text-xl font-semibold text-white">{(author.name ?? '?').slice(0, 1).toUpperCase()}</span>
+      )}
+    </div>
+  )
+}
+
+// Post media wrapped in a double-tap handler with a heart-burst overlay.
+// Video controls are still usable (the pointer-up handler doesn't capture).
+function PostMedia({ post, onDoubleTapLike, burst }: { post: Post; onDoubleTapLike: () => void; burst: number }) {
+  const dbl = useDoubleTap(onDoubleTapLike)
+  return (
+    <div
+      className="relative w-full aspect-square bg-black select-none"
+      onPointerUp={dbl.onPointerUp}
+    >
+      {post.mediaType === 'video' ? (
+        <video
+          src={post.mediaUrl ?? ''}
+          style={{ filter: filterCss(post.filter) }}
+          className="w-full h-full object-cover"
+          controls
+          playsInline
+          loop
+          preload="metadata"
+        />
+      ) : (
+        <img
+          src={post.mediaUrl ?? ''}
+          alt={post.caption ?? 'Community post'}
+          style={{ filter: filterCss(post.filter) }}
+          className="w-full h-full object-cover"
+          draggable={false}
+        />
+      )}
+      {burst > 0 && (
+        <motion.span
+          key={burst}
+          initial={{ opacity: 0, scale: 0.5 }}
+          animate={{ opacity: [0, 1, 0], scale: [0.5, 1.4, 1.8], y: [0, -20, -40] }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+          onAnimationComplete={() => { /* key remount handles cleanup */ }}
+          className="absolute inset-0 m-auto w-24 h-24 flex items-center justify-center text-6xl pointer-events-none"
+          aria-hidden
+        >
+          ❤️
+        </motion.span>
       )}
     </div>
   )

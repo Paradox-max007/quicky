@@ -29,6 +29,7 @@ export function MediaComposer({
   const [isVideo, setIsVideo] = useState(false)
   const [filterId, setFilterId] = useState('none')
   const [caption, setCaption] = useState('')
+  const [commentsEnabled, setCommentsEnabled] = useState(true)
   const [sharing, setSharing] = useState(false)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const galleryInputRef = useRef<HTMLInputElement>(null)
@@ -60,6 +61,7 @@ export function MediaComposer({
         mediaType: isVideo ? ('video' as const) : ('image' as const),
         caption: caption.trim(),
         filter: filterId,
+        commentsEnabled,
       }
       if (mode === 'roll') {
         await api.rolls.create(payload)
@@ -168,7 +170,7 @@ export function MediaComposer({
           </div>
 
           {/* Filter strip */}
-          <div className="shrink-0 px-4 pt-3 pb-3">
+          <div className="shrink-0 px-4 pt-3 pb-2">
             <p className="text-[11px] font-semibold text-white/40 uppercase tracking-wide mb-2">Filters</p>
             <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
               {MEDIA_FILTERS.map((f) => (
@@ -197,6 +199,39 @@ export function MediaComposer({
               ))}
             </div>
           </div>
+
+          {/* Allow-comments toggle (posts only — rolls don't have comments) */}
+          {mode === 'post' && (
+            <div className="shrink-0 px-4 pb-3">
+              <button
+                type="button"
+                onClick={() => setCommentsEnabled((v) => !v)}
+                className="w-full flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl px-3.5 py-3 active:scale-[0.99] transition-transform"
+                aria-pressed={commentsEnabled}
+              >
+                <div className="text-left">
+                  <p className="text-sm font-semibold">Allow comments</p>
+                  <p className="text-[11px] text-white/50">
+                    {commentsEnabled ? 'Viewers can comment on this post' : 'Comments will be disabled'}
+                  </p>
+                </div>
+                {/* Inline switch */}
+                <span
+                  className={cn(
+                    'relative w-11 h-6 rounded-full transition-colors shrink-0',
+                    commentsEnabled ? 'bg-[var(--qk-accent)]' : 'bg-white/15'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform',
+                      commentsEnabled && 'translate-x-5'
+                    )}
+                  />
+                </span>
+              </button>
+            </div>
+          )}
         </>
       )}
 

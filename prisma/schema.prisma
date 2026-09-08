@@ -74,6 +74,8 @@ model User {
   rolls            Roll[]
   rollLikes        RollLike[]      @relation("RollLikes")
   rollComments     RollComment[]   @relation("RollComments")
+  spinRoomMemberships SpinRoomPlayer[]
+  spinRoomMessages    SpinRoomMessage[]
 }
 
 model Photo {
@@ -323,6 +325,8 @@ model CommunityPost {
   gameBody      String?
   emoji         String?
   gameSessionId String?
+  // Owners can disable comments per post (default true; both UI and API enforce)
+  commentsEnabled Boolean @default(true)
   createdAt DateTime @default(now())
   user      User          @relation("PostOwner", fields: [userId], references: [id], onDelete: Cascade)
   coOwner   User?         @relation("PostCoOwner", fields: [coOwnerId], references: [id], onDelete: SetNull)
@@ -412,4 +416,98 @@ model RollComment {
   createdAt DateTime @default(now())
   roll      Roll @relation(fields: [rollId], references: [id], onDelete: Cascade)
   user      User @relation("RollComments", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Spin the Bottle (multiplayer community game) ────────────────────────────
+// V1: up to 12 players per room, server-authoritative spin + kiss flow.
+// Drives: SPINNING → AWAITING → RESULT → NEXT_TURN via Node setTimeout.
+model SpinRoom {
+  id              String   @id @default(cuid())
+  status          String   @default("WAITING") // WAITING | STARTING | PLAYING | CLOSING
+  maxPlayers      Int      @default(12)
+  minPlayers      Int      @default(2)
+  currentTurnIdx  Int      @default(0)
+  // ID of the active spin row (kept here for fast polling lookup)
+  currentSpinId   String?
+  startedAt       DateTime?
+  lastActivityAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  players         SpinRoomPlayer[]
+  spins           SpinBottleSpin[]
+  messages        SpinRoomMessage[]
+
+  @@index([status, lastActivityAt])
+}
+
+model SpinRoomPlayer {
+  id            String   @id @default(cuid())
+  roomId        String
+  userId        String
+  // 0..11 fixed seat around the table (assigned on join)
+  seatIndex     Int
+  // 0..N-1 order in the current turn rotation
+  turnIndex     Int
+  // "online" | "reconnecting" | "offline"
+  connection    String   @default("online")
+  joinedAt      DateTime @default(now())
+  leftAt        DateTime?
+  isActive      Boolean  @default(true)
+  room          SpinRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId, leftAt])
+  @@index([roomId, isActive, turnIndex])
+}
+
+model SpinBottleSpin {
+  id              String   @id @default(cuid())
+  roomId          String
+  turnIndex       Int
+  spinnerId       String
+  // Server-chosen opposite-gender target (null only between server restart + first advance)
+  targetId        String?
+  // Bottle's rotational start + end, in radians
+  startRotation   Float
+  endRotation     Float
+  duration        Int      @default(3500)
+  // "spinning" | "awaiting" | "completed"
+  status          String   @default("spinning")
+  // "yes" | "no" | "timeout"
+  response        String?
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  room            SpinRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  events          SpinBottleEvent[]
+
+  @@index([roomId, turnIndex])
+  @@index([roomId, status])
+}
+
+model SpinBottleEvent {
+  id         String   @id @default(cuid())
+  spinId     String
+  // "kiss_yes" | "kiss_no" | "kiss_timeout" | "system"
+  kind       String
+  fromUserId String?
+  toUserId   String?
+  meta       String?
+  createdAt  DateTime @default(now())
+  spin       SpinBottleSpin @relation(fields: [spinId], references: [id], onDelete: Cascade)
+
+  @@index([spinId, createdAt])
+}
+
+model SpinRoomMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  text      String
+  // "user" | "system" (system messages also pin a userId — usually the spinner)
+  kind      String   @default("user")
+  createdAt DateTime @default(now())
+  room      SpinRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
 }

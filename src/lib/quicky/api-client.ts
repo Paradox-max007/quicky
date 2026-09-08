@@ -195,9 +195,43 @@ export const api = {
   },
   unmatch: (matchId: string) =>
     jsonFetch(`/api/quicky/matches/${matchId}/unmatch`, { method: 'POST' }),
+  spinBottle: {
+    landing: () =>
+      jsonFetch<{ gamesPlayed: number; kissesReceived: number; kissesGiven: number; coins: number; level: number }>(
+        '/api/quicky/games/spin-bottle/landing-stats'
+      ),
+    join: () =>
+      jsonFetch<{ ok: boolean; roomId: string; snapshot: any }>('/api/quicky/games/spin-bottle/join', {
+        method: 'POST',
+      }),
+    room: (roomId: string) =>
+      jsonFetch<{ ok: boolean; snapshot: any }>(`/api/quicky/games/spin-bottle/room?roomId=${roomId}`),
+    leave: (roomId: string) =>
+      jsonFetch('/api/quicky/games/spin-bottle/leave', {
+        method: 'POST',
+        body: JSON.stringify({ roomId }),
+      }),
+    respond: (roomId: string, choice: 'yes' | 'no') =>
+      jsonFetch('/api/quicky/games/spin-bottle/respond', {
+        method: 'POST',
+        body: JSON.stringify({ roomId, choice }),
+      }),
+    chat: (roomId: string) =>
+      jsonFetch<{ messages: any[] }>(`/api/quicky/games/spin-bottle/chat?roomId=${roomId}`),
+    sendChat: (roomId: string, text: string) =>
+      jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
+        method: 'POST',
+        body: JSON.stringify({ roomId, text }),
+      }),
+    close: (roomId: string) =>
+      jsonFetch('/api/quicky/games/spin-bottle/close', {
+        method: 'POST',
+        body: JSON.stringify({ roomId }),
+      }),
+  },
   community: {
     feed: () => jsonFetch<{ posts: any[] }>('/api/quicky/community/posts'),
-    create: (data: { mediaUrl: string; mediaType?: 'image' | 'video'; caption?: string; filter?: string }) =>
+    create: (data: { mediaUrl: string; mediaType?: 'image' | 'video'; caption?: string; filter?: string; commentsEnabled?: boolean }) =>
       jsonFetch<{ ok: boolean; postId: string }>('/api/quicky/community/posts', {
         method: 'POST',
         body: JSON.stringify(data),

@@ -39,8 +39,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ postId: st
   const text = typeof body?.text === 'string' ? body.text.slice(0, 500).trim() : ''
   if (!text) return NextResponse.json({ error: 'Comment cannot be empty' }, { status: 400 })
 
-  const post = await db.communityPost.findUnique({ where: { id: postId }, select: { id: true } })
+  const post = await db.communityPost.findUnique({
+    where: { id: postId },
+    select: { id: true, commentsEnabled: true },
+  })
   if (!post) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Per-post opt-out — server enforces regardless of UI state
+  if (post.commentsEnabled === false) {
+    return NextResponse.json({ error: 'Comments are off on this post' }, { status: 403 })
+  }
 
   const comment = await db.postComment.create({
     data: { postId, userId: me.id, text },

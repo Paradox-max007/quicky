@@ -146,6 +146,77 @@ export function joinMatchChannel(
   }
 }
 
+// ─── Per-room channel: spin the bottle (1:N broadcasts) ────────────────────
+// Mirrors joinMatchChannel but lives on a `room:<roomId>` topic so the
+// multi-player game traffic doesn't share a channel with the 1:1 match
+// traffic. Refcounted so multiple components in the same room (e.g. chat
+// drawer + canvas) share a single Supabase channel.
+export type RoomChannel = {
+  channel: RealtimeChannel
+  sendState: (payload: unknown) => void
+  sendChat: (payload: { messageId: string; userId: string; text: string; kind: string; createdAt: string }) => void
+  sendKiss: (payload: { spinId: string; choice: 'yes' | 'no' }) => void
+  unsubscribe: () => Promise<void>
+}
+
+type RoomHandlers = {
+  onState?: (payload: any) => void
+  onChat?: (payload: any) => void
+  onKiss?: (payload: any) => void
+}
+
+const roomChannels = new Map<string, RealtimeChannel>()
+const roomHandlerRegistry = new Map<string, Set<RoomHandlers>>()
+const roomRefs = new Map<string, number>()
+
+export function joinRoomChannel(
+  roomId: string,
+  handlers: RoomHandlers
+): RoomChannel | null {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const topic = `room:${roomId}`
+  roomRefs.set(topic, (roomRefs.get(topic) ?? 0) + 1)
+  if (!roomHandlerRegistry.has(topic)) roomHandlerRegistry.set(topic, new Set())
+  roomHandlerRegistry.get(topic)!.add(handlers)
+
+  let channel = roomChannels.get(topic)
+  if (!channel) {
+    channel = supabase.channel(topic)
+    roomChannels.set(topic, channel)
+
+    channel
+      .on('broadcast', { event: 'state' }, ({ payload }) =>
+        roomHandlerRegistry.get(topic)?.forEach((h) => h.onState?.(payload))
+      )
+      .on('broadcast', { event: 'chat' }, ({ payload }) =>
+        roomHandlerRegistry.get(topic)?.forEach((h) => h.onChat?.(payload))
+      )
+      .on('broadcast', { event: 'kiss' }, ({ payload }) =>
+        roomHandlerRegistry.get(topic)?.forEach((h) => h.onKiss?.(payload))
+      )
+      .subscribe()
+  }
+
+  return {
+    channel,
+    sendState: (payload) => channel!.send({ type: 'broadcast', event: 'state', payload }),
+    sendChat: (payload) => channel!.send({ type: 'broadcast', event: 'chat', payload }),
+    sendKiss: (payload) => channel!.send({ type: 'broadcast', event: 'kiss', payload }),
+    unsubscribe: async () => {
+      roomHandlerRegistry.get(topic)?.delete(handlers)
+      const refs = (roomRefs.get(topic) ?? 1) - 1
+      roomRefs.set(topic, refs)
+      if (refs <= 0) {
+        roomHandlerRegistry.delete(topic)
+        roomChannels.delete(topic)
+        await supabase.removeChannel(channel!)
+      }
+    },
+  }
+}
+
 // ─── Presence: online status ───────────────────────────────────────────────
 // One shared channel for the whole app: `trackOnline` (announce me) and
 // `watchOnline` (observe everyone) may be mounted any number of times and in

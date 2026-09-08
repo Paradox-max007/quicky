@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUICKY } from '@/lib/quicky/constants'
+import { useDoubleTap } from '@/lib/quicky/useDoubleTap'
 import { joinMatchChannel, trackOnline, watchOnline, realtimeConfigured, MatchChannel } from '@/lib/quicky/realtime'
 import { notifyGameInvite, watchGameInvites, GameInvitePayload } from '@/lib/quicky/game-invites'
 import { requestMicPermission, requestCameraPermission } from '@/lib/quicky/media-permissions'
@@ -116,28 +117,6 @@ function useLongPress(onLong: () => void, ms = 450) {
     onPointerLeave: stop,
     onPointerCancel: stop,
     consumed: () => fired.current,
-  }
-}
-
-// Double-tap detector (works on web + Capacitor WebView). Triggers `onDouble`
-// only when two taps land within `window` ms and inside `radius` px. Ignores
-// the second tap if the user is actually long-pressing.
-function useDoubleTap(onDouble: () => void, window = 300, radius = 30) {
-  const last = useRef<{ t: number; x: number; y: number } | null>(null)
-  return {
-    onPointerUp: (e: React.PointerEvent) => {
-      const now = Date.now()
-      const prev = last.current
-      last.current = { t: now, x: e.clientX, y: e.clientY }
-      if (
-        prev &&
-        now - prev.t < window &&
-        Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < radius
-      ) {
-        last.current = null
-        onDouble()
-      }
-    },
   }
 }
 

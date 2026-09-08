@@ -26,6 +26,8 @@ import { HelpSupportScreen } from './HelpSupportScreen'
 import { PremiumView } from './PremiumView'
 import { CommunityScreen } from './CommunityScreen'
 import { ProfileView } from './ProfileView'
+import { SpinBottleLanding } from './SpinBottleLanding'
+import { SpinBottleRoom } from './SpinBottleRoom'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
@@ -35,6 +37,7 @@ export function AppRoot() {
   const view = useQuickyStore((s) => s.view)
   const hydrated = useQuickyStore((s) => s.hydrated)
   const user = useQuickyStore((s) => s.user)
+  const setView = useQuickyStore((s) => s.setView)
 
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
@@ -107,6 +110,38 @@ export function AppRoot() {
           {view === 'community' && <CommunityScreen />}
           {view === 'chat' && <ChatView />}
           {view === 'profile-view' && <ProfileView />}
+          {view === 'spin-bottle' && (
+            <SpinBottleLanding
+              onClose={() => setView('community')}
+              onJoined={(roomId) => {
+                useQuickyStore.getState().setSpinBottleRoomId(roomId)
+                setView('spin-bottle-room')
+              }}
+            />
+          )}
+          {view === 'spin-bottle-room' && (() => {
+            const roomId = useQuickyStore.getState().spinBottleRoomId
+            if (!roomId) {
+              return (
+                <SpinBottleLanding
+                  onClose={() => setView('community')}
+                  onJoined={(id) => {
+                    useQuickyStore.getState().setSpinBottleRoomId(id)
+                    setView('spin-bottle-room')
+                  }}
+                />
+              )
+            }
+            return (
+              <SpinBottleRoom
+                roomId={roomId}
+                onClose={() => {
+                  useQuickyStore.getState().setSpinBottleRoomId(null)
+                  setView('community')
+                }}
+              />
+            )
+          })()}
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings */}
         {['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && <BottomNav />}

@@ -27,6 +27,8 @@ export type AppView =
   | 'community'
   | 'chat'
   | 'profile-view'
+  | 'spin-bottle'
+  | 'spin-bottle-room'
 
 export type QuickyUser = {
   id: string
@@ -144,6 +146,8 @@ type State = {
   paywall: PaywallContext | null
   // Post to scroll to & highlight when the Community tab next opens
   communityFocusPostId: string | null
+  // Active Spin the Bottle roomId (set when join succeeds; cleared on leave)
+  spinBottleRoomId: string | null
 
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
@@ -169,6 +173,7 @@ type State = {
   clearPaywall: () => void
   openCommunityPost: (postId: string) => void
   clearCommunityFocus: () => void
+  setSpinBottleRoomId: (id: string | null) => void
   logout: () => void
 }
 
@@ -182,6 +187,7 @@ export const useQuickyStore = create<State>((set) => ({
   pendingMatchPartner: null,
   paywall: null,
   communityFocusPostId: null,
+  spinBottleRoomId: null,
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -213,5 +219,6 @@ export const useQuickyStore = create<State>((set) => ({
   clearPaywall: () => set({ paywall: null }),
   openCommunityPost: (postId) => set({ communityFocusPostId: postId, view: 'community' }),
   clearCommunityFocus: () => set({ communityFocusPostId: null }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0 }),
+  setSpinBottleRoomId: (id) => set({ spinBottleRoomId: id }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, communityFocusPostId: null }),
 }))

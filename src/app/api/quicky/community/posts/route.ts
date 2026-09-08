@@ -40,6 +40,7 @@ export async function GET(_req: NextRequest) {
       gameTitle: p.gameTitle,
       gameBody: p.gameBody,
       emoji: p.emoji,
+      commentsEnabled: p.commentsEnabled,
       likeCount: p._count.likes,
       commentCount: p._count.comments,
       likedByMe: p.likes.length > 0,
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
   const mediaType = body?.mediaType === 'video' ? 'video' : 'image'
   const caption = typeof body?.caption === 'string' ? body.caption.slice(0, 500).trim() : ''
   const filter = typeof body?.filter === 'string' && body.filter !== 'none' ? body.filter.slice(0, 32) : null
+  // Default to allowing comments; the client passes `false` to opt out
+  const commentsEnabled = body?.commentsEnabled === false ? false : true
 
   if (!mediaUrl || (!mediaUrl.startsWith('/uploads/') && !mediaUrl.startsWith('http'))) {
     return NextResponse.json({ error: 'Media is required' }, { status: 400 })
@@ -68,6 +71,7 @@ export async function POST(req: NextRequest) {
       mediaUrl,
       mediaType,
       filter,
+      commentsEnabled,
     },
   })
 
