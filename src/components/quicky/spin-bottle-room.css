@@ -287,7 +287,9 @@
   z-index: 1;
   flex: 1 1 auto;
   min-height: 0;
-  margin: 4px 8px 6px;
+  /* bottom margin = visible 8px seam between the table and the chat card,
+     so the two always read as separate areas on every device */
+  margin: 4px 8px 8px;
   border-radius: 18px;
   overflow: hidden;
   border: 2px solid rgba(255, 240, 210, 0.65);
@@ -595,18 +597,24 @@
   text-shadow: 0 1px 2px rgba(150, 10, 60, 0.5);
 }
 
-/* ── Chat (dark social-game feed on the app surface) ──────── */
+/* ── Chat (dark social-game feed on the app surface) ────────
+   The chat is its OWN floating card — same side margins as the table card,
+   fully rounded, with a visible gap of app-background between the two so the
+   chat area always reads as separate from the game table. */
 .sbr-chat {
   position: relative;
   z-index: 2;
   flex: 0 0 auto;
-  height: clamp(216px, 31dvh, 340px);
+  height: clamp(206px, 30dvh, 330px);
   display: flex;
   flex-direction: column;
   background: var(--room-chat-bg);
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.4);
-  border-radius: 18px 18px 0 0;
+  margin: 0 8px max(8px, env(safe-area-inset-bottom, 0px));
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 18px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  overflow: hidden; /* clips children to the rounded card (never clips the
+                       popped composer — its containing block is the app shell) */
   color: var(--room-chat-text);
 }
 .sbr-chat-scroll {
@@ -723,16 +731,21 @@
 
 /* ── Composer ─────────────────────────────────────────────── */
 .sbr-composer {
+  /* position:relative makes this row the anchor for the reply preview banner
+     and the emoji tray — they must appear DIRECTLY ABOVE THE INPUT BOX,
+     never above the whole chat panel (that was the bug when this row was
+     position:static and the banner resolved against .sbr-chat). */
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 7px 9px;
-  padding-bottom: max(7px, env(safe-area-inset-bottom, 0px));
   background: var(--room-chat-card);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
-/* Placeholder to keep chat layout steady when composer pops on top */
+/* Placeholder to keep chat layout steady when composer pops on top
+   (real composer height = 7px padding + 38px input + 7px padding) */
 .sbr-composer-placeholder {
   flex-shrink: 0;
   height: 52px;
@@ -761,7 +774,10 @@
     transform: translateY(0);
   }
 }
-/* Reply preview banner above composer */
+/* Reply preview banner — docks directly above the input row (relative to
+   .sbr-composer). Shows above the input in BOTH states: normal (docked in
+   the chat card) and popped (floating over the table while the keyboard is
+   open). */
 .sbr-reply-banner {
   position: absolute;
   bottom: 100%;

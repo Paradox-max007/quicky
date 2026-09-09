@@ -109,6 +109,7 @@ export function SpinBottleRoom({
   const [kissFlash, setKissFlash] = useState<{ kind: 'yes' | 'no' | 'timeout' | null; name: string }>({ kind: null, name: '' })
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
   const [kbHeight, setKbHeight] = useState(0)
+  const kbHeightRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -116,13 +117,28 @@ export function SpinBottleRoom({
   const spinStartTimeRef = useRef<number>(0)
   const roomChannelRef = useRef<RoomChannel | null>(null)
 
-  // Measure stage height when keyboard is closed so we can lock it when keyboard opens
+  // Keep a locked copy of the stage height so that, on engines that still
+  // resize the layout when the keyboard shows (older WebViews / browsers
+  // without `interactive-widget=resizes-visual` support), the table keeps its
+  // full pre-keyboard size and the keyboard simply covers it. NEVER re-measure
+  // while the keyboard is open — the stage would already be shrunk and we
+  // would lock the wrong (shrunken) value.
   useEffect(() => {
-    if (kbHeight === 0 && stageRef.current) {
-      const h = stageRef.current.offsetHeight
+    const measure = () => {
+      const el = stageRef.current
+      if (!el) return
+      if (kbHeightRef.current > 0) return
+      const h = el.offsetHeight
       if (h > 60) setLockedStageHeight(h)
     }
-  }, [kbHeight])
+    measure()
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+    }
+  }, [])
 
   // Keyboard OVERLAY mode — the OS keyboard never resizes the page
   // (Capacitor config plugins.Keyboard.resize='none' on native; default
@@ -132,6 +148,7 @@ export function SpinBottleRoom({
   useEffect(() => {
     const doc = document.documentElement
     const setKb = (px: number) => {
+      kbHeightRef.current = px
       doc.style.setProperty('--sbr-kb', `${Math.round(px)}px`)
       setKbHeight(px)
     }
