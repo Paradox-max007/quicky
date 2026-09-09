@@ -389,4 +389,131 @@ html[data-theme='gold'] {
     55% { transform: translateX(320px); }
     100% { transform: translateX(320px); }
   }
+
+  /* ── Spin the Bottle room ─────────────────────────────────────────────── */
+
+  /* Pulsing glow ring around the current-turn player card */
+  @keyframes turn-glow {
+    0%, 100% { box-shadow: 0 0 0 3px var(--qk-accent), 0 0 16px -2px color-mix(in srgb, var(--qk-accent) 70%, transparent); }
+    50%       { box-shadow: 0 0 0 4px var(--qk-accent), 0 0 28px -2px color-mix(in srgb, var(--qk-accent) 90%, transparent); }
+  }
+  .animate-turn-glow {
+    animation: turn-glow 1.4s ease-in-out infinite;
+  }
+
+  /* Heartbeat on YES kiss button */
+  @keyframes kiss-pulse {
+    0%, 100% { transform: scale(1); }
+    30%       { transform: scale(1.08); }
+    60%       { transform: scale(0.97); }
+  }
+  .animate-kiss-pulse {
+    animation: kiss-pulse 0.9s ease-in-out infinite;
+  }
+
+  /* Floating game event notification that fades up then out */
+  @keyframes float-notification {
+    0%   { opacity: 0; transform: translateY(12px); }
+    15%  { opacity: 1; transform: translateY(0); }
+    75%  { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-8px); }
+  }
+  .animate-float-notification {
+    animation: float-notification 3s ease-in-out forwards;
+  }
+
+  /* Bottle spin anticipation bounce */
+  @keyframes bottle-bounce {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50%       { transform: translateY(-4px) rotate(3deg); }
+  }
+  .animate-bottle-bounce {
+    animation: bottle-bounce 1.2s ease-in-out infinite;
+  }
+
+  /* Gift fly-over arc animation */
+  @keyframes gift-fly {
+    0%   { opacity: 0; transform: translate(0, 0) scale(0.6); }
+    20%  { opacity: 1; transform: translate(20px, -30px) scale(1); }
+    80%  { opacity: 1; transform: translate(60px, -50px) scale(1.1); }
+    100% { opacity: 0; transform: translate(80px, -10px) scale(0.7); }
+  }
+  .animate-gift-fly {
+    animation: gift-fly 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* ── Profile frames ───────────────────────────────────────────────────── */
+
+  .frame-default  { --frame-color: rgba(255,255,255,0.4); }
+  .frame-coral    { --frame-color: var(--qk-accent); }
+  .frame-lavender { --frame-color: var(--qk-purple); }
+  .frame-gold     { --frame-color: var(--qk-gold); }
+
+  /* Static frame ring */
+  .frame-default, .frame-coral, .frame-lavender, .frame-gold {
+    box-shadow: 0 0 0 3px var(--frame-color), 0 0 12px -2px color-mix(in srgb, var(--frame-color) 60%, transparent);
+  }
+
+  @keyframes neon-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px #39ff14, 0 0 16px -2px rgba(57, 255, 20, 0.6); }
+    50%       { box-shadow: 0 0 0 4px #00fff7, 0 0 24px -2px rgba(0, 255, 247, 0.8); }
+  }
+  .frame-neon { animation: neon-pulse 1.5s ease-in-out infinite; }
+
+  @keyframes rainbow-rotate {
+    0%   { border-color: #ff2d55; box-shadow: 0 0 0 3px #ff2d55; }
+    25%  { border-color: #f5c570; box-shadow: 0 0 0 3px #f5c570; }
+    50%  { border-color: #30d158; box-shadow: 0 0 0 3px #30d158; }
+    75%  { border-color: #b8a4ff; box-shadow: 0 0 0 3px #b8a4ff; }
+    100% { border-color: #ff2d55; box-shadow: 0 0 0 3px #ff2d55; }
+  }
+  .frame-rainbow { animation: rainbow-rotate 2s linear infinite; }
+
+  @keyframes hearts-beat {
+    0%, 100% { box-shadow: 0 0 0 3px #ff2d55; }
+    30%       { box-shadow: 0 0 0 5px #ff5e7e; }
+    60%       { box-shadow: 0 0 0 3px #ff2d55, 0 0 20px -2px rgba(255, 45, 85, 0.5); }
+  }
+  .frame-hearts { animation: hearts-beat 1.2s ease-in-out infinite; }
+
+  @keyframes royal-shimmer {
+    0%   { box-shadow: 0 0 0 3px #f5c570, 0 0 12px -2px rgba(245, 197, 112, 0.5); }
+    50%  { box-shadow: 0 0 0 4px #fff4aa, 0 0 24px -2px rgba(255, 244, 170, 0.9); }
+    100% { box-shadow: 0 0 0 3px #f5c570, 0 0 12px -2px rgba(245, 197, 112, 0.5); }
+  }
+  .frame-royal { animation: royal-shimmer 2s ease-in-out infinite; }
+
+  /* ── Chat bubbles (room chat) ─────────────────────────────────────────── */
+  .chat-bubble-other {
+    background: var(--qk-elev);
+    color: var(--qk-text);
+    border-radius: 4px 18px 18px 18px;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.45;
+    max-width: 78%;
+    word-break: break-word;
+  }
+  .chat-bubble-me {
+    background: var(--qk-accent);
+    color: #fff;
+    border-radius: 18px 4px 18px 18px;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.45;
+    max-width: 78%;
+    word-break: break-word;
+  }
+  .chat-bubble-gift {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--qk-gold) 20%, var(--qk-elev)) 0%, var(--qk-elev) 100%);
+    border: 1px solid color-mix(in srgb, var(--qk-gold) 35%, transparent);
+    color: var(--qk-text);
+    border-radius: 4px 18px 18px 18px;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.45;
+    max-width: 78%;
+    word-break: break-word;
+  }
 }
+

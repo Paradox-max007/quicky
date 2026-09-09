@@ -228,6 +228,33 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ roomId }),
       }),
+    gifts: {
+      catalog: () =>
+        jsonFetch<{ catalog: any[]; coinBalance: number }>('/api/quicky/games/spin-bottle/gifts'),
+      send: (roomId: string, recipientId: string, itemId: string, quantity = 1) =>
+        jsonFetch<{ ok: boolean; coinBalance: number }>('/api/quicky/games/spin-bottle/gifts', {
+          method: 'POST',
+          body: JSON.stringify({ roomId, recipientId, itemId, quantity }),
+        }),
+    },
+    coins: {
+      balance: () =>
+        jsonFetch<{ coinBalance: number }>('/api/quicky/games/spin-bottle/coins'),
+    },
+  },
+  frames: {
+    catalog: () =>
+      jsonFetch<{ catalog: any[]; equippedFrameId: string; coinBalance: number }>('/api/quicky/games/frames'),
+    buy: (frameId: string) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/games/frames', {
+        method: 'POST',
+        body: JSON.stringify({ frameId, action: 'buy' }),
+      }),
+    equip: (frameId: string) =>
+      jsonFetch<{ ok: boolean; equippedFrameId: string | null }>('/api/quicky/games/frames', {
+        method: 'POST',
+        body: JSON.stringify({ frameId, action: 'equip' }),
+      }),
   },
   community: {
     feed: () => jsonFetch<{ posts: any[] }>('/api/quicky/community/posts'),

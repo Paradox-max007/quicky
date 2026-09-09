@@ -190,3 +190,50 @@ export const NHIE_STATEMENTS: string[] = [
   'Never have I ever laughed so hard I snorted in public',
   'Never have I ever kept a secret for more than five years',
 ]
+
+// ── Spin the Bottle in-game economy ──────────────────────────────────────────
+
+export const SPIN_BOTTLE_GIFTS = [
+  // Row 1 — affordable
+  { id: 'rose',       name: 'Rose',        emoji: '🌹', coinPrice: 10,   tier: 'default'  },
+  { id: 'heart',      name: 'Heart',       emoji: '💖', coinPrice: 25,   tier: 'default'  },
+  { id: 'teddy',      name: 'Teddy',       emoji: '🧸', coinPrice: 50,   tier: 'default'  },
+  { id: 'champagne',  name: 'Champagne',   emoji: '🥂', coinPrice: 100,  tier: 'default'  },
+  // Row 2 — mid-tier
+  { id: 'crown',      name: 'Crown',       emoji: '👑', coinPrice: 250,  tier: 'premium'  },
+  { id: 'diamond',    name: 'Diamond',     emoji: '💎', coinPrice: 500,  tier: 'premium'  },
+  { id: 'rocket',     name: 'Rocket',      emoji: '🚀', coinPrice: 750,  tier: 'premium'  },
+  { id: 'kiss',       name: 'Kiss',        emoji: '💋', coinPrice: 1000, tier: 'premium'  },
+] as const
+
+export type GiftId = (typeof SPIN_BOTTLE_GIFTS)[number]['id']
+
+// Coin packs users can buy (for future IAP flow)
+export const COIN_PACKS = [
+  { id: 'coins_100',  coins: 100,  price: 0.99,  label: '100 Coins'  },
+  { id: 'coins_500',  coins: 500,  price: 3.99,  label: '500 Coins'  },
+  { id: 'coins_1500', coins: 1500, price: 9.99,  label: '1,500 Coins', bestValue: true },
+  { id: 'coins_5000', coins: 5000, price: 24.99, label: '5,000 Coins' },
+] as const
+
+// Coin rewards for game events
+export const COIN_REWARDS = {
+  kissYes: 20,       // target says yes
+  kissReceived: 10,  // spinner gets a yes
+  dailyLogin: 50,    // once per day
+} as const
+
+// Profile frame catalog — cssClass maps to a @keyframes / CSS class in globals.css
+export const PROFILE_FRAMES = [
+  { id: 'frame_default',   name: 'Default',    cssClass: 'frame-default',   coinPrice: 0,    tier: 'default',  frameType: 'static'   },
+  { id: 'frame_coral',     name: 'Coral',      cssClass: 'frame-coral',     coinPrice: 200,  tier: 'default',  frameType: 'static'   },
+  { id: 'frame_lavender',  name: 'Lavender',   cssClass: 'frame-lavender',  coinPrice: 200,  tier: 'default',  frameType: 'static'   },
+  { id: 'frame_gold',      name: 'Gold',       cssClass: 'frame-gold',      coinPrice: 500,  tier: 'premium',  frameType: 'static'   },
+  { id: 'frame_neon',      name: 'Neon',       cssClass: 'frame-neon',      coinPrice: 750,  tier: 'premium',  frameType: 'animated' },
+  { id: 'frame_rainbow',   name: 'Rainbow',    cssClass: 'frame-rainbow',   coinPrice: 1000, tier: 'premium',  frameType: 'animated' },
+  { id: 'frame_hearts',    name: 'Hearts',     cssClass: 'frame-hearts',    coinPrice: 300,  tier: 'default',  frameType: 'animated' },
+  { id: 'frame_royal',     name: 'Royal',      cssClass: 'frame-royal',     coinPrice: 1500, tier: 'premium',  frameType: 'animated' },
+] as const
+
+export type FrameId = (typeof PROFILE_FRAMES)[number]['id']
+

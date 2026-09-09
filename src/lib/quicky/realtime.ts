@@ -154,8 +154,9 @@ export function joinMatchChannel(
 export type RoomChannel = {
   channel: RealtimeChannel
   sendState: (payload: unknown) => void
-  sendChat: (payload: { messageId: string; userId: string; text: string; kind: string; createdAt: string }) => void
+  sendChat: (payload: { messageId: string; userId: string; text: string; kind: string; createdAt: string; metadata?: string }) => void
   sendKiss: (payload: { spinId: string; choice: 'yes' | 'no' }) => void
+  sendGift: (payload: { senderId: string; senderName: string; recipientId: string; recipientName: string; itemId: string; itemName: string; itemEmoji: string; quantity: number }) => void
   unsubscribe: () => Promise<void>
 }
 
@@ -163,6 +164,8 @@ type RoomHandlers = {
   onState?: (payload: any) => void
   onChat?: (payload: any) => void
   onKiss?: (payload: any) => void
+  onGift?: (payload: any) => void
+  onBalance?: (payload: { userId: string; coinBalance: number }) => void
 }
 
 const roomChannels = new Map<string, RealtimeChannel>()
@@ -196,6 +199,12 @@ export function joinRoomChannel(
       .on('broadcast', { event: 'kiss' }, ({ payload }) =>
         roomHandlerRegistry.get(topic)?.forEach((h) => h.onKiss?.(payload))
       )
+      .on('broadcast', { event: 'gift' }, ({ payload }) =>
+        roomHandlerRegistry.get(topic)?.forEach((h) => h.onGift?.(payload))
+      )
+      .on('broadcast', { event: 'balance' }, ({ payload }) =>
+        roomHandlerRegistry.get(topic)?.forEach((h) => h.onBalance?.(payload as any))
+      )
       .subscribe()
   }
 
@@ -204,6 +213,7 @@ export function joinRoomChannel(
     sendState: (payload) => channel!.send({ type: 'broadcast', event: 'state', payload }),
     sendChat: (payload) => channel!.send({ type: 'broadcast', event: 'chat', payload }),
     sendKiss: (payload) => channel!.send({ type: 'broadcast', event: 'kiss', payload }),
+    sendGift: (payload) => channel!.send({ type: 'broadcast', event: 'gift', payload }),
     unsubscribe: async () => {
       roomHandlerRegistry.get(topic)?.delete(handlers)
       const refs = (roomRefs.get(topic) ?? 1) - 1

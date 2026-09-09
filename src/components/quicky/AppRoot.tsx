@@ -48,17 +48,17 @@ function shellFor(view: AppView): string {
     case 'spin-bottle-room':
       return 'md:max-w-[560px]'
     case 'discovery':
-      return 'md:max-w-lg' // swipe-card column — same arrangement, bigger card
+      return 'md:max-w-xl' // swipe-card column — same arrangement, bigger card
     case 'chat':
-      return 'md:max-w-3xl'
+      return 'md:max-w-4xl'
     case 'auth':
     case 'onboarding':
-      return 'md:max-w-md'
+      return 'md:max-w-lg'
     case 'spin-bottle':
     case 'premium':
-      return 'md:max-w-xl'
-    default:
       return 'md:max-w-2xl'
+    default:
+      return 'md:max-w-3xl'
   }
 }
 

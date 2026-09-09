@@ -76,6 +76,14 @@ model User {
   rollComments     RollComment[]   @relation("RollComments")
   spinRoomMemberships SpinRoomPlayer[]
   spinRoomMessages    SpinRoomMessage[]
+  // In-game economy
+  coinBalance         Int              @default(500) // start with 500 coins
+  sentGifts           SpinRoomGift[]   @relation("GiftSender")
+  receivedGifts       SpinRoomGift[]   @relation("GiftRecipient")
+  coinLedger          CoinLedger[]
+  userItems           UserItem[]
+  equippedFrameId     String?          // FK to ProfileFrame.id (denormalized for speed)
+  userFrames          UserFrame[]
 }
 
 model Photo {
@@ -435,6 +443,7 @@ model SpinRoom {
   players         SpinRoomPlayer[]
   spins           SpinBottleSpin[]
   messages        SpinRoomMessage[]
+  gifts           SpinRoomGift[]
 
   @@index([status, lastActivityAt])
 }
@@ -503,11 +512,111 @@ model SpinRoomMessage {
   roomId    String
   userId    String
   text      String
-  // "user" | "system" (system messages also pin a userId — usually the spinner)
+  // "user" | "system" | "gift" (system messages also pin a userId — usually the spinner)
   kind      String   @default("user")
+  // JSON metadata — used by gift messages to carry { itemId, itemName, itemEmoji, recipientId, recipientName }
+  metadata  String?
   createdAt DateTime @default(now())
   room      SpinRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([roomId, createdAt])
 }
+
+// ── In-game economy ───────────────────────────────────────────────────────────
+
+// Catalog of purchasable/sendable gift items
+model GameItem {
+  id          String   @id @default(cuid())
+  // "gift" | "frame" | "bottle_skin" | "table_skin"
+  category    String   @default("gift")
+  name        String
+  emoji       String
+  description String?
+  coinPrice   Int      // cost in coins
+  // For frames: the CSS/asset class name or URL
+  assetKey    String?
+  // "default" | "premium" | "seasonal"
+  tier        String   @default("default")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  userItems   UserItem[]
+  gifts       SpinRoomGift[]
+  frames      ProfileFrame[]
+}
+
+// User's owned items
+model UserItem {
+  id         String   @id @default(cuid())
+  userId     String
+  itemId     String
+  quantity   Int      @default(1)
+  acquiredAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item       GameItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  @@unique([userId, itemId])
+  @@index([userId])
+}
+
+// Audit log for coin balance changes
+model CoinLedger {
+  id        String   @id @default(cuid())
+  userId    String
+  delta     Int      // positive = earned, negative = spent
+  reason    String   // "gift_sent" | "gift_received" | "kiss_yes" | "purchase" | "starting_bonus"
+  meta      String?  // JSON with context (e.g. itemId, roomId)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, createdAt])
+}
+
+// In-room gift transaction (one row per gift send)
+model SpinRoomGift {
+  id          String   @id @default(cuid())
+  roomId      String
+  senderId    String
+  recipientId String
+  itemId      String
+  quantity    Int      @default(1)
+  coinsSpent  Int
+  createdAt   DateTime @default(now())
+  room        SpinRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender      User     @relation("GiftSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User     @relation("GiftRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  item        GameItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@index([recipientId])
+}
+
+// Collectible profile frames (visual ring around player avatar)
+model ProfileFrame {
+  id          String     @id @default(cuid())
+  itemId      String     // link back to GameItem catalog
+  name        String
+  // "static" | "animated" | "seasonal"
+  frameType   String     @default("static")
+  // CSS class or animation keyframe key
+  cssClass    String
+  // Preview image/gif URL
+  previewUrl  String?
+  createdAt   DateTime   @default(now())
+  item        GameItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  userFrames  UserFrame[]
+  @@index([itemId])
+}
+
+// Which users own which frames + which is equipped
+model UserFrame {
+  id        String       @id @default(cuid())
+  userId    String
+  frameId   String
+  equipped  Boolean      @default(false)
+  acquiredAt DateTime    @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  frame     ProfileFrame @relation(fields: [frameId], references: [id], onDelete: Cascade)
+  @@unique([userId, frameId])
+  @@index([userId, equipped])
+}
+
