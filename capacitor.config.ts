@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+import { KeyboardResize } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
   appId: "com.quicky.app",
@@ -44,6 +45,13 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: "Dark",
       backgroundColor: "#0F0F14",
+    },
+    Keyboard: {
+      // The keyboard OVERLAYS the page instead of resizing the WebView, so
+      // the game room (table, seats, HUD) never shrinks when typing. The
+      // chat composer lifts itself above the keyboard via the
+      // keyboardWillShow/Hide events (see SpinBottleRoom.tsx, --sbr-kb).
+      resize: KeyboardResize.None,
     },
   },
 };

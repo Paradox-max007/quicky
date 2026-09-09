@@ -1,22 +1,20 @@
 /* ============================================================
    Spin the Bottle — Game Room design system
-   A dedicated bright "casual mobile game" theme, independent
-   from the dark Quicky tokens. Scoped under .sbr-root so it
-   never leaks into the rest of the app.
+   Casual-game room layered on the APP's own theme (uses the global
+   --qk-* runtime tokens, so it follows whatever theme the user
+   picked in Appearance). Scoped under .sbr-root so it never leaks.
 
-   Visual language (from the reference screenshots):
-   - bright sky backdrop w/ floating particles
-   - warm wooden table stage, players in an oval around it
+   Visual language:
+   - app background (dark #0F0F14 by default, theme-aware)
+   - warm wooden table stage, players hugging its sharp edge
    - square framed photo cards + name labels
    - glossy green bottle dead center
-   - light social-game chat feed below
+   - dark social-game chat feed matching the app surfaces
    ============================================================ */
 
 .sbr-root {
-  /* room palette */
-  --room-blue: #67b9f3;
-  --room-blue-dark: #3f97d8;
-  --room-deep: #2a6fb0;
+  /* room palette — accents stay game-y, surfaces follow the app theme */
+  --room-text: var(--qk-text, #f5f5f7);
   --room-gold: #ffd34e;
   --room-yellow: #ffdd63;
   --room-pink: #ff4f91;
@@ -24,10 +22,14 @@
   --room-green: #3ecf5f;
   --room-green-dark: #2aa848;
   --room-red: #ff5a4e;
-  --room-text: #ffffff;
-  --room-chat-bg: #fff7ec;
-  --room-chat-card: #ffffff;
-  --room-chat-text: #4a3222;
+  --room-chat-bg: var(--qk-bg, #0f0f14);
+  --room-chat-card: var(--qk-card, #1a1a2e);
+  --room-chat-elev: var(--qk-elev, #25253a);
+  --room-chat-text: var(--qk-text, #f5f5f7);
+
+  /* NOTE: --sbr-kb (keyboard overlay height) is set on <html> from JS and
+     inherits in here — do NOT redeclare it on .sbr-root (a local value
+     would shadow the documentElement one and freeze the composer). */
 
   /* responsive player-card size — same proportions on every screen */
   --seat-w: clamp(56px, 17vw, 96px);
@@ -40,10 +42,10 @@
   overflow: hidden;
   color: var(--room-text);
   background:
-    radial-gradient(90% 60% at 50% -8%, rgba(255, 255, 255, 0.35) 0%, transparent 55%),
-    radial-gradient(70% 50% at 12% 30%, rgba(255, 214, 120, 0.20) 0%, transparent 60%),
-    radial-gradient(70% 50% at 90% 70%, rgba(112, 227, 255, 0.25) 0%, transparent 60%),
-    linear-gradient(180deg, var(--room-blue) 0%, #5cb0ee 40%, var(--room-blue-dark) 100%);
+    radial-gradient(120% 70% at 50% -10%, rgba(255, 255, 255, 0.05) 0%, transparent 55%),
+    radial-gradient(60% 40% at 10% 34%, rgba(255, 45, 85, 0.06) 0%, transparent 62%),
+    radial-gradient(60% 40% at 92% 72%, rgba(184, 164, 255, 0.05) 0%, transparent 62%),
+    var(--qk-bg, #0f0f14);
 }
 
 /* ── Floating backdrop particles (hearts / bokeh) ─────────── */
@@ -59,12 +61,12 @@
   bottom: -6%;
   opacity: 0;
   animation: sbr-rise linear infinite;
-  filter: drop-shadow(0 2px 6px rgba(30, 90, 150, 0.25));
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
 }
 @keyframes sbr-rise {
   0%   { transform: translateY(0) rotate(0deg); opacity: 0; }
-  12%  { opacity: 0.85; }
-  85%  { opacity: 0.5; }
+  12%  { opacity: 0.65; }
+  85%  { opacity: 0.4; }
   100% { transform: translateY(-108vh) rotate(24deg); opacity: 0; }
 }
 
@@ -84,23 +86,23 @@
   min-width: 0;
   padding: 4px 9px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.16) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 2px 6px rgba(23, 78, 130, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 2px 6px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   font-weight: 900;
   font-size: 13px;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(30, 80, 130, 0.55);
+  color: var(--room-text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
 }
 .sbr-tile .sbr-tile-icon {
   font-size: 13px;
   line-height: 1;
-  filter: drop-shadow(0 1px 1px rgba(30, 80, 130, 0.4));
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
 }
 .sbr-coin-btn {
   position: relative;
@@ -109,13 +111,13 @@
   gap: 4px;
   padding: 4px 4px 4px 10px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(31, 24, 8, 0.34) 0%, rgba(31, 24, 8, 0.5) 100%);
-  border: 1px solid rgba(255, 220, 120, 0.55);
-  box-shadow: inset 0 1px 0 rgba(255, 235, 170, 0.35), 0 2px 6px rgba(20, 60, 100, 0.35);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.6) 100%);
+  border: 1px solid rgba(255, 220, 120, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 235, 170, 0.25), 0 2px 6px rgba(0, 0, 0, 0.45);
   font-weight: 900;
   font-size: 13px;
   color: #ffe9a8;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 .sbr-plus {
   display: flex;
@@ -126,7 +128,7 @@
   border-radius: 999px;
   background: linear-gradient(180deg, #5ee36f 0%, var(--room-green-dark) 100%);
   border: 1.5px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 2px 5px rgba(10, 90, 30, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.55);
   color: #fff;
   font-size: 14px;
   font-weight: 900;
@@ -141,10 +143,10 @@
   height: 32px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.18) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 5px rgba(23, 78, 130, 0.3);
-  color: #fff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 5px rgba(0, 0, 0, 0.4);
+  color: var(--room-text);
   transition: transform 0.12s ease;
 }
 .sbr-round-btn:active { transform: scale(0.92); }
@@ -172,9 +174,9 @@
   height: 36px;
   border-radius: 12px;
   font-size: 17px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.36) 0%, rgba(255, 255, 255, 0.16) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 5px rgba(23, 78, 130, 0.26);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 5px rgba(0, 0, 0, 0.4);
   transition: transform 0.12s ease;
 }
 .sbr-qa:active { transform: scale(0.9); }
@@ -212,11 +214,11 @@
   gap: 5px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(23, 78, 130, 0.32) 0%, rgba(23, 78, 130, 0.46) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 10px;
   font-weight: 800;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.85);
   white-space: nowrap;
 }
 
@@ -241,7 +243,7 @@
   box-shadow:
     inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
     inset 0 -6px 12px rgba(200, 40, 60, 0.35),
-    0 3px 8px rgba(150, 40, 30, 0.35);
+    0 3px 10px rgba(0, 0, 0, 0.45);
 }
 .sbr-banner::after {
   content: '';
@@ -292,7 +294,7 @@
   box-shadow:
     inset 0 0 0 2px rgba(96, 48, 14, 0.35),
     inset 0 10px 30px rgba(70, 30, 5, 0.35),
-    0 6px 18px rgba(20, 70, 120, 0.35);
+    0 6px 20px rgba(0, 0, 0, 0.55);
   background:
     radial-gradient(130% 95% at 50% 40%, rgba(255, 226, 170, 0.30) 0%, rgba(255, 205, 130, 0.10) 46%, rgba(88, 42, 8, 0.30) 100%),
     repeating-radial-gradient(ellipse 260px 46px at 22% 14%, rgba(255, 224, 170, 0.05) 0px 5px, transparent 5px 24px),
@@ -493,7 +495,8 @@
 /* ── Stage overlays (status / result / respond) ───────────── */
 .sbr-status {
   position: absolute;
-  top: 8px;
+  /* table placard: below the bottle, clear of the bottom rim seats */
+  top: 70%;
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;
@@ -536,18 +539,21 @@
 .sbr-result-emoji { font-size: 34px; line-height: 1; }
 .sbr-respond {
   position: absolute;
-  inset-inline: 10px;
-  bottom: 10px;
-  z-index: 8;
+  /* centered over the table — rim seats stay visible around it */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(calc(100% - 20px), 360px);
+  z-index: 9;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 251, 240, 0.96) 0%, #ffeed6 100%);
+  background: linear-gradient(180deg, rgba(255, 251, 240, 0.98) 0%, #ffeed6 100%);
   border: 2px solid #fff;
-  box-shadow: 0 6px 18px rgba(60, 24, 2, 0.4);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
 }
 .sbr-respond-title {
   font-size: 12px;
@@ -589,7 +595,7 @@
   text-shadow: 0 1px 2px rgba(150, 10, 60, 0.5);
 }
 
-/* ── Chat (social-game feed on light background) ──────────── */
+/* ── Chat (dark social-game feed on the app surface) ──────── */
 .sbr-chat {
   position: relative;
   z-index: 2;
@@ -597,11 +603,9 @@
   height: clamp(216px, 31dvh, 340px);
   display: flex;
   flex-direction: column;
-  background:
-    linear-gradient(180deg, rgba(255, 200, 130, 0.25) 0%, transparent 14%),
-    var(--room-chat-bg);
-  border-top: 2px solid rgba(255, 235, 200, 0.9);
-  box-shadow: 0 -6px 16px rgba(30, 90, 140, 0.25);
+  background: var(--room-chat-bg);
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.4);
   border-radius: 18px 18px 0 0;
   color: var(--room-chat-text);
 }
@@ -625,9 +629,9 @@
   flex-shrink: 0;
   border-radius: 8px;
   object-fit: cover;
-  border: 1.5px solid #fff;
-  box-shadow: 0 1px 4px rgba(120, 70, 20, 0.35);
-  background: #e8b58a;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  background: var(--room-chat-elev);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -639,10 +643,10 @@
   min-width: 0;
   max-width: 82%;
   background: var(--room-chat-card);
-  border: 1px solid rgba(214, 178, 130, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 4px 14px 14px 14px;
   padding: 5px 10px 6px;
-  box-shadow: 0 1px 3px rgba(150, 100, 40, 0.18);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .sbr-msg-name {
   font-size: 11px;
@@ -657,8 +661,8 @@
 }
 .sbr-msg.me { flex-direction: row-reverse; }
 .sbr-msg.me .sbr-msg-body {
-  background: #fff0f5;
-  border-color: rgba(255, 140, 180, 0.55);
+  background: rgba(255, 45, 85, 0.16);
+  border-color: rgba(255, 45, 85, 0.45);
   border-radius: 14px 4px 14px 14px;
 }
 .sbr-msg-system {
@@ -667,9 +671,9 @@
   text-align: center;
   font-size: 10.5px;
   font-weight: 700;
-  color: #a37b52;
-  background: rgba(255, 232, 200, 0.8);
-  border: 1px dashed rgba(190, 140, 80, 0.5);
+  color: rgba(245, 245, 247, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.16);
   border-radius: 999px;
   padding: 3px 12px;
 }
@@ -677,8 +681,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(100deg, #fff0f6 0%, #ffe3ee 100%);
-  border: 1px solid rgba(255, 120, 170, 0.55);
+  background: linear-gradient(100deg, rgba(255, 45, 85, 0.18) 0%, rgba(255, 94, 126, 0.1) 100%);
+  border: 1px solid rgba(255, 45, 85, 0.45);
 }
 .sbr-msg-gift-emoji { font-size: 22px; line-height: 1; }
 .sbr-chat-empty {
@@ -686,7 +690,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 700;
-  color: #b98d5f;
+  color: rgba(245, 245, 247, 0.45);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -700,9 +704,12 @@
   align-items: center;
   gap: 6px;
   padding: 7px 9px;
-  padding-bottom: max(7px, env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(255, 246, 230, 0.6) 0%, #ffefd9 100%);
-  border-top: 1px solid rgba(214, 178, 130, 0.55);
+  /* lifts above the overlaying keyboard: --sbr-kb is set from the
+     Keyboard plugin (native) / visualViewport (web); max() keeps the
+     safe-area inset when the keyboard is hidden */
+  padding-bottom: max(7px, env(safe-area-inset-bottom, 0px), var(--sbr-kb, 0px));
+  background: var(--room-chat-card);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 .sbr-input {
   flex: 1 1 auto;
@@ -710,15 +717,15 @@
   height: 38px;
   padding: 0 14px;
   border-radius: 999px;
-  border: 1.5px solid #e5b98a;
-  background: #fff;
-  color: #4a3222;
+  border: 1.5px solid rgba(255, 255, 255, 0.13);
+  background: var(--room-chat-elev);
+  color: var(--room-chat-text);
   font-size: 13px;
   font-weight: 600;
-  box-shadow: inset 0 1px 3px rgba(160, 110, 50, 0.15);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
 }
-.sbr-input::placeholder { color: #c09a70; font-weight: 600; }
-.sbr-input:focus { outline: none; border-color: #ff8fb3; box-shadow: 0 0 0 3px rgba(255, 143, 179, 0.25); }
+.sbr-input::placeholder { color: rgba(245, 245, 247, 0.35); font-weight: 600; }
+.sbr-input:focus { outline: none; border-color: var(--qk-accent, #ff2d55); box-shadow: 0 0 0 3px rgba(255, 45, 85, 0.22); }
 .sbr-comp-btn {
   flex-shrink: 0;
   width: 34px;
@@ -728,9 +735,9 @@
   justify-content: center;
   border-radius: 999px;
   font-size: 18px;
-  background: #fff;
-  border: 1.5px solid #e5b98a;
-  box-shadow: 0 1px 3px rgba(150, 100, 40, 0.2);
+  background: var(--room-chat-elev);
+  border: 1.5px solid rgba(255, 255, 255, 0.13);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   transition: transform 0.12s ease;
 }
 .sbr-comp-btn:active { transform: scale(0.88); }
@@ -745,7 +752,7 @@
   color: #fff;
   background: linear-gradient(180deg, #ffb03a 0%, #ff7d3a 100%);
   border: 1.5px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 3px 8px rgba(220, 100, 20, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: 0 3px 8px rgba(220, 100, 20, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition: transform 0.12s ease;
 }
 .sbr-send:active { transform: scale(0.9); }
@@ -761,9 +768,9 @@
   gap: 2px;
   padding: 8px;
   border-radius: 14px;
-  background: #fff;
-  border: 1.5px solid #e5b98a;
-  box-shadow: 0 8px 22px rgba(120, 70, 20, 0.35);
+  background: var(--room-chat-elev);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
 }
 .sbr-emoji-tray button {
   font-size: 20px;
@@ -771,24 +778,24 @@
   border-radius: 8px;
   transition: transform 0.1s ease, background 0.1s ease;
 }
-.sbr-emoji-tray button:active { transform: scale(1.25); background: #ffeed6; }
+.sbr-emoji-tray button:active { transform: scale(1.25); background: rgba(255, 255, 255, 0.08); }
 
-/* ── Exit confirm sheet — restyled to game theme ──────────── */
+/* ── Exit confirm sheet — app surfaces ────────────────────── */
 .sbr-sheet {
-  background: linear-gradient(180deg, #ffffff 0%, #fff3df 100%);
-  color: #59331b;
-  border: 2px solid #fff;
+  background: linear-gradient(180deg, var(--qk-card, #1a1a2e) 0%, var(--qk-bg, #0f0f14) 100%);
+  color: var(--qk-text, #f5f5f7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-bottom: none;
   border-radius: 24px 24px 0 0;
-  box-shadow: 0 -10px 30px rgba(20, 60, 100, 0.4);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
 }
 .sbr-sheet-btn-stay {
   flex: 1;
   padding: 10px 0;
   border-radius: 14px;
-  background: #fff;
-  border: 1.5px solid #e5b98a;
-  color: #7a4a24;
+  background: var(--qk-elev, #25253a);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--qk-text, #f5f5f7);
   font-weight: 800;
   font-size: 13.5px;
 }

@@ -1,15 +1,18 @@
 'use client'
 
 // Quicky — Spin the Bottle room view
-// Bright casual-game room: HUD → quick actions → event banner → wooden
-// stage (12 HTML/CSS seats + centered bottle) → social-game chat feed.
-// Polls /room every 1.5s (V1 realtime path — server-driven state is always
-// read from the DB on each tick). Game logic lives here; presentation is
-// split into Room* components + spin-bottle-room.css.
+// Casual-game room on the APP theme background: HUD → quick actions → event
+// banner → wooden stage (12 HTML/CSS seats hugging the table rim + centered
+// bottle) → social-game chat feed. Polls /room every 1.5s (V1 realtime path
+// — server-driven state is always read from the DB on each tick). Game logic
+// lives here; presentation is split into Room* components +
+// spin-bottle-room.css.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Heart, DoorOpen } from 'lucide-react'
 import { toast } from 'sonner'
+import { Capacitor } from '@capacitor/core'
+import { Keyboard } from '@capacitor/keyboard'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { RoomTopHud } from './RoomTopHud'
@@ -55,22 +58,24 @@ type Snapshot = {
 const RESPONSE_TIMEOUT = 10
 
 /* 12 fixed logical seat positions — percentages of the stage box.
-   The ANGLES mirror the server's seatAngle table (seat 0 = straight up,
-   proceeding clockwise), so the bottle's endRotation always visually points
-   at the target card. Seat k always renders at position k. */
+   Each entry is the server's own seat vector (src/lib/quicky/spin-bottle.ts
+   POSITIONS) scaled onto a 40%-radius (x) / 38%-radius (y) ellipse, so every
+   card sits right at the SHARP EDGE of the wooden table while its center
+   stays exactly on the ray the bottle points along (seat 0 = straight up).
+   Seat k always renders at position k. */
 const SEAT_POSITIONS: { x: number; y: number }[] = [
-  { x: 50, y: 24 },   // 0 — top center (server angle: up)
-  { x: 16, y: 29 },   // 1 — upper left
-  { x: 12, y: 50 },   // 2 — left
-  { x: 16, y: 71 },   // 3 — lower left
-  { x: 34, y: 80 },   // 4 — bottom, slightly left
-  { x: 66, y: 80 },   // 5 — bottom, slightly right
-  { x: 84, y: 71 },   // 6 — lower right
-  { x: 88, y: 50 },   // 7 — right
-  { x: 84, y: 29 },   // 8 — upper right
-  { x: 66, y: 24.5 }, // 9 — top, slightly right
-  { x: 34, y: 24.5 }, // 10 — top, slightly left
-  { x: 50, y: 36 },   // 11 — extra inner seat (same up-ray as 0)
+  { x: 50, y: 12 },    // 0 — top rim, center (server: straight up)
+  { x: 16, y: 23.4 },  // 1 — upper-left rim
+  { x: 12, y: 50 },    // 2 — left rim
+  { x: 16, y: 76.6 },  // 3 — lower-left rim
+  { x: 34, y: 88 },    // 4 — bottom rim, left of center
+  { x: 66, y: 88 },    // 5 — bottom rim, right of center
+  { x: 84, y: 76.6 },  // 6 — lower-right rim
+  { x: 88, y: 50 },    // 7 — right rim
+  { x: 84, y: 23.4 },  // 8 — upper-right rim
+  { x: 66, y: 17.7 },  // 9 — top rim, right of center
+  { x: 34, y: 17.7 },  // 10 — top rim, left of center
+  { x: 50, y: 31 },    // 11 — inner seat on the same up-ray as 0 (server vector)
 ]
 
 /* Deterministic backdrop particles (no SSR hydration mismatch). */
@@ -104,6 +109,44 @@ export function SpinBottleRoom({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const spinStartTimeRef = useRef<number>(0)
+
+  // Keyboard OVERLAY mode — the OS keyboard never resizes the page
+  // (Capacitor config plugins.Keyboard.resize='none' on native; default
+  // resizes-visual viewport on web), so the game table keeps its full size
+  // and the keyboard simply covers the lower part of the screen. The chat
+  // composer lifts itself above the keyboard through the --sbr-kb variable.
+  useEffect(() => {
+    const doc = document.documentElement
+    const setKb = (px: number) => doc.style.setProperty('--sbr-kb', `${Math.round(px)}px`)
+
+    // Web / safety net: derive keyboard height from the visual viewport.
+    const vv = window.visualViewport ?? null
+    const onVV = () => {
+      if (!vv) return
+      const kb = window.innerHeight - vv.height - vv.offsetTop
+      setKb(Math.max(0, Math.min(kb, window.innerHeight * 0.6)))
+    }
+    vv?.addEventListener('resize', onVV)
+    vv?.addEventListener('scroll', onVV)
+
+    // Native (Capacitor): exact keyboard height from the Keyboard plugin.
+    let handles: Awaited<ReturnType<typeof Keyboard.addListener>>[] = []
+    if (Capacitor.isNativePlatform()) {
+      Keyboard.addListener('keyboardWillShow', (i) => setKb(i.keyboardHeight ?? 0)).then((h) => {
+        handles.push(h)
+      })
+      Keyboard.addListener('keyboardWillHide', () => setKb(0)).then((h) => {
+        handles.push(h)
+      })
+    }
+
+    return () => {
+      vv?.removeEventListener('resize', onVV)
+      vv?.removeEventListener('scroll', onVV)
+      handles.forEach((h) => h.remove())
+      setKb(0)
+    }
+  }, [])
 
   // Polling — V1 sync path
   useEffect(() => {
@@ -379,7 +422,7 @@ export function SpinBottleRoom({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[200] bg-[rgba(10,40,70,0.55)]"
+              className="fixed inset-0 z-[200] bg-black/60"
               onClick={() => setShowExit(false)}
             />
             <motion.div
@@ -389,9 +432,9 @@ export function SpinBottleRoom({
               transition={{ type: 'spring', stiffness: 320, damping: 30 }}
               className="sbr-sheet fixed inset-x-0 bottom-0 z-[201] p-4 pb-6 flex flex-col gap-3"
             >
-              <div className="mx-auto h-1 w-10 rounded-full bg-[#e0b988]" />
+              <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
               <h3 className="text-base font-black">Leave the room?</h3>
-              <p className="text-sm font-semibold text-[#9a6b3f]">
+              <p className="text-sm font-semibold text-white/60">
                 You&apos;ll need to rejoin or find a new table to play again.
               </p>
               <div className="flex gap-2">
