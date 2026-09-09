@@ -15,12 +15,14 @@ import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
+import { joinRoomChannel } from '@/lib/quicky/realtime'
+import type { RoomChannel } from '@/lib/quicky/realtime'
 import { RoomTopHud } from './RoomTopHud'
 import { RoomQuickActions } from './RoomQuickActions'
 import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
-import { RoomChatPanel, type ChatPlayer } from './RoomChatPanel'
+import { RoomChatPanel, type ChatPlayer, type RoomMessage } from './RoomChatPanel'
 import './spin-bottle-room.css'
 
 type Snapshot = {
@@ -100,15 +102,27 @@ export function SpinBottleRoom({
   const me = useQuickyStore((s) => s.user)
   const meId = me?.id ?? ''
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  const [chat, setChat] = useState<Snapshot['recentMessages']>([])
+  const [chat, setChat] = useState<RoomMessage[]>([])
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
   const [responseCountdown, setResponseCountdown] = useState(RESPONSE_TIMEOUT)
   const [kissFlash, setKissFlash] = useState<{ kind: 'yes' | 'no' | 'timeout' | null; name: string }>({ kind: null, name: '' })
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
+  const [kbHeight, setKbHeight] = useState(0)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const spinStartTimeRef = useRef<number>(0)
+  const roomChannelRef = useRef<RoomChannel | null>(null)
+
+  // Measure stage height when keyboard is closed so we can lock it when keyboard opens
+  useEffect(() => {
+    if (kbHeight === 0 && stageRef.current) {
+      const h = stageRef.current.offsetHeight
+      if (h > 60) setLockedStageHeight(h)
+    }
+  }, [kbHeight])
 
   // Keyboard OVERLAY mode — the OS keyboard never resizes the page
   // (Capacitor config plugins.Keyboard.resize='none' on native; default
@@ -117,7 +131,10 @@ export function SpinBottleRoom({
   // composer lifts itself above the keyboard through the --sbr-kb variable.
   useEffect(() => {
     const doc = document.documentElement
-    const setKb = (px: number) => doc.style.setProperty('--sbr-kb', `${Math.round(px)}px`)
+    const setKb = (px: number) => {
+      doc.style.setProperty('--sbr-kb', `${Math.round(px)}px`)
+      setKbHeight(px)
+    }
 
     // Web / safety net: derive keyboard height from the visual viewport.
     const vv = window.visualViewport ?? null
@@ -148,27 +165,68 @@ export function SpinBottleRoom({
     }
   }, [])
 
-  // Polling — V1 sync path
+  // Supabase Realtime — instant chat push for all room members
+  useEffect(() => {
+    if (!initialRoomId) return
+    const ch = joinRoomChannel(initialRoomId, {
+      onChat: (payload) => {
+        const p = payload as any
+        if (!p?.userId || (!p?.id && !p?.messageId)) return
+        const msg: RoomMessage = {
+          id: p.id || p.messageId || `rt_${Date.now()}`,
+          userId: p.userId,
+          text: p.text || '',
+          kind: p.kind || 'user',
+          createdAt: p.createdAt || new Date().toISOString(),
+          replyTo: p.replyTo ?? null,
+        }
+        setChat((prev) => {
+          // de-duplicate: replace optimistic tmp_ msg or skip if already present
+          const withoutTmp = prev.filter(
+            (m) => m.userId !== msg.userId || !m.id.startsWith('tmp_') || m.text !== msg.text
+          )
+          if (withoutTmp.some((m) => m.id === msg.id)) return withoutTmp
+          return [...withoutTmp, msg]
+        })
+      },
+    })
+    roomChannelRef.current = ch
+    return () => {
+      ch?.unsubscribe()
+      roomChannelRef.current = null
+    }
+  }, [initialRoomId])
+
+  // Polling — V1 sync path (sequential: waits for the response before
+  // scheduling the next tick so slow DB responses never stack up concurrent
+  // requests, which was flooding the terminal in dev mode).
   useEffect(() => {
     if (!initialRoomId) return
     let cancelled = false
-    const refresh = async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const schedule = () => {
+      if (!cancelled) timer = setTimeout(tick, 2500)
+    }
+    const tick = async () => {
+      if (cancelled) return
       try {
         const res = await api.spinBottle.room(initialRoomId)
-        if (cancelled || !res?.snapshot) return
-        applySnapshot(res.snapshot)
+        if (!cancelled && res?.snapshot) applySnapshot(res.snapshot)
       } catch {
         // Silent: keep polling
       }
+      schedule()
     }
-    refresh()
-    pollRef.current = setInterval(refresh, 1500)
+
+    tick()
     return () => {
       cancelled = true
-      if (pollRef.current) clearInterval(pollRef.current)
+      if (timer) clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRoomId])
+
 
   // Apply snapshot, handling side effects for spin transitions
   const applySnapshot = useCallback((s: Snapshot) => {
@@ -192,12 +250,18 @@ export function SpinBottleRoom({
       }
       return s
     })
-    // Update chat list
+    // Update chat list — merge preserving optimistic/realtime items and replyTo
     setChat((prev) => {
-      const seen = new Set(prev.map((m) => m.id))
-      const newOnes = s.recentMessages.filter((m) => !seen.has(m.id))
-      if (newOnes.length === 0 && prev.length === s.recentMessages.length) return prev
-      return s.recentMessages
+      const prevMap = new Map(prev.map((m) => [m.id, m]))
+      const merged = s.recentMessages.map((m) => {
+        const existing = prevMap.get(m.id)
+        return {
+          ...m,
+          replyTo: existing?.replyTo ?? null,
+        }
+      })
+      const pendingOptimistic = prev.filter((m) => m.id.startsWith('tmp_'))
+      return [...merged, ...pendingOptimistic]
     })
   }, [])
 
@@ -233,23 +297,39 @@ export function SpinBottleRoom({
     }
   }
 
-  const sendChat = async (t: string) => {
+  const sendChat = async (t: string, replyTo?: RoomMessage['replyTo']) => {
     const text = t.trim()
     if (!text || sendingChat || !initialRoomId) return
     setSendingChat(true)
     // Optimistic insert
     const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    setChat((prev) => [
-      ...prev,
-      { id: tmpId, userId: meId, text, kind: 'user', createdAt: new Date().toISOString() },
-    ])
+    const optimistic: RoomMessage = {
+      id: tmpId,
+      userId: meId,
+      text,
+      kind: 'user',
+      createdAt: new Date().toISOString(),
+      replyTo: replyTo ?? null,
+    }
+    setChat((prev) => [...prev, optimistic])
     try {
       const res = await api.spinBottle.sendChat(initialRoomId, text)
       if (res?.message) {
+        const confirmed: RoomMessage = { ...res.message, replyTo: replyTo ?? null }
+        // Broadcast to all other room members via Supabase Realtime
+        roomChannelRef.current?.sendChat({
+          id: confirmed.id,
+          messageId: confirmed.id,
+          userId: confirmed.userId,
+          text: confirmed.text,
+          kind: confirmed.kind,
+          createdAt: confirmed.createdAt,
+          replyTo: confirmed.replyTo,
+        })
         setChat((prev) => {
           const without = prev.filter((m) => m.id !== tmpId)
-          if (without.some((m) => m.id === res.message.id)) return without
-          return [...without, res.message]
+          if (without.some((m) => m.id === confirmed.id)) return without
+          return [...without, confirmed]
         })
       }
     } catch (e: any) {
@@ -332,7 +412,19 @@ export function SpinBottleRoom({
       <RoomEventBanner event={tonightEvent()} />
 
       {/* Layer B — wooden game stage */}
-      <div className="sbr-stage">
+      <div
+        ref={stageRef}
+        className="sbr-stage"
+        style={
+          kbHeight > 0 && lockedStageHeight
+            ? {
+                height: `${lockedStageHeight}px`,
+                flex: `0 0 ${lockedStageHeight}px`,
+                minHeight: `${lockedStageHeight}px`,
+              }
+            : undefined
+        }
+      >
         {seatPlayers.map((p, i) => {
           const pos = SEAT_POSITIONS[p.seatIndex] ?? { x: 50, y: 50 }
           return <RoomPlayerCard key={p.userId} player={p} x={pos.x} y={pos.y} joinedAt={i} />
@@ -412,6 +504,7 @@ export function SpinBottleRoom({
         meId={meId}
         onSend={sendChat}
         sending={sendingChat}
+        kbOpen={kbHeight > 0}
       />
 
       {/* Exit confirmation */}

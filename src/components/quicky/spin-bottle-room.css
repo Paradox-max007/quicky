@@ -665,6 +665,30 @@
   border-color: rgba(255, 45, 85, 0.45);
   border-radius: 14px 4px 14px 14px;
 }
+.sbr-msg-reply-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 3px 0 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border-left: 2.5px solid var(--qk-accent, #ff2d55);
+}
+.sbr-msg-reply-name {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--qk-accent, #ff2d55);
+}
+.sbr-msg-reply-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 245, 247, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
 .sbr-msg-system {
   align-self: center;
   max-width: 90%;
@@ -704,12 +728,90 @@
   align-items: center;
   gap: 6px;
   padding: 7px 9px;
-  /* lifts above the overlaying keyboard: --sbr-kb is set from the
-     Keyboard plugin (native) / visualViewport (web); max() keeps the
-     safe-area inset when the keyboard is hidden */
-  padding-bottom: max(7px, env(safe-area-inset-bottom, 0px), var(--sbr-kb, 0px));
+  padding-bottom: max(7px, env(safe-area-inset-bottom, 0px));
   background: var(--room-chat-card);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* Placeholder to keep chat layout steady when composer pops on top */
+.sbr-composer-placeholder {
+  flex-shrink: 0;
+  height: 52px;
+}
+/* When keyboard is active, pop the composer over the table above the keyboard */
+.sbr-composer.sbr-composer-popped {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--sbr-kb, 0px);
+  z-index: 150;
+  padding: 8px 10px;
+  padding-bottom: 8px;
+  background: var(--room-chat-card);
+  border-top: 1.5px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  animation: sbr-pop-up 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes sbr-pop-up {
+  from {
+    opacity: 0.8;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Reply preview banner above composer */
+.sbr-reply-banner {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--room-chat-card);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3.5px solid var(--qk-accent, #ff2d55);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+  z-index: 15;
+}
+.sbr-reply-icon {
+  color: var(--qk-accent, #ff2d55);
+  flex-shrink: 0;
+}
+.sbr-reply-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sbr-reply-to-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--qk-accent, #ff2d55);
+}
+.sbr-reply-to-text {
+  font-size: 11.5px;
+  color: rgba(245, 245, 247, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sbr-reply-close {
+  padding: 4px;
+  border-radius: 999px;
+  color: rgba(245, 245, 247, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.sbr-reply-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 .sbr-input {
   flex: 1 1 auto;

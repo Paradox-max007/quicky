@@ -13,6 +13,16 @@ const nextConfig: NextConfig = {
     "172.20.10.7:3000",
     "10.93.186.102:3000",
   ],
+  // Suppress noisy repeated GET logs for the spin-bottle room poll
+  // and the matches badge poll in dev mode.
+  logging: {
+    incomingRequests: {
+      ignore: [
+        /^\/api\/quicky\/games\/spin-bottle\/room/,
+        /^\/api\/quicky\/matches/,
+      ],
+    },
+  },
 };
 
 export default nextConfig;

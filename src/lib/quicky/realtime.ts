@@ -154,7 +154,16 @@ export function joinMatchChannel(
 export type RoomChannel = {
   channel: RealtimeChannel
   sendState: (payload: unknown) => void
-  sendChat: (payload: { messageId: string; userId: string; text: string; kind: string; createdAt: string; metadata?: string }) => void
+  sendChat: (payload: {
+    id?: string
+    messageId?: string
+    userId: string
+    text: string
+    kind: string
+    createdAt: string
+    metadata?: string
+    replyTo?: { id: string; name: string; text: string } | null
+  }) => void
   sendKiss: (payload: { spinId: string; choice: 'yes' | 'no' }) => void
   sendGift: (payload: { senderId: string; senderName: string; recipientId: string; recipientName: string; itemId: string; itemName: string; itemEmoji: string; quantity: number }) => void
   unsubscribe: () => Promise<void>
