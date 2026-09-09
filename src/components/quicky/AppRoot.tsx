@@ -32,6 +32,34 @@ import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
 import { Toaster as SonnerToaster } from 'sonner'
+import { cn } from '@/lib/utils'
+import type { AppView } from '@/store/quicky'
+
+/**
+ * Desktop (web) shell width per view — the web app renders bigger, centered
+ * screens instead of the old 390px phone frame. Mobile / Capacitor keep the
+ * exact same layout (the max-width only kicks in at the `md:` breakpoint).
+ *
+ * 'spin-bottle-room' is full-bleed: game on the left, chat panel on the right.
+ */
+function shellFor(view: AppView): string {
+  switch (view) {
+    case 'spin-bottle-room':
+      return '' // full-window split layout (game left / chat right)
+    case 'discovery':
+      return 'md:max-w-lg' // swipe-card column — same arrangement, bigger card
+    case 'chat':
+      return 'md:max-w-3xl'
+    case 'auth':
+    case 'onboarding':
+      return 'md:max-w-md'
+    case 'spin-bottle':
+    case 'premium':
+      return 'md:max-w-xl'
+    default:
+      return 'md:max-w-2xl'
+  }
+}
 
 export function AppRoot() {
   const view = useQuickyStore((s) => s.view)
@@ -85,10 +113,11 @@ export function AppRoot() {
       className="w-full h-full relative bg-[var(--qk-bg)] text-white overflow-hidden"
       style={{ transform: 'translateZ(0)' }}
     >
-      {/* Main view */}
+      {/* Main view — centered, bigger column on desktop web */}
       <div className="w-full h-full flex flex-col">
         <div className="flex-1 min-h-0 overflow-hidden">
-          {view === 'auth' && <AuthScreen />}
+          <div className={cn('relative w-full h-full mx-auto', shellFor(view))}>
+            {view === 'auth' && <AuthScreen />}
           {view === 'onboarding' && <OnboardingFlow />}
           {view === 'discovery' && <DiscoveryFeed />}
           {view === 'matches' && <ChatList />}
@@ -142,9 +171,17 @@ export function AppRoot() {
               />
             )
           })()}
+          </div>
         </div>
-        {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings */}
-        {['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && <BottomNav />}
+        {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.
+            Centered dock on desktop, full-width on mobile (unchanged). */}
+        {['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && (
+          <div className="shrink-0 w-full flex justify-center">
+            <div className="w-full md:max-w-2xl">
+              <BottomNav />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Overlays */}
@@ -153,7 +190,7 @@ export function AppRoot() {
       <GameInvitePopup />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
-          phone frame on desktop and respects safe-area on mobile.
+          app on desktop and respects safe-area on mobile.
           offset pushes toasts below the status bar / notch. */}
       <SonnerToaster
         theme="dark"

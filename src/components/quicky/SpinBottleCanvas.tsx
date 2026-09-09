@@ -48,6 +48,21 @@ function easeOutQuint(t: number) {
   return 1 - Math.pow(1 - t, 5)
 }
 
+// Camera framing for a given container aspect: fit the whole scene (table
+// 1.6x1.0 + outer player avatars at ±0.81/±0.85 world units) so every seat
+// stays visible on any screen, as large as possible.
+function frameFor(aspect: number) {
+  const needW = 0.95 // half-extent incl. avatar radius + margin
+  const needH = 1.0
+  let halfH = Math.max(needH, needW / aspect)
+  let halfW = halfH * aspect
+  if (halfW < needW) {
+    halfW = needW
+    halfH = halfW / aspect
+  }
+  return { halfW, halfH }
+}
+
 function makeAvatarTexture(letter: string, accent: string) {
   const size = 128
   const c = document.createElement('canvas')
@@ -157,9 +172,10 @@ export function SpinBottleCanvas({ players, startRotation, endRotation, duration
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#0f0f14')
 
-    // Orthographic camera centred on the table, normalized -1..1 vertically.
+    // Orthographic camera centred on the table.
     const aspect = w / h
-    const camera = new THREE.OrthographicCamera(-aspect, aspect, 1, -1, 0.1, 100)
+    const { halfW, halfH } = frameFor(aspect)
+    const camera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.1, 100)
     camera.position.z = 10
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
@@ -224,11 +240,14 @@ export function SpinBottleCanvas({ players, startRotation, endRotation, duration
       const w = el.clientWidth
       const h = el.clientHeight
       if (w === 0 || h === 0) return
-      const aspect = w / h
-      s.camera.left = -aspect
-      s.camera.right = aspect
+      const { halfW, halfH } = frameFor(w / h)
+      s.camera.left = -halfW
+      s.camera.right = halfW
+      s.camera.top = halfH
+      s.camera.bottom = -halfH
       s.camera.updateProjectionMatrix()
       s.renderer.setSize(w, h)
+      s.renderer.render(s.scene, s.camera)
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -255,16 +274,22 @@ export function SpinBottleCanvas({ players, startRotation, endRotation, duration
       s.players.add(sprite)
       const accent = ACCENTS[acc++ % ACCENTS.length]
       const letter = (p.displayName ?? '?').trim()
+      // Paint the initials avatar immediately (avoids a white flash while the
+      // photo texture loads), then swap in the photo when ready.
+      mat.map = makeAvatarTexture(letter, accent)
+      mat.needsUpdate = true
       if (p.avatar) {
         loadImageTexture(p.avatar, letter).then((t) => {
           if (sprite.material instanceof THREE.SpriteMaterial) sprite.material.map = t
           sprite.material.needsUpdate = true
+          // Texture arrived async — repaint the scene
+          const s2 = sceneRef.current
+          if (s2) s2.renderer.render(s2.scene, s2.camera)
         })
-      } else {
-        mat.map = makeAvatarTexture(letter, accent)
-        mat.needsUpdate = true
       }
     })
+    // Repaint so newly added avatars are visible without waiting for a spin
+    s.renderer.render(s.scene, s.camera)
   }, [players])
 
   // Spin animation

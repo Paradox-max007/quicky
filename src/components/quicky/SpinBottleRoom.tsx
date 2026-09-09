@@ -85,6 +85,14 @@ export function SpinBottleRoom({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const spinStartTimeRef = useRef<number>(0)
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+
+  // Keep room chat scrolled to the newest message (desktop panel + mobile drawer;
+  // also fires when the drawer opens since its list remounts)
+  useEffect(() => {
+    const el = chatScrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [chat, chatOpen])
 
   // Polling — V1 sync path
   useEffect(() => {
@@ -236,6 +244,103 @@ export function SpinBottleRoom({
   const spinnerName = snapshot?.players.find((p) => p.userId === currentSpin?.spinnerId)?.displayName ?? '—'
   const status = currentSpin?.status ?? 'idle'
 
+  // ─── Shared JSX: room chat messages (mobile drawer + desktop side panel) ──
+  const chatMessages = (
+    <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 py-2 flex flex-col gap-2">
+      {chat.length === 0 ? (
+        <p className="text-center text-xs text-white/40 py-6">No messages yet. Say hi 👋</p>
+      ) : (
+        chat.map((m) => {
+          const isSystem = m.kind === 'system'
+          if (isSystem) {
+            return (
+              <p key={m.id} className="text-center text-[11px] text-white/40 py-1">
+                {m.text}
+              </p>
+            )
+          }
+          const isMe = m.userId === meId
+          const name = snapshot?.players.find((p) => p.userId === m.userId)?.displayName ?? '—'
+          return (
+            <div key={m.id} className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
+              <div
+                className={cn(
+                  'max-w-[80%] rounded-2xl px-3 py-1.5 text-sm',
+                  isMe ? 'bg-[var(--qk-accent)] text-white' : 'bg-white/8 text-white'
+                )}
+              >
+                {!isMe && <p className="text-[10px] font-semibold opacity-70">{name}</p>}
+                <p className="break-words">{m.text}</p>
+              </div>
+            </div>
+          )
+        })
+      )}
+    </div>
+  )
+
+  // ─── Shared JSX: chat input row (border/safe-area added by each wrapper) ──
+  const chatInput = (
+    <div className="p-3 flex items-center gap-2">
+      <input
+        value={chatText}
+        onChange={(e) => setChatText(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+        maxLength={280}
+        placeholder="Say something…"
+        className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50"
+      />
+      <button
+        onClick={sendChat}
+        disabled={!chatText.trim() || sendingChat}
+        className="shrink-0 w-10 h-10 rounded-full bg-coral-gradient text-white disabled:opacity-30 flex items-center justify-center active:scale-95 transition-transform"
+        aria-label="Send"
+      >
+        <Send className="w-[18px] h-[18px]" />
+      </button>
+    </div>
+  )
+
+  // ─── Shared JSX: bottom controls (respond when targeted, else watch) ──────
+  const controls = snapshot?.iAmTarget && currentSpin?.status === 'awaiting' ? (
+    <div className="flex flex-col items-center gap-2">
+      <p className="text-xs text-white/50">The bottle points at you!</p>
+      <div className="flex items-center gap-3 w-full">
+        <button
+          onClick={() => respond('no')}
+          className="flex-1 bg-white/10 border border-white/15 rounded-2xl py-3.5 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+        >
+          <X className="w-4 h-4" /> No Thanks
+        </button>
+        <button
+          onClick={() => respond('yes')}
+          className="flex-1 bg-coral-gradient glow-coral rounded-2xl py-3.5 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+        >
+          <Heart className="w-4 h-4" fill="currentColor" /> Kiss
+        </button>
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-white/50">
+        <span className="tabular-nums font-bold text-[var(--qk-gold)] text-base">{responseCountdown}</span>
+        <span>seconds to respond</span>
+      </div>
+    </div>
+  ) : (
+    <div className="flex items-center justify-center gap-4 text-xs text-white/50">
+      <button
+        onClick={() => setChatOpen((v) => !v)}
+        className="flex items-center gap-1.5 bg-white/8 rounded-full px-3.5 py-2 active:scale-95 transition-transform"
+      >
+        <MessageCircle className="w-4 h-4" /> Chat
+      </button>
+      <button
+        onClick={() => setShowExit(true)}
+        className="flex items-center gap-1.5 bg-white/8 rounded-full px-3.5 py-2 active:scale-95 transition-transform"
+      >
+        <DoorOpen className="w-4 h-4" /> Leave
+      </button>
+    </div>
+  )
+
   return (
     <div className="absolute inset-0 z-[150] bg-[var(--qk-bg)] text-white flex flex-col overflow-hidden">
       <header className="shrink-0 px-3 pt-2.5 pb-2 flex items-center justify-between border-b border-white/8">
@@ -256,23 +361,26 @@ export function SpinBottleRoom({
         </div>
         <button
           onClick={() => setChatOpen((v) => !v)}
-          className="p-2 rounded-full hover:bg-white/5"
+          className="p-2 rounded-full hover:bg-white/5 md:hidden"
           aria-label="Chat"
         >
           <MessageCircle className="w-5 h-5" />
         </button>
       </header>
 
-      {/* Table + turn indicator */}
-      <div className="flex-1 relative">
-        <SpinBottleCanvas
-          players={players}
-          startRotation={displayedRotation.start}
-          endRotation={displayedRotation.end}
-          duration={currentSpin?.duration ?? 3500}
-          spinning={status === 'spinning'}
-          pointing={status === 'awaiting'}
-        />
+      {/* Game (left) + room chat (right on desktop) — stacked on mobile */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* LEFT — table + turn indicator */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1 relative">
+            <SpinBottleCanvas
+              players={players}
+              startRotation={displayedRotation.start}
+              endRotation={displayedRotation.end}
+              duration={currentSpin?.duration ?? 3500}
+              spinning={status === 'spinning'}
+              pointing={status === 'awaiting'}
+            />
 
         {/* Turn status pill */}
         <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur border border-white/10 text-[12px] font-semibold">
@@ -321,7 +429,7 @@ export function SpinBottleRoom({
           )}
         </AnimatePresence>
 
-        {/* Chat drawer overlay */}
+        {/* Chat drawer overlay (mobile only — desktop has the side panel) */}
         <AnimatePresence>
           {chatOpen && (
             <motion.div
@@ -329,7 +437,7 @@ export function SpinBottleRoom({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-              className="absolute inset-x-0 bottom-0 z-10 h-[60%] bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl flex flex-col"
+              className="absolute inset-x-0 bottom-0 z-10 h-[60%] bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl flex flex-col md:hidden"
             >
               <div className="pt-2 pb-1 flex justify-center">
                 <div className="w-10 h-1 rounded-full bg-white/20" />
@@ -344,101 +452,32 @@ export function SpinBottleRoom({
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 py-2 flex flex-col gap-2">
-                {chat.length === 0 ? (
-                  <p className="text-center text-xs text-white/40 py-6">No messages yet. Say hi 👋</p>
-                ) : (
-                  chat.map((m) => {
-                    const isSystem = m.kind === 'system'
-                    if (isSystem) {
-                      return (
-                        <p key={m.id} className="text-center text-[11px] text-white/40 py-1">
-                          {m.text}
-                        </p>
-                      )
-                    }
-                    const isMe = m.userId === meId
-                    const name = snapshot?.players.find((p) => p.userId === m.userId)?.displayName ?? '—'
-                    return (
-                      <div key={m.id} className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
-                        <div
-                          className={cn(
-                            'max-w-[80%] rounded-2xl px-3 py-1.5 text-sm',
-                            isMe ? 'bg-[var(--qk-accent)] text-white' : 'bg-white/8 text-white'
-                          )}
-                        >
-                          {!isMe && <p className="text-[10px] font-semibold opacity-70">{name}</p>}
-                          <p className="break-words">{m.text}</p>
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-              <div className="shrink-0 p-3 border-t border-white/10 safe-area-bottom flex items-center gap-2">
-                <input
-                  value={chatText}
-                  onChange={(e) => setChatText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-                  maxLength={280}
-                  placeholder="Say something…"
-                  className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 text-sm placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50"
-                />
-                <button
-                  onClick={sendChat}
-                  disabled={!chatText.trim() || sendingChat}
-                  className="shrink-0 w-10 h-10 rounded-full bg-coral-gradient text-white disabled:opacity-30 flex items-center justify-center active:scale-95 transition-transform"
-                  aria-label="Send"
-                >
-                  <Send className="w-[18px] h-[18px]" />
-                </button>
-              </div>
+              {chatMessages}
+              <div className="shrink-0 border-t border-white/10 safe-area-bottom">{chatInput}</div>
             </motion.div>
           )}
         </AnimatePresence>
+          </div>
+
+          {/* Desktop: controls under the table */}
+          <div className="hidden md:block shrink-0 border-t border-white/8 px-4 py-3">
+            <div className="max-w-md mx-auto">{controls}</div>
+          </div>
+        </div>
+
+        {/* RIGHT — room chat panel (desktop only) */}
+        <aside className="hidden md:flex w-[360px] xl:w-[420px] shrink-0 flex-col border-l border-white/10 bg-[var(--qk-card)]/40">
+          <div className="shrink-0 px-4 py-3 border-b border-white/10 flex items-center justify-between">
+            <h3 className="font-bold text-sm">Room Chat</h3>
+            <span className="text-[11px] text-white/40">{snapshot?.players.length ?? 0} in room</span>
+          </div>
+          {chatMessages}
+          <div className="shrink-0 border-t border-white/10">{chatInput}</div>
+        </aside>
       </div>
 
-      {/* Bottom controls: respond (if I'm the target) or watch */}
-      <div className="shrink-0 border-t border-white/8 px-4 py-3 safe-area-bottom">
-        {snapshot?.iAmTarget && currentSpin?.status === 'awaiting' ? (
-          <div className="flex flex-col items-center gap-2">
-            <p className="text-xs text-white/50">The bottle points at you!</p>
-            <div className="flex items-center gap-3 w-full">
-              <button
-                onClick={() => respond('no')}
-                className="flex-1 bg-white/10 border border-white/15 rounded-2xl py-3.5 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-              >
-                <X className="w-4 h-4" /> No Thanks
-              </button>
-              <button
-                onClick={() => respond('yes')}
-                className="flex-1 bg-coral-gradient glow-coral rounded-2xl py-3.5 font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-              >
-                <Heart className="w-4 h-4" fill="currentColor" /> Kiss
-              </button>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-white/50">
-              <span className="tabular-nums font-bold text-[var(--qk-gold)] text-base">{responseCountdown}</span>
-              <span>seconds to respond</span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-4 text-xs text-white/50">
-            <button
-              onClick={() => setChatOpen((v) => !v)}
-              className="flex items-center gap-1.5 bg-white/8 rounded-full px-3.5 py-2 active:scale-95 transition-transform"
-            >
-              <MessageCircle className="w-4 h-4" /> Chat
-            </button>
-            <button
-              onClick={() => setShowExit(true)}
-              className="flex items-center gap-1.5 bg-white/8 rounded-full px-3.5 py-2 active:scale-95 transition-transform"
-            >
-              <DoorOpen className="w-4 h-4" /> Leave
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Mobile bottom controls: respond (if I'm the target) or watch */}
+      <div className="shrink-0 border-t border-white/8 px-4 py-3 safe-area-bottom md:hidden">{controls}</div>
 
       {/* Exit confirmation */}
       <AnimatePresence>
