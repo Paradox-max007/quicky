@@ -40,12 +40,13 @@ import type { AppView } from '@/store/quicky'
  * screens instead of the old 390px phone frame. Mobile / Capacitor keep the
  * exact same layout (the max-width only kicks in at the `md:` breakpoint).
  *
- * 'spin-bottle-room' is full-bleed: game on the left, chat panel on the right.
+ * 'spin-bottle-room' is a centered game viewport: the SAME composition as
+ * mobile (HUD / stage / chat), just scaled up — never a game|chat split.
  */
 function shellFor(view: AppView): string {
   switch (view) {
     case 'spin-bottle-room':
-      return '' // full-window split layout (game left / chat right)
+      return 'md:max-w-[560px]'
     case 'discovery':
       return 'md:max-w-lg' // swipe-card column — same arrangement, bigger card
     case 'chat':
