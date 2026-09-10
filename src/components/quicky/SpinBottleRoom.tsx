@@ -23,7 +23,6 @@ import { useQuickyStore } from '@/store/quicky'
 import { joinRoomChannel } from '@/lib/quicky/realtime'
 import type { RoomChannel } from '@/lib/quicky/realtime'
 import { RoomTopHud, RoomHudChips } from './RoomTopHud'
-import { RoomQuickActions } from './RoomQuickActions'
 import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
@@ -65,25 +64,34 @@ type Snapshot = {
 const RESPONSE_TIMEOUT = 10
 
 /* 12 fixed logical seat positions — percentages of the stage box, laid out
-   like the approved mockup's clock face: each entry is the server's own seat
-   vector (src/lib/quicky/spin-bottle.ts POSITIONS — counter-clockwise, seat 0
-   = straight up) scaled onto the seat ring ellipse (rx 40% / ry 39%), so the
-   dashed guide ring passes right through the card centers and the bottle
-   still points at the card it lands on. Seat k always renders at position k. */
+   like the approved mockup's clock face. Each entry is the server's own seat
+   vector (src/lib/quicky/spin-bottle.ts POSITIONS) projected onto the dashed
+   seat-ring ellipse (rx 40% / ry 39%): the vector is normalized IN RENDER
+   SPACE — offset = (40·vx, 39·vy) scaled to ellipse length — so every card
+   center sits EXACTLY on the outer dashed ring while staying on the server's
+   ray (≤1° off, invisible), and the bottle always points at the card it
+   lands on. Seat 11 is the short inner ray (server vector (0, -0.5)) kept at
+   half radius. Seat k always renders at position k. */
 const SEAT_POSITIONS: { x: number; y: number }[] = [
   { x: 50, y: 11 },    // 0 — top rim, center (server: straight up)
-  { x: 16, y: 22.7 },  // 1 — upper-left rim
-  { x: 12, y: 50 },    // 2 — left rim
-  { x: 16, y: 77.3 },  // 3 — lower-left rim
-  { x: 34, y: 89 },    // 4 — bottom rim, left of center
-  { x: 66, y: 89 },    // 5 — bottom rim, right of center
-  { x: 84, y: 77.3 },  // 6 — lower-right rim
-  { x: 88, y: 50 },    // 7 — right rim
-  { x: 84, y: 22.7 },  // 8 — upper-right rim
-  { x: 66, y: 16.9 },  // 9 — top rim, right of center
-  { x: 34, y: 16.9 },  // 10 — top rim, left of center
+  { x: 18.8, y: 25.6 },  // 1 — upper-left rim
+  { x: 10, y: 50 },    // 2 — left rim
+  { x: 18.8, y: 74.4 },  // 3 — lower-left rim
+  { x: 34.8, y: 86.1 },  // 4 — bottom rim, left of center
+  { x: 65.2, y: 86.1 },  // 5 — bottom rim, right of center
+  { x: 81.2, y: 74.4 },  // 6 — lower-right rim
+  { x: 90, y: 50 },    // 7 — right rim
+  { x: 81.2, y: 25.6 },  // 8 — upper-right rim
+  { x: 67.4, y: 14.9 },  // 9 — top rim, right of center
+  { x: 32.6, y: 14.9 },  // 10 — top rim, left of center
   { x: 50, y: 30.5 },  // 11 — inner seat on the same up-ray as 0 (server vector)
 ]
+
+/* Duel spotlight — where the spinner & target cards slide to when the bottle
+   stops (percentages of the stage box). Desktop puts the question panel
+   BETWEEN the two cards; mobile stacks the panel below them. */
+const DUEL_SPINNER_POS = { x: 26, y: 42 }
+const DUEL_TARGET_POS = { x: 74, y: 42 }
 
 const MAX_SEATS = 12
 
@@ -120,7 +128,12 @@ export function SpinBottleRoom({
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
   const [responseCountdown, setResponseCountdown] = useState(RESPONSE_TIMEOUT)
-  const [kissFlash, setKissFlash] = useState<{ kind: 'yes' | 'no' | 'timeout' | null; name: string }>({ kind: null, name: '' })
+  // Duel spotlight state — see DUEL RESULT FLOW below. `dismissedSpinId` is
+  // the spin whose result panel has been shown & dismissed (cards slide back);
+  // `myResponse` is the optimistic answer of THIS client (the responder sees
+  // the result instantly, before the next poll confirms it).
+  const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
+  const [myResponse, setMyResponse] = useState<{ spinId: string; choice: 'yes' | 'no' } | null>(null)
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
   const [kbHeight, setKbHeight] = useState(0)
   const kbHeightRef = useRef(0)
@@ -237,7 +250,7 @@ export function SpinBottleRoom({
     let timer: ReturnType<typeof setTimeout> | null = null
 
     const schedule = () => {
-      if (!cancelled) timer = setTimeout(tick, 2500)
+      if (!cancelled) timer = setTimeout(tick, 2000)
     }
     const tick = async () => {
       if (cancelled) return
@@ -262,20 +275,12 @@ export function SpinBottleRoom({
   // Apply snapshot, handling side effects for spin transitions
   const applySnapshot = useCallback((s: Snapshot) => {
     setSnapshot((prev) => {
-      if (
-        s.currentSpin?.status === 'completed' &&
-        prev?.currentSpin?.status !== 'completed' &&
-        prev?.currentSpin?.id === s.currentSpin.id
-      ) {
-        const kind = (s.currentSpin.response as 'yes' | 'no' | 'timeout' | null) ?? 'timeout'
-        const target = s.players.find((p) => p.userId === s.currentSpin?.targetId)
-        setKissFlash({ kind, name: target?.displayName ?? 'They' })
-        setTimeout(() => setKissFlash({ kind: null, name: '' }), 2200)
-      }
       // Track spin start for the bottle
       if (s.currentSpin && (!prev?.currentSpin || prev.currentSpin.id !== s.currentSpin.id)) {
         spinStartTimeRef.current = Date.now()
         setDisplayedRotation({ start: s.currentSpin.startRotation, end: s.currentSpin.endRotation })
+        // A NEW spin invalidates any stale optimistic answer
+        setMyResponse(null)
       } else if (!s.currentSpin && prev?.currentSpin) {
         setDisplayedRotation({ start: 0, end: 0 })
       }
@@ -319,10 +324,30 @@ export function SpinBottleRoom({
     }
   }, [snapshot?.currentSpin?.id, snapshot?.currentSpin?.status, snapshot?.iAmTarget])
 
+  // ─── DUEL RESULT FLOW ─────────────────────────────────────────────────────
+  // When the spin completes, the result panel replaces the question panel for
+  // RESULT_VIEW_MS, then the two spotlight cards slide back to their seats and
+  // the bottle fades back in (phase returns to 'table'). The dismiss timer is
+  // derived from the snapshot, so it survives re-renders and poll refreshes.
+  const RESULT_VIEW_MS = 3400
+
+  useEffect(() => {
+    const spinId = snapshot?.currentSpin?.id
+    if (snapshot?.currentSpin?.status !== 'completed' || !spinId) return
+    if (dismissedSpinId === spinId) return
+    const t = setTimeout(() => setDismissedSpinId(spinId), RESULT_VIEW_MS)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot?.currentSpin?.id, snapshot?.currentSpin?.status, dismissedSpinId])
+
   const respond = async (choice: 'yes' | 'no') => {
     if (!snapshot?.currentSpin || !initialRoomId) return
+    const spinId = snapshot.currentSpin.id
     try {
       await api.spinBottle.respond(initialRoomId, choice)
+      // Optimistic: the responder sees the result immediately (the server has
+      // already recorded it — respond() only succeeds when it was accepted).
+      setMyResponse({ spinId, choice })
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to respond')
     }
@@ -387,7 +412,29 @@ export function SpinBottleRoom({
   const playerCount = snapshot?.players.length ?? 0
   const roomLabel = `Table #${initialRoomId.slice(-5).toUpperCase()}`
   const statusPill = statusCopy(status)
+  const spinnerName = snapshot?.players.find((p) => p.userId === spinnerId)?.displayName ?? 'Someone'
   const targetName = snapshot?.players.find((p) => p.userId === targetId)?.displayName ?? '?'
+
+  // Duel phase machine (presentation only — server state stays untouched):
+  //   table   → normal play; bottle visible, everyone at their seat
+  //   duel    → bottle stopped: bottle fades out, spinner+target slide to the
+  //             center, question panel with Kiss / No Thanks appears
+  //   result  → the chosen answer swapped in (❤️ Kissed / 💔 Rejected /
+  //             ⏳ no answer); after RESULT_VIEW_MS everything slides back
+  const optimistic = myResponse && currentSpin && myResponse.spinId === currentSpin.id ? myResponse.choice : null
+  const duelPhase: 'table' | 'duel' | 'result' =
+    status === 'awaiting'
+      ? optimistic
+        ? 'result'
+        : 'duel'
+      : status === 'completed' && dismissedSpinId !== currentSpin?.id
+        ? 'result'
+        : 'table'
+  const dueling = duelPhase !== 'table'
+  const resultKind: 'yes' | 'no' | 'timeout' =
+    status === 'completed'
+      ? ((currentSpin?.response as 'yes' | 'no' | 'timeout' | null) ?? 'timeout')
+      : (optimistic ?? 'timeout')
 
   const seatPlayers: SeatPlayer[] = (snapshot?.players ?? []).map((p) => ({
     userId: p.userId,
@@ -396,8 +443,8 @@ export function SpinBottleRoom({
     avatar: p.avatar,
     isMe: p.userId === meId,
     isPremium: false,
-    isCurrentTurn: status === 'spinning' && p.userId === spinnerId,
-    isTarget: p.userId === targetId && status === 'awaiting',
+    isCurrentTurn: (status === 'spinning' || dueling) && p.userId === spinnerId,
+    isTarget: p.userId === targetId && (status === 'awaiting' || dueling),
   }))
 
   // Every unoccupied seat renders as a dashed "Open Seat" / "Invite" slot.
@@ -430,12 +477,11 @@ export function SpinBottleRoom({
         <div className="sbr-webtop-center">
           <RoomHudChips hearts={0} trophies={0} crowns={me?.isPremium ? 1 : 0} coins={989} />
         </div>
-        <div className="sbr-webtop-right">
-          <RoomQuickActions roomLabel={roomLabel} />
-        </div>
       </header>
 
-      {/* ═══ MOBILE HUD + quick actions (hidden ≥1024px) ═══ */}
+      {/* ═══ MOBILE HUD (hidden ≥1024px) — the old icon row below it was
+          removed; the Hot Festival banner now sits directly under the HUD
+          and the freed space goes to a bigger table ═══ */}
       <div className="sbr-m-only">
         <RoomTopHud
           hearts={0}
@@ -444,9 +490,6 @@ export function SpinBottleRoom({
           coins={989}
           onBack={() => setShowExit(true)}
         />
-      </div>
-      <div className="sbr-m-only">
-        <RoomQuickActions roomLabel={roomLabel} />
       </div>
 
       {/* ═══ Body: game column + chat ═══ */}
@@ -484,8 +527,24 @@ export function SpinBottleRoom({
             </div>
 
             {seatPlayers.map((p, i) => {
-              const pos = SEAT_POSITIONS[p.seatIndex] ?? { x: 50, y: 50 }
-              return <RoomPlayerCard key={p.userId} player={p} x={pos.x} y={pos.y} joinedAt={i} />
+              const seatPos = SEAT_POSITIONS[p.seatIndex] ?? { x: 50, y: 50 }
+              // During the duel the spinner & target slide to the spotlight
+              // center; everyone else stays pinned to their seat.
+              const inSpotlight = dueling && (p.userId === spinnerId || p.userId === targetId)
+              const pos =
+                inSpotlight
+                  ? p.userId === spinnerId ? DUEL_SPINNER_POS : DUEL_TARGET_POS
+                  : seatPos
+              return (
+                <RoomPlayerCard
+                  key={p.userId}
+                  player={p}
+                  x={pos.x}
+                  y={pos.y}
+                  joinedAt={i}
+                  spotlight={inSpotlight}
+                />
+              )
             })}
 
             {/* open / invite seats */}
@@ -515,67 +574,118 @@ export function SpinBottleRoom({
               endRotation={displayedRotation.end}
               duration={currentSpin?.duration ?? 3500}
               spinning={status === 'spinning'}
+              visible={duelPhase === 'table'}
             />
 
-            {/* status pill (mobile — inside the table, under the bottle) */}
-            <div className="sbr-status">
-              {status === 'spinning' && (
-                <span>
-                  <span aria-hidden>🍾</span>{' '}
-                  {snapshot?.players.find((p) => p.userId === spinnerId)?.displayName ?? 'Someone'}&apos;s turn — spinning…
-                </span>
-              )}
-              {status === 'awaiting' && (
-                <span>
-                  <span aria-hidden>🎯</span> Bottle points at {targetName}
-                </span>
-              )}
-              {status === 'completed' && (
-                <span>
-                  <span aria-hidden>✨</span> Round complete
-                </span>
-              )}
-              {status === 'idle' && <span>Waiting for players…</span>}
-            </div>
-
-            {/* respond overlay — I'm the target */}
-            {snapshot?.iAmTarget && status === 'awaiting' && (
-              <div className="sbr-respond">
-                <p className="sbr-respond-title">
-                  <span aria-hidden>🎯</span> The bottle points at you!
-                  <span className="sbr-respond-timer">0:{String(responseCountdown).padStart(2, '0')}s</span>
-                </p>
-                <div className="sbr-respond-actions">
-                  <button className="sbr-btn-yes" onClick={() => respond('yes')}>
-                    <Heart className="h-4 w-4" fill="currentColor" /> Kiss
-                  </button>
-                  <button className="sbr-btn-no" onClick={() => respond('no')}>
-                    <X className="h-4 w-4" strokeWidth={3} /> No Thanks
-                  </button>
-                </div>
+            {/* status pill (mobile — only while the bottle is on the table;
+                during the duel the spotlight panel replaces it) */}
+            {duelPhase === 'table' && (
+              <div className="sbr-status">
+                {status === 'spinning' && (
+                  <span>
+                    <span aria-hidden>🍾</span> {spinnerName}&apos;s turn — spinning…
+                  </span>
+                )}
+                {status === 'completed' && (
+                  <span>
+                    <span aria-hidden>✨</span> Round complete
+                  </span>
+                )}
+                {status === 'idle' && <span>Waiting for players…</span>}
               </div>
             )}
 
-            {/* result flash */}
+            {/* ═══ DUEL SPOTLIGHT — bottle stopped: the two cards slide to
+                the center (see RoomPlayerCard spotlight prop), the bottle is
+                hidden, and the question / result panel appears between them ═══ */}
             <AnimatePresence>
-              {kissFlash.kind && (
+              {dueling && status !== 'spinning' && (
                 <motion.div
-                  key={kissFlash.kind}
-                  initial={{ opacity: 0, y: 14, scale: 0.7 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -12, scale: 0.9 }}
-                  transition={{ type: 'spring', stiffness: 340, damping: 22 }}
-                  className="sbr-result"
-                >
-                  <span className="sbr-result-emoji" aria-hidden>
-                    {kissFlash.kind === 'yes' ? '💋' : kissFlash.kind === 'no' ? '😅' : '⌛'}
-                  </span>
-                  {kissFlash.kind === 'yes' && `${kissFlash.name} said YES!`}
-                  {kissFlash.kind === 'no' && `${kissFlash.name} said no thanks`}
-                  {kissFlash.kind === 'timeout' && `${kissFlash.name} didn't answer`}
-                </motion.div>
+                  key="duel-dim"
+                  className="sbr-duel-dim"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.35 }}
+                  aria-hidden
+                />
               )}
             </AnimatePresence>
+
+            {dueling && status !== 'spinning' && (
+              <div className="sbr-duel-anchor">
+                <AnimatePresence mode="wait">
+                  {duelPhase === 'duel' ? (
+                    <motion.div
+                      key="duel-question"
+                      className="sbr-duel-panel"
+                      initial={{ opacity: 0, y: 20, scale: 0.82 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -14, scale: 0.9 }}
+                      transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+                    >
+                      <p className="sbr-duel-kicker">
+                        <span aria-hidden>🎯</span> The bottle chose {targetName}
+                      </p>
+                      <p className="sbr-duel-question">
+                        Will <b>{targetName}</b> kiss <b>{spinnerName}</b>?
+                      </p>
+                      {snapshot?.iAmTarget && (
+                        <span className="sbr-duel-timer">
+                          0:{String(responseCountdown).padStart(2, '0')}s
+                        </span>
+                      )}
+                      <div className="sbr-duel-actions">
+                        <button
+                          className="sbr-btn-yes"
+                          disabled={!snapshot?.iAmTarget}
+                          onClick={() => respond('yes')}
+                        >
+                          <Heart className="h-4 w-4" fill="currentColor" /> Kiss
+                        </button>
+                        <button
+                          className="sbr-btn-no"
+                          disabled={!snapshot?.iAmTarget}
+                          onClick={() => respond('no')}
+                        >
+                          <X className="h-4 w-4" strokeWidth={3} /> No Thanks
+                        </button>
+                      </div>
+                      {!snapshot?.iAmTarget && (
+                        <p className="sbr-duel-waiting">Waiting for {targetName}&apos;s answer…</p>
+                      )}
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key={`duel-result-${currentSpin?.id}`}
+                      className="sbr-duel-panel sbr-duel-result"
+                      initial={{ opacity: 0, y: 20, scale: 0.82 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -14, scale: 0.9 }}
+                      transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+                    >
+                      <motion.span
+                        className={`sbr-duel-emoji ${resultKind === 'yes' ? 'sbr-duel-emoji-kiss' : resultKind === 'no' ? 'sbr-duel-emoji-reject' : ''}`}
+                        initial={{ scale: 0, rotate: -30 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{ type: 'spring', stiffness: 380, damping: 16 }}
+                        aria-hidden
+                      >
+                        {resultKind === 'yes' ? '❤️' : resultKind === 'no' ? '💔' : '⏳'}
+                      </motion.span>
+                      <p className={`sbr-duel-verdict ${resultKind === 'no' ? 'sbr-duel-verdict-no' : ''}`}>
+                        {resultKind === 'yes' ? 'Kissed!' : resultKind === 'no' ? 'Rejected' : 'No answer'}
+                      </p>
+                      <p className="sbr-duel-sub">
+                        {resultKind === 'yes' && `${targetName} kissed ${spinnerName}`}
+                        {resultKind === 'no' && `${targetName} said no thanks`}
+                        {resultKind === 'timeout' && `${targetName} didn't respond in time`}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
 
           {/* web bottom action bar (hidden <1024px) */}

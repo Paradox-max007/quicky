@@ -3,7 +3,10 @@
 // picks the target, the start/end bottle rotation, and the kiss outcome.
 //
 // State machine per turn:
-//   SPINNING (duration ms) → AWAITING (10 s) → RESULT (2 s) → SPINNING (next player)
+//   SPINNING (duration ms) → AWAITING (10 s) → RESULT (5 s) → SPINNING (next player)
+// RESULT_PAUSE_MS is intentionally longer than the client poll tick (~2 s):
+// every room member must see at least one poll of the 'completed' state so
+// the duel result panel (❤️ Kissed / 💔 Rejected) renders for everyone.
 //
 // All timers are stored on the room via a WeakMap so we can cancel them
 // (leave, close, manual end). Polling on the client is the V1 sync path;
@@ -13,7 +16,7 @@ import { db } from '@/lib/db'
 
 export const SPIN_DURATION_MS = 3500
 export const RESPONSE_TIMEOUT_MS = 10000
-export const RESULT_PAUSE_MS = 2000
+export const RESULT_PAUSE_MS = 5000
 
 // Gender matching: pick the first eligible player whose gender differs
 // from the spinner's. If "nonbinary"/"other" or both share the same gender,

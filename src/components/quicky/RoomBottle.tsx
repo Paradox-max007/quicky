@@ -15,6 +15,8 @@ type Props = {
   endRotation: number
   duration: number
   spinning: boolean
+  /** False while the duel spotlight is on — the bottle fades/shrinks away. */
+  visible?: boolean
 }
 
 const BOTTLE_SVG = (
@@ -48,7 +50,7 @@ const BOTTLE_SVG = (
   </svg>
 )
 
-export function RoomBottle({ startRotation, endRotation, duration, spinning }: Props) {
+export function RoomBottle({ startRotation, endRotation, duration, spinning, visible = true }: Props) {
   const elRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -71,7 +73,10 @@ export function RoomBottle({ startRotation, endRotation, duration, spinning }: P
   }, [spinning, startRotation, endRotation, duration])
 
   return (
-    <div className="sbr-bottle-layer">
+    <div
+      className={`sbr-bottle-layer ${visible ? '' : 'sbr-bottle-hidden'}`}
+      aria-hidden={!visible}
+    >
       <div className="sbr-bottle-glow" aria-hidden />
       <div className="sbr-bottle-float">
         <div

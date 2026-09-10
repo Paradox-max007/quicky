@@ -1,11 +1,18 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 // RoomPlayerCard — rounded-square photo card used for the 12 stage seats,
 // styled after the approved mockups: colored gradient frame + soft glow,
 // level badge (or VIP badge for premium), SPINNER / TARGET role tags on web,
 // and a name pill below (plain text with drop shadow on mobile via CSS).
 // Sized entirely by the --seat-w CSS variable so proportions stay identical
 // from small phones to desktop.
+//
+// The wrapper is a framer-motion div: when the bottle stops, the parent flips
+// the `spotlight` prop and the spinner/target cards SLIDE from their seat to
+// the duel center (spring on left/top) and pop slightly bigger while there;
+// when the duel ends they spring back. Cards that never move don't animate.
 
 export type SeatPlayer = {
   userId: string
@@ -75,12 +82,15 @@ export function RoomPlayerCard({
   x,
   y,
   joinedAt = 0,
+  spotlight = false,
 }: {
   player: SeatPlayer
   /** Seat center as percentages of the stage box. */
   x: number
   y: number
   joinedAt?: number
+  /** True while this card is in the duel spotlight (center stage). */
+  spotlight?: boolean
 }) {
   const frame = frameForPlayer(player)
   const initial = (player.displayName ?? '?').trim().slice(0, 1).toUpperCase()
@@ -97,9 +107,25 @@ export function RoomPlayerCard({
   }
 
   return (
-    <div
-      className="sbr-seat"
-      style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${joinedAt * 45}ms` }}
+    <motion.div
+      className={`sbr-seat ${spotlight ? 'sbr-seat-dueling' : ''}`}
+      initial={false}
+      animate={{
+        left: `${x}%`,
+        top: `${y}%`,
+        // framer owns the transform while animating, so the CSS centering
+        // translate is folded in here (scale pops the card in the spotlight)
+        x: '-50%',
+        y: '-50%',
+        scale: spotlight ? 1.16 : 1,
+      }}
+      transition={{
+        left: { type: 'spring', stiffness: 190, damping: 24 },
+        top: { type: 'spring', stiffness: 190, damping: 24 },
+        scale: { type: 'spring', stiffness: 320, damping: 20 },
+        default: { duration: 0.2 },
+      }}
+      style={{ animationDelay: `${joinedAt * 45}ms` }}
     >
       <div className={`sbr-seat-frame ${frame.frameClass ?? ''}`} style={frameVars}>
         <span
@@ -121,6 +147,6 @@ export function RoomPlayerCard({
         {player.isTarget && <span className="sbr-target-spark" aria-hidden>✨</span>}
       </div>
       <span className="sbr-seat-name">{name}{player.isCurrentTurn ? ' ★' : ''}</span>
-    </div>
+    </motion.div>
   )
 }

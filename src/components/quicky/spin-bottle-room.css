@@ -27,8 +27,10 @@
   --sbr-line: rgba(255, 255, 255, 0.09);
   --sbr-accent: #f43f5e;
 
-  /* responsive player-card size — same proportions on every screen */
-  --seat-w: clamp(46px, 12.5vw, 62px);
+  /* responsive player-card size — same proportions on every screen.
+     Bumped up: the quick-action icon row under the HUD was removed, its
+     space goes to a bigger table, so the cards can be bigger too. */
+  --seat-w: clamp(48px, 13.2vw, 66px);
   --seat-radius: 12px;
 
   /* NOTE: no `position` here — the component provides `absolute inset-0`
@@ -109,8 +111,6 @@
   padding: 5px 10px;
   border-radius: 14px;
 }
-.sbr-webtop-right { margin-left: 10px; min-width: 0; }
-.sbr-webtop-right .sbr-quick { padding: 0; }
 
 /* ── Round icon button (back) — shared mobile/web ─────────── */
 .sbr-round-btn {
@@ -193,90 +193,15 @@
 }
 
 /* ════════════════════════════════════════════════════════════
-   QUICK ACTIONS — colored icon tiles + table pill
-   ════════════════════════════════════════════════════════════ */
-.sbr-quick {
-  position: relative;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px 3px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.sbr-quick::-webkit-scrollbar { display: none; }
-.sbr-qa {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 35px;
-  height: 35px;
-  border-radius: 11px;
-  font-size: 16px;
-  transition: transform 0.12s ease;
-}
-.sbr-qa:active { transform: scale(0.9); }
-.sbr-qa-emerald { background: rgba(16, 185, 129, 0.2);  border: 1px solid rgba(52, 211, 153, 0.4); }
-.sbr-qa-amber   { background: rgba(245, 158, 11, 0.2);  border: 1px solid rgba(251, 191, 36, 0.4); }
-.sbr-qa-cyan    { background: rgba(6, 182, 212, 0.2);   border: 1px solid rgba(34, 211, 238, 0.4); }
-.sbr-qa-rose    { background: rgba(244, 63, 94, 0.2);   border: 1px solid rgba(251, 113, 133, 0.4); }
-.sbr-qa-purple  { background: rgba(147, 51, 234, 0.2);  border: 1px solid rgba(192, 132, 252, 0.4); }
-.sbr-qa-pink    { background: rgba(236, 72, 153, 0.2);  border: 1px solid rgba(244, 114, 182, 0.4); }
-.sbr-qa-orange  { background: rgba(234, 88, 12, 0.2);   border: 1px solid rgba(251, 146, 60, 0.4); }
-.sbr-qa-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: #dc2626;
-  border: 1.5px solid #12111b;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 900;
-  line-height: 1;
-}
-.sbr-qa-badge.sbr-qa-sale {
-  background: #facc15;
-  color: #451a03;
-  border-color: #12111b;
-  font-size: 7.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.sbr-table-pill {
-  margin-left: auto;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 33px;
-  padding: 0 11px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #d4d4d8;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-/* ════════════════════════════════════════════════════════════
-   EVENT BANNER — rose → pink → amber gradient
+   EVENT BANNER — rose → pink → amber gradient. Sits directly under the
+   mobile HUD (the quick-action icon row that used to be there was removed
+   and its space was given to the table).
    ════════════════════════════════════════════════════════════ */
 .sbr-banner-wrap {
   position: relative;
   z-index: 2;
   flex-shrink: 0;
-  padding: 4px 8px 0;
+  padding: 6px 8px 0;
 }
 .sbr-banner {
   display: flex;
@@ -457,6 +382,8 @@
   0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
   100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 }
+/* duel spotlight — the two center-stage cards float above everyone else */
+.sbr-seat-dueling { z-index: 6; }
 .sbr-seat-frame {
   position: relative;
   width: var(--seat-w);
@@ -627,13 +554,19 @@
 .sbr-bottle-layer {
   position: absolute;
   left: 50%;
-  top: 47%;
+  top: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+/* duel in progress — the bottle fades & shrinks away from center stage */
+.sbr-bottle-layer.sbr-bottle-hidden {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
 }
 .sbr-bottle-glow {
   position: absolute;
@@ -692,51 +625,132 @@
   text-overflow: ellipsis;
 }
 
-/* respond overlay — frosted dark decision card */
-.sbr-respond {
+/* ── Duel spotlight panel (question + result) ──────────────
+   Anchored inside the stage: on mobile it sits BELOW the two center cards,
+   on desktop (≥1024px) it fits BETWEEN them. The anchor centers itself;
+   the inner motion panel does the pop animation. */
+.sbr-duel-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: radial-gradient(90% 70% at 50% 46%, rgba(10, 6, 2, 0.34) 0%, rgba(10, 6, 2, 0.52) 100%);
+  pointer-events: none;
+}
+.sbr-duel-anchor {
   position: absolute;
   left: 50%;
-  bottom: 9%;
-  transform: translateX(-50%);
-  z-index: 6;
-  width: min(420px, 88%);
+  top: 64%;
+  transform: translate(-50%, -50%);
+  z-index: 7;
+  width: min(320px, 76%);
+  pointer-events: none;
+}
+.sbr-duel-panel {
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  align-items: center;
+  gap: 6px;
+  padding: 13px 14px 12px;
   border-radius: 20px;
-  background: rgba(13, 11, 18, 0.92);
+  background: rgba(13, 11, 18, 0.94);
   border: 1.5px solid rgba(244, 63, 94, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow:
     0 18px 44px rgba(70, 4, 22, 0.55),
     0 0 30px rgba(244, 63, 94, 0.22);
+  text-align: center;
 }
-.sbr-respond-title {
-  display: flex;
+.sbr-duel-kicker {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 10px;
   font-weight: 900;
-  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #fcd34d;
 }
-.sbr-respond-timer {
-  margin-left: auto;
+.sbr-duel-question {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.3;
+}
+.sbr-duel-question b { color: #fda4af; }
+.sbr-duel-timer {
+  position: absolute;
+  top: -11px;
+  right: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   font-weight: 900;
   color: #fcd34d;
-  background: rgba(69, 26, 3, 0.85);
-  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(69, 26, 3, 0.92);
+  border: 1px solid rgba(251, 191, 36, 0.5);
   border-radius: 999px;
-  padding: 1px 8px;
+  padding: 2px 9px;
 }
-.sbr-respond-actions {
+.sbr-duel-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 9px;
+  width: 100%;
+  margin-top: 3px;
 }
+.sbr-duel-actions button:disabled {
+  opacity: 0.45;
+  filter: grayscale(0.45);
+  cursor: not-allowed;
+}
+.sbr-duel-waiting {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: rgba(245, 245, 247, 0.55);
+  animation: sbr-wait-pulse 1.6s ease-in-out infinite;
+}
+@keyframes sbr-wait-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+/* result state */
+.sbr-duel-result { gap: 3px; }
+.sbr-duel-emoji {
+  font-size: 40px;
+  line-height: 1.15;
+  filter: drop-shadow(0 4px 14px rgba(244, 63, 94, 0.45));
+}
+.sbr-duel-emoji-kiss { animation: sbr-heart-beat 0.9s ease-in-out infinite; }
+.sbr-duel-emoji-reject { animation: sbr-heart-shake 0.7s ease-in-out; }
+@keyframes sbr-heart-beat {
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.18); }
+  45% { transform: scale(0.96); }
+  60% { transform: scale(1.1); }
+}
+@keyframes sbr-heart-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-4px) rotate(-7deg); }
+  40% { transform: translateX(4px) rotate(7deg); }
+  60% { transform: translateX(-3px) rotate(-5deg); }
+  80% { transform: translateX(3px) rotate(5deg); }
+}
+.sbr-duel-verdict {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(244, 63, 94, 0.55);
+}
+.sbr-duel-verdict-no { color: #fda4af; text-shadow: none; }
+.sbr-duel-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(245, 245, 247, 0.66);
+}
+
+/* ── shared decision buttons (duel panel) ────────────────── */
 .sbr-btn-yes {
   display: flex;
   align-items: center;
@@ -769,31 +783,6 @@
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .sbr-btn-no:active { transform: scale(0.96); background: #23222c; }
-
-/* result flash pill */
-.sbr-result {
-  position: absolute;
-  left: 50%;
-  top: 40%;
-  transform: translateX(-50%);
-  z-index: 7;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(13, 11, 18, 0.94);
-  border: 1.5px solid rgba(244, 63, 94, 0.6);
-  color: #fff;
-  font-weight: 900;
-  font-size: 13px;
-  padding: 9px 16px;
-  border-radius: 999px;
-  box-shadow: 0 0 28px rgba(244, 63, 94, 0.35);
-  white-space: nowrap;
-  max-width: 92%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sbr-result-emoji { font-size: 18px; line-height: 1; }
 
 /* ════════════════════════════════════════════════════════════
    WEB BOTTOM ACTION BAR — Change Table / status / Gift Wine
@@ -1293,7 +1282,7 @@
   .sbr-m-only { display: none !important; }
 
   .sbr-root {
-    --seat-w: clamp(74px, 6.2vw, 92px);
+    --seat-w: clamp(76px, 6.4vw, 96px);
     --seat-radius: 16px;
     background: #0b0b0f;
   }
@@ -1384,6 +1373,14 @@
 
   /* center status pill is replaced by corner pills + tablebar on web */
   .sbr-status { display: none; }
+
+  /* duel spotlight panel fits BETWEEN the two center cards on desktop */
+  .sbr-duel-anchor {
+    top: 40%;
+    width: min(340px, 34%);
+  }
+  .sbr-duel-question { font-size: 14.5px; }
+  .sbr-duel-emoji { font-size: 48px; }
 
   .sbr-chat {
     height: auto;
