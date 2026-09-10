@@ -1,16 +1,45 @@
 'use client'
 
-// RoomTopHud — casual-game status bar: heart/trophy/crown counters on the
-// left, coin wallet + bright green "+" on the right. Wins/crowns are
-// placeholders for the future meta-game economy; coins is cosmetic for now.
+// RoomTopHud — casual-game status bar: heart/trophy/crown counters + coin
+// wallet with a bright green "+". The chip group is exported separately so
+// the WEB top bar can render the same economy chips inline (Club Royale
+// header) while mobile keeps the classic stacked HUD row.
 
-type Props = {
+type ChipsProps = {
   hearts: number
   trophies: number
   crowns: number
   coins: number
-  onBack: () => void
   onAddCoins?: () => void
+}
+
+export function RoomHudChips({ hearts, trophies, crowns, coins, onAddCoins }: ChipsProps) {
+  return (
+    <>
+      <div className="sbr-tile sbr-tile-heart" title="Hearts won">
+        <span className="sbr-tile-icon">❤️</span>
+        <span className="tabular-nums">{hearts}</span>
+      </div>
+      <div className="sbr-tile sbr-tile-trophy hidden min-[380px]:flex" title="Trophies">
+        <span className="sbr-tile-icon">🏆</span>
+        <span className="tabular-nums">{trophies}</span>
+      </div>
+      <div className="sbr-tile sbr-tile-crown hidden min-[430px]:flex" title="Crowns">
+        <span className="sbr-tile-icon">👑</span>
+        <span className="tabular-nums">{crowns}</span>
+      </div>
+
+      <button className="sbr-coin-btn" onClick={onAddCoins} aria-label="Coin balance">
+        <span className="sbr-tile-icon">🪙</span>
+        <span className="tabular-nums">{coins.toLocaleString('en-US')}</span>
+        <span className="sbr-plus" aria-hidden>＋</span>
+      </button>
+    </>
+  )
+}
+
+type Props = ChipsProps & {
+  onBack: () => void
 }
 
 export function RoomTopHud({ hearts, trophies, crowns, coins, onBack, onAddCoins }: Props) {
@@ -22,25 +51,8 @@ export function RoomTopHud({ hearts, trophies, crowns, coins, onBack, onAddCoins
         </svg>
       </button>
 
-      <div className="sbr-tile" title="Hearts won">
-        <span className="sbr-tile-icon">❤️</span>
-        <span className="tabular-nums">{hearts}</span>
-      </div>
-      <div className="sbr-tile" title="Trophies">
-        <span className="sbr-tile-icon">🏆</span>
-        <span className="tabular-nums">{trophies}</span>
-      </div>
-      <div className="sbr-tile hidden min-[380px]:flex" title="Crowns">
-        <span className="sbr-tile-icon">👑</span>
-        <span className="tabular-nums">{crowns}</span>
-      </div>
-
-      <div className="ml-auto flex items-center">
-        <button className="sbr-coin-btn" onClick={onAddCoins} aria-label="Coin balance">
-          <span className="sbr-tile-icon">🪙</span>
-          <span className="tabular-nums">{coins.toLocaleString('en-US')}</span>
-          <span className="sbr-plus" aria-hidden>＋</span>
-        </button>
+      <div className="sbr-hud-chips">
+        <RoomHudChips hearts={hearts} trophies={trophies} crowns={crowns} coins={coins} onAddCoins={onAddCoins} />
       </div>
     </div>
   )

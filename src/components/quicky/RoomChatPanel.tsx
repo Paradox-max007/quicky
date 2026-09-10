@@ -5,14 +5,18 @@ import { Send, Reply, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 
-// RoomChatPanel — social-game style room chat.
+// RoomChatPanel — social-game style room chat (approved club design).
 // Features:
 //   - Supabase Realtime instant messaging
 //   - Swipe-to-reply on every message bubble (pointer + touch with direction locking)
-//   - Sender name always on top line of every bubble, message on next line
+//   - Sender name + timestamp on the top line, message below
 //   - Keyboard overlay: composer row pops on top of the table when keyboard is up,
 //     and returns to original position when sent or dismissed
-//   - Reply context quote banner with cancel button
+//   - Reply context quote banner docked directly above the input row
+//   - "PARTY CHAT" divider between the system activity log and live messages
+//   - Quick reaction bar (Kiss / Cheers / Wow / Dance) above the composer
+//   - On web (≥1024px) the panel becomes the right sidebar with the
+//     "Table Activity & Chat" header; on mobile it is the bottom sheet.
 
 export type RoomMessage = {
   id: string
@@ -25,7 +29,7 @@ export type RoomMessage = {
 
 export type ChatPlayer = { userId: string; displayName: string; avatar: string | null }
 
-const NAME_COLORS = ['#f23d7f', '#2f7cf6', '#9b3df0', '#12945d', '#f2801f', '#e02c1c']
+const NAME_COLORS = ['#c4b5fd', '#93c5fd', '#f0abfc', '#6ee7b7', '#fdba74', '#fca5a5']
 
 function nameColor(userId: string): string {
   let h = 0
@@ -33,7 +37,28 @@ function nameColor(userId: string): string {
   return NAME_COLORS[h % NAME_COLORS.length]
 }
 
+function timeFor(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/* System activity pills get a tint by content, matching the mockups:
+   decisions involving me → cyan, other decisions → rose, timeouts → muted. */
+function systemTone(text: string, meId: string): '' | 'hot' | 'mine' {
+  const t = text.toLowerCase()
+  if (!t.includes('is up') && !t.includes('kiss')) return ''
+  return t.includes('you') && meId ? 'mine' : 'hot'
+}
+
 const EMOJIS = ['😄', '😂', '🥰', '😍', '🤔', '😅', '🙌', '👏', '🔥', '💔', '💋', '🍾', '🎉', '👀', '😎', '🤩', '😇', '🤣']
+
+const REACTIONS = [
+  { emoji: '❤️', label: 'Kiss', tone: 'kiss' },
+  { emoji: '🥂', label: 'Cheers', tone: 'cheers' },
+  { emoji: '🔥', label: 'Wow', tone: 'wow' },
+  { emoji: '💃', label: 'Dance', tone: 'dance' },
+] as const
 
 // ─── Swipeable bubble wrapper with visual badge & direction lock ───────────────
 function SwipeableBubble({
@@ -180,6 +205,8 @@ export function RoomChatPanel({
   }, [messages])
 
   const playerFor = (userId: string) => players.find((p) => p.userId === userId)
+  const me = playerFor(meId)
+  const myInitial = (me?.displayName ?? 'M').trim().slice(0, 1).toUpperCase()
 
   const send = async () => {
     const t = text.trim()
@@ -203,8 +230,33 @@ export function RoomChatPanel({
     inputRef.current?.focus()
   }
 
+  const sendReaction = (emoji: string, label: string) => {
+    if (sending) return
+    onSend(`${emoji} ${label}`)
+  }
+
+  // Index of the first live (non-system) message — the PARTY CHAT divider
+  // goes right above it, but only when there is activity log above.
+  const firstLiveIdx = messages.findIndex((m) => m.kind !== 'system')
+
   return (
     <div className={`sbr-chat${kbOpen ? ' sbr-kb-open' : ''}`}>
+      {/* mobile sheet grabber */}
+      <div className="sbr-chat-grabber" aria-hidden />
+
+      {/* web sidebar header */}
+      <div className="sbr-chat-head">
+        <span className="sbr-chat-live-dot" aria-hidden />
+        <h2 className="sbr-chat-head-title">
+          Table Activity &amp; Chat
+          <span className="sbr-chat-online">{players.length} Online</span>
+        </h2>
+        <div className="sbr-chat-head-actions">
+          <button type="button" title="Sound effects" aria-label="Sound effects">🔊</button>
+          <button type="button" title="Table settings" aria-label="Table settings">⚙️</button>
+        </div>
+      </div>
+
       <div ref={scrollRef} className="sbr-chat-scroll no-scrollbar">
         {messages.length === 0 ? (
           <div className="sbr-chat-empty">
@@ -212,61 +264,52 @@ export function RoomChatPanel({
             <span>No messages yet — break the ice!</span>
           </div>
         ) : (
-          messages.map((m) => {
+          messages.map((m, idx) => {
+            const showDivider = idx === firstLiveIdx && firstLiveIdx > 0
             if (m.kind === 'system') {
               return (
-                <div key={m.id} className="sbr-msg-system">
-                  {m.text}
-                </div>
-              )
-            }
-            if (m.kind === 'gift') {
-              return (
-                <div key={m.id} className="sbr-msg">
-                  <GiftAvatar player={playerFor(m.userId)} />
-                  <div className="sbr-msg-body sbr-msg-gift">
-                    <span className="sbr-msg-gift-emoji" aria-hidden>🎁</span>
-                    <div>
-                      {/* Line 1: Sender name */}
-                      <p className="sbr-msg-name" style={{ color: nameColor(m.userId) }}>
-                        {m.userId === meId ? 'You' : playerFor(m.userId)?.displayName ?? 'Someone'}
-                      </p>
-                      {/* Line 2: Message */}
-                      <p className="sbr-msg-text">{m.text}</p>
-                    </div>
+                <div key={m.id} className="sbr-msg-system-row">
+                  {showDivider && <PartyChatDivider />}
+                  <div className={`sbr-msg-system${systemTone(m.text, meId) ? ` sbr-sys-${systemTone(m.text, meId)}` : ''}`}>
+                    {m.text}
                   </div>
                 </div>
               )
             }
-
             const isMe = m.userId === meId
             const p = playerFor(m.userId)
             const displayName = isMe ? 'You' : (p?.displayName ?? 'Guest')
 
             return (
-              <SwipeableBubble key={m.id} onReply={() => startReply(m)}>
-                <div className={`sbr-msg${isMe ? ' me' : ''}`}>
-                  <GiftAvatar player={p} me={isMe} />
-                  <div className="sbr-msg-body">
-                    {/* Line 1: Sender name — on top */}
-                    <p
-                      className="sbr-msg-name"
-                      style={{ color: isMe ? 'var(--qk-accent, #ff2d55)' : nameColor(m.userId) }}
-                    >
-                      {displayName}
-                    </p>
-                    {/* Quoted reply reference if replying to someone */}
-                    {m.replyTo && (
-                      <div className="sbr-msg-reply-ref">
-                        <span className="sbr-msg-reply-name">{m.replyTo.name}</span>
-                        <span className="sbr-msg-reply-text">{m.replyTo.text}</span>
-                      </div>
-                    )}
-                    {/* Line 2: The message — on the next line */}
-                    <p className="sbr-msg-text">{m.text}</p>
+              <div key={m.id}>
+                {showDivider && <PartyChatDivider />}
+                <SwipeableBubble onReply={() => startReply(m)}>
+                  <div className={`sbr-msg${isMe ? ' me' : ''}`}>
+                    <GiftAvatar player={p} me={isMe} />
+                    <div className="sbr-msg-body">
+                      {/* Line 1: sender name + time */}
+                      <p className="sbr-msg-meta">
+                        <span
+                          className="sbr-msg-name"
+                          style={{ color: isMe ? 'var(--qk-accent, #ff2d55)' : nameColor(m.userId) }}
+                        >
+                          {displayName}
+                        </span>
+                        <span className="sbr-msg-time">{timeFor(m.createdAt)}</span>
+                      </p>
+                      {/* Quoted reply reference if replying to someone */}
+                      {m.replyTo && (
+                        <div className="sbr-msg-reply-ref">
+                          <span className="sbr-msg-reply-name">{m.replyTo.name}</span>
+                          <span className="sbr-msg-reply-text">{m.replyTo.text}</span>
+                        </div>
+                      )}
+                      {/* Line 2: the message */}
+                      <p className="sbr-msg-text">{m.text}</p>
+                    </div>
                   </div>
-                </div>
-              </SwipeableBubble>
+                </SwipeableBubble>
+              </div>
             )
           })
         )}
@@ -274,6 +317,21 @@ export function RoomChatPanel({
 
       {/* Placeholder in normal flex flow when composer pops on top */}
       {kbOpen && <div className="sbr-composer-placeholder" />}
+
+      {/* Quick reactions — stay docked in the panel while the composer pops */}
+      <div className="sbr-reactions no-scrollbar">
+        {REACTIONS.map((r) => (
+          <button
+            key={r.tone}
+            type="button"
+            className={`sbr-react sbr-react-${r.tone}`}
+            onClick={() => sendReaction(r.emoji, r.label)}
+            disabled={sending}
+          >
+            {r.emoji} {r.label}
+          </button>
+        ))}
+      </div>
 
       {/* Composer row (pops on top of the table when kbOpen) */}
       <div className={`sbr-composer${kbOpen ? ' sbr-composer-popped' : ''}`}>
@@ -304,30 +362,47 @@ export function RoomChatPanel({
             ))}
           </div>
         )}
-        <button
-          className="sbr-comp-btn"
-          onClick={() => setEmojiOpen((v) => !v)}
-          aria-label="Emoji"
-        >
-          😊
-        </button>
-        <input
-          ref={inputRef}
-          className="sbr-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
-          maxLength={280}
-          placeholder="Write a message"
-          aria-label="Write a message"
-        />
+
+        {/* my avatar tag */}
+        <span className="sbr-comp-avatar" aria-hidden>{myInitial}</span>
+
+        <div className="sbr-comp-field">
+          <input
+            ref={inputRef}
+            className="sbr-input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && send()}
+            maxLength={280}
+            placeholder="Write a message"
+            aria-label="Write a message"
+          />
+          <button
+            className="sbr-comp-emoji"
+            onClick={() => setEmojiOpen((v) => !v)}
+            aria-label="Emoji"
+          >
+            😊
+          </button>
+        </div>
+
         <button className="sbr-comp-btn" aria-label="Send a gift" title="Gifts coming soon">
           🎁
         </button>
         <button className="sbr-send" onClick={send} disabled={!text.trim() || sending} aria-label="Send">
-          <Send size={17} strokeWidth={2.5} />
+          <Send size={16} strokeWidth={2.5} />
         </button>
       </div>
+    </div>
+  )
+}
+
+function PartyChatDivider() {
+  return (
+    <div className="sbr-party-divider" aria-hidden>
+      <span className="sbr-party-line" />
+      <span className="sbr-party-label">Party Chat</span>
+      <span className="sbr-party-line" />
     </div>
   )
 }

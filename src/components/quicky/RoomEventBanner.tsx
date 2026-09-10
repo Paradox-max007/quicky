@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 export type RoomEvent = {
   title: string
   emoji: string
+  tag?: string
   background?: string
   expiresAt: string // ISO date
 }
@@ -38,6 +39,7 @@ export function RoomEventBanner({ event }: { event: RoomEvent }) {
         <span className="sbr-banner-title">
           <span aria-hidden>{event.emoji}</span>
           {event.title}
+          {event.tag && <span className="sbr-banner-tag">{event.tag}</span>}
         </span>
         <span className="sbr-banner-timer">⏱ {remaining}</span>
       </div>
@@ -49,5 +51,5 @@ export function RoomEventBanner({ event }: { event: RoomEvent }) {
 export function tonightEvent(): RoomEvent {
   const end = new Date()
   end.setHours(24, 0, 0, 0)
-  return { title: 'Hot Festival', emoji: '🔥', expiresAt: end.toISOString() }
+  return { title: 'Hot Festival', emoji: '🔥', tag: 'X2 Hearts', expiresAt: end.toISOString() }
 }

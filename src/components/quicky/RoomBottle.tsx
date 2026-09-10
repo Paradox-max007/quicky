@@ -7,6 +7,8 @@ import { useEffect, useRef } from 'react'
 // quintic ease-out over `duration` ms while `spinning` is true, and snaps to
 // endRotation when false. Rendered as a glossy SVG game asset that rotates
 // around its center (0 rad = pointing up, matching the server seat angles).
+// Art follows the approved mockups: emerald glass, gold foil cap, specular
+// highlights and a light label band.
 
 type Props = {
   startRotation: number
@@ -16,39 +18,33 @@ type Props = {
 }
 
 const BOTTLE_SVG = (
-  <svg viewBox="0 0 80 232" width="100%" height="100%" aria-hidden>
+  <svg viewBox="0 0 60 180" width="100%" height="100%" aria-hidden>
     <defs>
       <linearGradient id="sbrGlass" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stopColor="#2f9e2f" />
-        <stop offset="22%" stopColor="#63d13f" />
-        <stop offset="40%" stopColor="#8ce95c" />
-        <stop offset="62%" stopColor="#4cbf30" />
-        <stop offset="88%" stopColor="#2c8c22" />
-        <stop offset="100%" stopColor="#1f6b18" />
-      </linearGradient>
-      <linearGradient id="sbrCap" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#ffe27a" />
-        <stop offset="55%" stopColor="#f5b93c" />
-        <stop offset="100%" stopColor="#d9921b" />
+        <stop offset="0%" stopColor="#047857" />
+        <stop offset="30%" stopColor="#34d399" />
+        <stop offset="62%" stopColor="#10b981" />
+        <stop offset="100%" stopColor="#065f46" />
       </linearGradient>
     </defs>
-    {/* cap / foil */}
-    <rect x="30" y="2" width="20" height="16" rx="4" fill="url(#sbrCap)" />
-    <rect x="30" y="14" width="20" height="3" fill="rgba(120,70,0,0.35)" />
-    {/* neck */}
-    <rect x="33" y="16" width="14" height="44" fill="url(#sbrGlass)" />
-    {/* shoulder + body */}
+    {/* gold foil cap */}
+    <rect x="25" y="3" width="10" height="8" rx="2" fill="#f59e0b" stroke="#78350f" strokeWidth="1.4" />
+    {/* neck ring */}
+    <rect x="23" y="12" width="14" height="4" rx="1.6" fill="#0d9f6e" />
+    {/* neck + shoulders + body */}
     <path
-      d="M33 58 C33 70 12 74 12 96 L12 208 C12 220 20 228 40 228 C60 228 68 220 68 208 L68 96 C68 74 47 70 47 58 Z"
+      d="M24 15 C24 26 24 36 24 45 C24 56 12 70 12 86 L12 164 C12 172 17 177 25 177 L35 177 C43 177 48 172 48 164 L48 86 C48 70 36 56 36 45 C36 36 36 26 36 15 Z"
       fill="url(#sbrGlass)"
+      stroke="#065f46"
+      strokeWidth="1.6"
     />
-    {/* glass highlight */}
-    <rect x="20" y="82" width="7" height="128" rx="3.5" fill="rgba(255,255,255,0.4)" />
-    <rect x="30" y="66" width="4" height="30" rx="2" fill="rgba(255,255,255,0.45)" />
-    {/* right shade */}
-    <rect x="58" y="84" width="6" height="124" rx="3" fill="rgba(10,60,5,0.28)" />
-    {/* base glow */}
-    <ellipse cx="40" cy="222" rx="22" ry="5" fill="rgba(0,0,0,0.18)" />
+    {/* label band */}
+    <rect x="13.5" y="118" width="33" height="26" rx="3" fill="#fbbf24" opacity="0.28" />
+    <rect x="13.5" y="118" width="33" height="26" rx="3" fill="none" stroke="#fcd34d" strokeWidth="1" opacity="0.5" />
+    {/* specular highlights */}
+    <path d="M17 88 L17 156" stroke="#ffffff" strokeOpacity="0.42" strokeWidth="3" strokeLinecap="round" />
+    <path d="M22 26 L22 44" stroke="#ffffff" strokeOpacity="0.35" strokeWidth="1.6" strokeLinecap="round" />
+    <path d="M43 92 L43 150" stroke="#022c22" strokeOpacity="0.35" strokeWidth="2.4" strokeLinecap="round" />
   </svg>
 )
 
@@ -76,6 +72,7 @@ export function RoomBottle({ startRotation, endRotation, duration, spinning }: P
 
   return (
     <div className="sbr-bottle-layer">
+      <div className="sbr-bottle-glow" aria-hidden />
       <div className="sbr-bottle-float">
         <div
           ref={elRef}
