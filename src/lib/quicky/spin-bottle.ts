@@ -28,6 +28,12 @@ import { db } from '@/lib/db'
 import { seatAngle, seatVector } from './spin-geometry'
 import { emitRoomUpdate } from './spin-events'
 
+// NOTE (v2.1 §47-§55): the server NEVER writes game/table events (spin
+// started, target selected, results, timeouts) into spinRoomMessage — the
+// chat timeline holds ONLY real user messages plus join/leave chips. Game
+// history lives in spinBottleEvent / spinBottleSpin; the duel panel shows
+// results in the room UI.
+
 export const SPIN_DURATION_MS = 3500
 export const RESPONSE_TIMEOUT_MS = 10000
 // Result reveal on the client is ~2.6s (cards return + brief idle); the next
@@ -176,14 +182,6 @@ export async function beginSpin(roomId: string) {
     where: { id: roomId },
     data: { currentSpinId: spin.id, lastActivityAt: new Date() },
   })
-  await db.spinRoomMessage.create({
-    data: {
-      roomId,
-      userId: spinner.userId,
-      text: '🍾 The bottle is spinning…',
-      kind: 'system',
-    },
-  })
   emitRoomUpdate(roomId)
 
   // SPINNING → AWAITING after `duration` ms
@@ -201,17 +199,6 @@ async function onSpinLanded(roomId: string, spinId: string) {
     },
   })
   if (updated.count === 0) return
-  const spin = await db.spinBottleSpin.findUnique({ where: { id: spinId } })
-  if (!spin) return
-  const target = await db.user.findUnique({ where: { id: spin.targetId! }, select: { name: true } })
-  await db.spinRoomMessage.create({
-    data: {
-      roomId,
-      userId: spin.spinnerId,
-      text: `🎯 ${target?.name ?? 'Someone'} is up — both decide: Kiss ❤️ or No Thanks 💔`,
-      kind: 'system',
-    },
-  })
   emitRoomUpdate(roomId)
   // Deadline watchdog — timeout = reject for whoever hasn't answered (§30)
   const t = setTimeout(() => onResponseTimeout(roomId, spinId), RESPONSE_TIMEOUT_MS)
@@ -239,8 +226,16 @@ export async function recordRoundResponse(
   if (isTarget && spin.targetResponse) return false
 
   const data = isSpinner ? { spinnerResponse: choice } : { targetResponse: choice }
+  // §13/§90 server-side idempotency: the write is conditional on the
+  // responder's field STILL being null, so concurrent duplicate taps
+  // (triple-tap race) produce exactly ONE accepted submission — the losers
+  // get count 0 → 409. No duplicate records, no duplicate points.
   const updated = await db.spinBottleSpin.updateMany({
-    where: { id: spinId, status: 'awaiting' },
+    where: {
+      id: spinId,
+      status: 'awaiting',
+      ...(isSpinner ? { spinnerResponse: null } : { targetResponse: null }),
+    },
     data,
   })
   if (updated.count === 0) return false
@@ -324,28 +319,6 @@ async function resolveRound(roomId: string, spin: {
     },
   })
 
-  // Result chat copy (§31 semantics)
-  const [spinnerUser, targetUser] = await Promise.all([
-    db.user.findUnique({ where: { id: spin.spinnerId }, select: { name: true } }),
-    spin.targetId
-      ? db.user.findUnique({ where: { id: spin.targetId }, select: { name: true } })
-      : null,
-  ])
-  const sName = spinnerUser?.name ?? 'Someone'
-  const tName = targetUser?.name ?? 'Someone'
-  const word = (r: string) => (r === 'yes' ? '❤️ Kiss' : r === 'no' ? '💔 No Thanks' : "didn't answer")
-  const text =
-    result === 'mutual_kiss'
-      ? `❤️ MUTUAL KISS — ${sName} ❤️ ${tName}! +1 Kiss Point each`
-      : result === 'partial_kiss'
-        ? `💋 PARTIAL KISS — ${sName} chose ${word(spinnerResponse)}, ${tName} chose ${word(targetResponse)}`
-        : `💔 FULL REJECTION — ${
-            spinnerResponse === 'timeout' || targetResponse === 'timeout'
-              ? `${spinnerResponse === 'timeout' ? sName : tName} didn't answer in time`
-              : 'both said No Thanks'
-          }`
-  await db.spinRoomMessage.create({ data: { roomId, userId: spin.spinnerId, text, kind: 'system' } })
-
   emitRoomUpdate(roomId)
   // RESULT → next round
   const t = setTimeout(() => advanceTurn(roomId), RESULT_PAUSE_MS)
@@ -363,14 +336,6 @@ async function onResponseTimeout(roomId: string, spinId: string) {
   if (timedOut.length > 0) {
     await db.spinBottleEvent.create({
       data: { spinId, kind: 'kiss_timeout', toUserId: timedOut.join(',') },
-    })
-    await db.spinRoomMessage.create({
-      data: {
-        roomId,
-        userId: spin.spinnerId,
-        text: `⏰ Time's up — ${timedOut.length === 2 ? 'nobody answered' : 'one answer missing'}, auto No Thanks.`,
-        kind: 'system',
-      },
     })
   }
   await resolveRound(roomId, spin)

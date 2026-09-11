@@ -30,7 +30,7 @@
   /* responsive player-card size — same proportions on every screen.
      Bumped up: the quick-action icon row under the HUD was removed, its
      space goes to a bigger table, so the cards can be bigger too. */
-  --seat-w: clamp(48px, 13.2vw, 66px);
+  --seat-w: clamp(54px, 15.5vw, 78px);
   --seat-radius: 12px;
 
   /* NOTE: no `position` here — the component provides `absolute inset-0`
@@ -310,17 +310,19 @@
   pointer-events: none;
 }
 
-/* dashed guide rings — the outer one passes through the seat centers */
+/* dashed guide rings — the outer one passes through the seat centers.
+   Radius comes from the geometry engine per device (--ring-rx/--ring-ry
+   set inline on .sbr-stage); fallbacks match the desktop ring. */
 .sbr-ring {
   position: absolute;
   pointer-events: none;
   border-radius: 50%;
 }
 .sbr-ring-outer {
-  left: 10%;
-  right: 10%;
-  top: 11%;
-  bottom: 11%;
+  left: calc(50% - var(--ring-rx, 40%));
+  right: calc(50% - var(--ring-rx, 40%));
+  top: calc(50% - var(--ring-ry, 39%));
+  bottom: calc(50% - var(--ring-ry, 39%));
   border: 1.5px dashed rgba(61, 30, 3, 0.3);
 }
 .sbr-ring-inner {
@@ -384,10 +386,20 @@
 }
 /* duel spotlight — the two center-stage cards float above everyone else */
 .sbr-seat-dueling { z-index: 6; }
+/* lower-arc seats flip their name ABOVE the card (§25 containment) */
+.sbr-seat.sbr-name-top { flex-direction: column-reverse; }
+/* SQUARE CARD (v2.1 §14-§18): width === height ALWAYS. The card owns its
+   geometry (--seat-w × --seat-w); the image FITS the card — the img is
+   absolutely clipped to the square (inset 2.5px + object-fit: cover +
+   overflow: hidden on the img itself), so no profile photo in any aspect
+   ratio can ever stretch, shrink or resize the card. The frame keeps
+   overflow visible so the decorative badges/role tags may overhang.
+   Content can never RESIZE the square: width & height are fixed px. */
 .sbr-seat-frame {
   position: relative;
   width: var(--seat-w);
-  aspect-ratio: 1 / 1.04;
+  height: var(--seat-w);
+  aspect-ratio: 1 / 1;
   border-radius: var(--seat-radius);
   padding: 2.5px;
   background: var(--seat-ring, linear-gradient(150deg, #e2e8f0, #94a3b8));
@@ -395,10 +407,12 @@
   transition: transform 0.18s ease;
 }
 .sbr-seat-img {
-  position: relative; /* paints above the absolutely-positioned initial fallback */
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  position: absolute; /* hard-clipped to the square: cannot escape (§17) */
+  inset: 2.5px;
+  width: calc(100% - 5px);
+  height: calc(100% - 5px);
+  object-fit: cover; /* 1:1, 4:3, 16:9, 400×800… all render inside the square */
+  overflow: hidden;
   border-radius: calc(var(--seat-radius) - 3px);
   border: 1.5px solid rgba(255, 255, 255, 0.85);
   background: #3f2a18;
@@ -519,7 +533,8 @@
 }
 .sbr-open-box {
   width: var(--seat-w);
-  aspect-ratio: 1 / 1.04;
+  height: var(--seat-w);
+  aspect-ratio: 1 / 1;
   border-radius: var(--seat-radius);
   border: 2px dashed rgba(255, 255, 255, 0.5);
   background: rgba(22, 12, 5, 0.35);
@@ -646,9 +661,12 @@
 }
 
 /* ── Duel spotlight panel (question + result) ──────────────
-   Anchored inside the stage: on mobile it sits BELOW the two center cards,
-   on desktop (≥1024px) it fits BETWEEN them. The anchor centers itself;
-   the inner motion panel does the pop animation. */
+   DuelZone (v2.1 §26-§30): the anchor's TOP edge is dynamically placed
+   just below the duel card row (--duel-top, computed from the measured
+   stage + center card size), so the two center cards are NEVER covered —
+   cards on top, question + buttons stacked beneath, one composition.
+   The panel itself is TRANSPARENT (§29): no modal card fighting the
+   cards for space — text/buttons read directly off the dimmed table. */
 .sbr-duel-dim {
   position: absolute;
   inset: 0;
@@ -659,10 +677,10 @@
 .sbr-duel-anchor {
   position: absolute;
   left: 50%;
-  top: 64%;
-  transform: translate(-50%, -50%);
+  top: var(--duel-top, 64%);
+  transform: translate(-50%, 0);
   z-index: 7;
-  width: min(320px, 76%);
+  width: min(340px, 82%);
   pointer-events: none;
 }
 .sbr-duel-panel {
@@ -671,15 +689,10 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 13px 14px 12px;
-  border-radius: 20px;
-  background: rgba(13, 11, 18, 0.94);
-  border: 1.5px solid rgba(244, 63, 94, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    0 18px 44px rgba(70, 4, 22, 0.55),
-    0 0 30px rgba(244, 63, 94, 0.22);
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
   text-align: center;
 }
 .sbr-duel-kicker {
@@ -691,18 +704,19 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #fcd34d;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 .sbr-duel-question {
   font-size: 13.5px;
   font-weight: 800;
   color: #fff;
   line-height: 1.3;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 14px rgba(0, 0, 0, 0.55);
 }
 .sbr-duel-question b { color: #fda4af; }
+/* timer — a small inline pill between question and buttons; "Time's up"
+   swaps in at zero and hides itself shortly after (v2.1 §39). */
 .sbr-duel-timer {
-  position: absolute;
-  top: -11px;
-  right: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   font-weight: 900;
@@ -710,7 +724,13 @@
   background: rgba(69, 26, 3, 0.92);
   border: 1px solid rgba(251, 191, 36, 0.5);
   border-radius: 999px;
-  padding: 2px 9px;
+  padding: 2px 10px;
+}
+.sbr-duel-timer.sbr-timer-up {
+  color: #fda4af;
+  background: rgba(76, 5, 25, 0.92);
+  border-color: rgba(251, 113, 133, 0.55);
+  animation: none;
 }
 .sbr-duel-actions {
   display: grid;
@@ -727,7 +747,8 @@
 .sbr-duel-waiting {
   font-size: 10.5px;
   font-weight: 700;
-  color: rgba(245, 245, 247, 0.55);
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   animation: sbr-wait-pulse 1.6s ease-in-out infinite;
 }
 @keyframes sbr-wait-pulse {
@@ -776,7 +797,8 @@
 .sbr-duel-sub {
   font-size: 11px;
   font-weight: 700;
-  color: rgba(245, 245, 247, 0.66);
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 .sbr-duel-points {
   font-size: 11px;
@@ -793,6 +815,7 @@
   font-size: 10.5px;
   font-weight: 800;
   color: #86efac;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -800,6 +823,22 @@
 }
 /* hit target ≥44px on mobile (PRD §58) */
 .sbr-duel-actions button { min-height: 44px; }
+/* chosen answer (v2.1 §5/§10): the tapped button keeps a full-color
+   selected state with a ✓ — it must read as SELECTED, not disabled,
+   overriding the generic disabled dimming on BOTH buttons. */
+.sbr-duel-actions button.sbr-btn-chosen {
+  opacity: 1;
+  filter: none;
+  cursor: default;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 18px rgba(255, 255, 255, 0.35);
+}
+.sbr-btn-no.sbr-btn-chosen {
+  background: #3b1220;
+  border-color: #fb7185;
+  color: #fff;
+}
 
 /* ── shared decision buttons (duel panel) ────────────────── */
 .sbr-btn-yes {
@@ -926,48 +965,30 @@
   gap: 7px;
 }
 
-/* system activity pills */
-.sbr-msg-system-row { display: flex; justify-content: center; }
-.sbr-msg-system {
-  max-width: 94%;
-  text-align: center;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #b9b9c5;
-  background: var(--sbr-pill);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 999px;
-  padding: 3.5px 12px;
+/* ── System chips — join / leave only (v2.1 §48-§53) ─────────
+   Compact, lightweight, centered in the timeline. NOT message bubbles:
+   no avatar, no swipe, no reply/react/report. Anything that is not a
+   real user message or one of these chips is filtered out entirely. */
+.sbr-sys-chip-row { display: flex; justify-content: center; }
+.sbr-sys-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 94%;
+  font-size: 10px;
+  font-weight: 700;
+  color: #9ca3af;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 2.5px 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.sbr-sys-hot {
-  background: #241c2c;
-  color: #fda4af;
-  border-color: rgba(244, 63, 94, 0.28);
-}
-.sbr-sys-mine {
-  background: #202534;
-  color: #a5f3fc;
-  border-color: rgba(34, 211, 238, 0.3);
-}
-
-/* PARTY CHAT divider */
-.sbr-party-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 7px 0 2px;
-}
-.sbr-party-line { flex: 1; height: 1px; background: #26262e; }
-.sbr-party-label {
-  font-size: 9px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: #6b7280;
-}
+.sbr-sys-chip .sbr-sys-chip-icon { font-size: 10px; opacity: 0.8; }
+.sbr-sys-chip.sbr-sys-join { color: #86efac; }
+.sbr-sys-chip.sbr-sys-leave { color: #fda4af; }
 
 /* message bubbles */
 .sbr-msg {
@@ -1425,10 +1446,10 @@
   /* center status caption is replaced by corner pills + tablebar on web */
   .sbr-bottle-status { display: none; }
 
-  /* duel spotlight panel fits BETWEEN the two center cards on desktop */
+  /* duel spotlight panel — same dynamic below-cards anchoring as mobile
+     (--duel-top), just a wider column; center cards stay fully visible */
   .sbr-duel-anchor {
-    top: 40%;
-    width: min(340px, 34%);
+    width: min(360px, 40%);
   }
   .sbr-duel-question { font-size: 14.5px; }
   .sbr-duel-emoji { font-size: 48px; }
@@ -1498,6 +1519,15 @@
   .sbr-chat-scroll { padding: 12px 16px 8px; }
   .sbr-reactions { justify-content: flex-start; padding: 6px 14px 2px; }
   .sbr-composer { padding-bottom: max(9px, env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ════════════════════════════════════════════════════════════
+   VERY SHORT VIEWPORTS — small phones (320×568 class) get a
+   slimmer chat sheet so the table keeps workable height for the
+   duel row + response panel (v2.1 §26-§28).
+   ════════════════════════════════════════════════════════════ */
+@media (max-height: 640px) {
+  .sbr-chat { height: clamp(176px, 30dvh, 228px); }
 }
 
 /* ════════════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { nameSideFor } from '@/lib/quicky/spin-geometry'
 
 // RoomPlayerCard — rounded-square photo card used for the 12 stage seats,
 // styled after the approved mockups: colored gradient frame + soft glow,
@@ -8,6 +9,12 @@ import { motion } from 'framer-motion'
 // and a name pill below (plain text with drop shadow on mobile via CSS).
 // Sized entirely by the --seat-w CSS variable so proportions stay identical
 // from small phones to desktop.
+//
+// SQUARE CONTRACT (v2.1 §14-§18): the frame is exactly width = height =
+// var(--seat-w) with overflow hidden — the profile image (any aspect ratio,
+// object-fit: cover) can never stretch, shrink or resize the card. The
+// name pill flips ABOVE the card for lower-arc seats (§25 containment:
+// nothing ever clips against the table rim).
 //
 // The wrapper is a framer-motion div: when the bottle stops, the parent flips
 // the `spotlight` prop and the spinner/target cards SLIDE from their seat to
@@ -98,6 +105,9 @@ export function RoomPlayerCard({
   const initial = (player.displayName ?? '?').trim().slice(0, 1).toUpperCase()
   const name = player.isMe ? `${player.displayName} (you)` : player.displayName
   const roleTag = player.isCurrentTurn ? 'Spinner' : player.isTarget ? 'Target' : null
+  // §25: lower-arc seats carry their name ABOVE the card so the pill never
+  // clips against the bottom rim — the name always reads toward the center.
+  const nameAbove = nameSideFor(player.seatIndex) === 'above'
 
   // Frame ring gradient + soft glow. Role frames (turn/target/premium) carry
   // their stronger glow in CSS; plain frames get a gentle inline glow.
@@ -110,7 +120,7 @@ export function RoomPlayerCard({
 
   return (
     <motion.div
-      className={`sbr-seat ${spotlight ? 'sbr-seat-dueling' : ''}`}
+      className={`sbr-seat ${spotlight ? 'sbr-seat-dueling' : ''}${nameAbove ? ' sbr-name-top' : ''}`}
       initial={false}
       animate={{
         left: `${x}%`,
@@ -141,7 +151,7 @@ export function RoomPlayerCard({
           {initial}
         </span>
         {player.avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img className="sbr-seat-img" src={player.avatar} alt={name} draggable={false} loading="eager" />
         ) : null}
         {player.isPremium ? (

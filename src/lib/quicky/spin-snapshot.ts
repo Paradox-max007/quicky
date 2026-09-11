@@ -128,9 +128,11 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
       }
     : null
 
-  // Recent chat (last 80)
+  // Recent chat (last 80) — v2.1 §48/§56: ONLY real user messages and
+  // join/leave chips. Legacy game/system log rows in the DB are filtered
+  // out here so old records can never flood the chat.
   const msgs = await db.spinRoomMessage.findMany({
-    where: { roomId },
+    where: { roomId, kind: { in: ['user', 'join', 'leave'] } },
     orderBy: { createdAt: 'desc' },
     take: 80,
   })

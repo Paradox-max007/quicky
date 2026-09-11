@@ -38,6 +38,17 @@ export async function POST(req: NextRequest) {
     data: { leftAt: new Date(), isActive: false, connection: 'offline' },
   })
 
+  // Leave chip (v2.1 §51/§52): resolved from the EVENT data at leave time —
+  // the frontend never has to guess the name after the row is gone.
+  await db.spinRoomMessage.create({
+    data: {
+      roomId,
+      userId: me.id,
+      kind: 'leave',
+      text: `${(await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name ?? 'Someone'} left`,
+    },
+  })
+
   // Room empty → close it
   const remaining = await db.spinRoomPlayer.count({
     where: { roomId, leftAt: null, isActive: true },

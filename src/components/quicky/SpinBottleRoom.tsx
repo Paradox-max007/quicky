@@ -38,7 +38,14 @@ import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { joinRoomChannel } from '@/lib/quicky/realtime'
 import type { RoomChannel } from '@/lib/quicky/realtime'
-import { seatRingPositions, duelPositions, seatSizeFor } from '@/lib/quicky/spin-geometry'
+import {
+  calculateTableGeometry,
+  deviceClassFor,
+  CENTER_CARD_SCALE,
+  DUEL_PANEL_ESTIMATE,
+} from '@/lib/quicky/spin-geometry'
+import { useRoundTimer } from '@/hooks/useRoundTimer'
+import { useOptimisticResponse } from '@/hooks/useOptimisticResponse'
 import { RoomTopHud, RoomHudChips } from './RoomTopHud'
 import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
@@ -85,10 +92,8 @@ type Snapshot = {
   recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
 }
 
-// The 12-seat ring + duel spotlight — all derived from the shared geometry
-// engine (PRD §48: no per-seat magic percentages anywhere).
-const SEATS = seatRingPositions()
-const DUEL = duelPositions()
+// The 12-seat ring + duel spotlight are derived per-measure from the shared
+// geometry engine (PRD v2.1 §64 — calculateTableGeometry is the ONLY source).
 
 const MAX_SEATS = 12
 // Result reveal pacing (§32): reveal ~1.4s + return slide ~0.5s + idle beat.
@@ -137,7 +142,6 @@ export function SpinBottleRoom({
   // is the optimistic answer of THIS client (the responder sees the result
   // instantly, before the stream confirms it).
   const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
-  const [myResponse, setMyResponse] = useState<{ spinId: string; choice: 'yes' | 'no' } | null>(null)
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
   const [settleDone, setSettleDone] = useState(true)
   const [kbHeight, setKbHeight] = useState(0)
@@ -146,12 +150,22 @@ export function SpinBottleRoom({
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const [streamOk, setStreamOk] = useState(false)
-  const [remaining, setRemaining] = useState(0)
   const spinStartTimeRef = useRef<number>(0)
   const roomChannelRef = useRef<RoomChannel | null>(null)
   // Server clock skew (ms) — remaining = deadline − (localNow + skew) (§29)
   const clockSkewRef = useRef(0)
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Indirection refs so stable hook callbacks can reach later-defined fns
+  const optResetRef = useRef<() => void>(() => {})
+  const reconcileRef = useRef<() => void>(() => {})
+  const toastMsgRef = useRef<(m: string) => void>(() => {})
+  // ─── Optimistic round response (v2.1 §4-§13) — the button flips THIS
+  // frame; the server request is fired right after, asynchronously.
+  const optResponse = useOptimisticResponse({
+    reconcile: () => reconcileRef.current(),
+    onError: (m) => toastMsgRef.current(m),
+  })
+  optResetRef.current = optResponse.reset
 
   // Keep a locked copy of the stage height so that, on engines that still
   // resize the layout when the keyboard shows (older WebViews / browsers
@@ -176,10 +190,10 @@ export function SpinBottleRoom({
     }
   }, [])
 
-  // Table-relative card sizing (PRD §15-§18): seat size derives from the
-  // MEASURED stage box via the geometry engine — same ring proportions on a
-  // 320px phone and a 4K monitor. The keyboard guard also applies: never
-  // re-measure while the keyboard is open (the table must not shrink, §85).
+  // Table-relative card sizing (v2.1 §18-§25 + §64): ONE geometry contract
+  // derives ring radii, collision/boundary-safe card size, duel positions —
+  // from the MEASURED stage box. The keyboard guard applies: never re-measure
+  // while the keyboard is open (the table must not shrink, §69).
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
@@ -197,7 +211,26 @@ export function SpinBottleRoom({
       window.removeEventListener('orientationchange', measure)
     }
   }, [])
-  const seatSize = useMemo(() => seatSizeFor(stageBox.w, stageBox.h), [stageBox])
+  const geometry = useMemo(
+    () => calculateTableGeometry({ width: stageBox.w, height: stageBox.h }),
+    [stageBox]
+  )
+  const seatSize = geometry.cardSize
+  const deviceClass = deviceClassFor(stageBox.w)
+  // Center spotlight cards pop slightly larger (§32) but never overlap:
+  // at 17% duel spacing the clearance between the two center cards stays
+  // ≥ 46px even on a 320px table (verified in geometry QA).
+  const centerCardSize = Math.round(seatSize * CENTER_CARD_SCALE)
+  // §30: the response panel is DYNAMICALLY anchored just below the duel row
+  // (which itself rises on short stages — see duelRowYFor) so the panel can
+  // never cover the center cards. Never a fixed top/bottom percentage.
+  const duelPanelTop = useMemo(() => {
+    if (stageBox.h <= 0) return null
+    const rowY = geometry.duelPositions.spinner.y
+    const top = (rowY / 100) * stageBox.h + centerCardSize / 2 + 12
+    // sanity clamp: the panel's estimated height must stay inside the stage
+    return Math.max(0, Math.round(Math.min(top, stageBox.h - DUEL_PANEL_ESTIMATE - 20)))
+  }, [stageBox.h, centerCardSize, geometry.duelPositions.spinner.y])
 
   // Keyboard OVERLAY mode — the OS keyboard never resizes the page
   // (Capacitor config plugins.Keyboard.resize='none' on native;
@@ -248,11 +281,15 @@ export function SpinBottleRoom({
       onChat: (payload) => {
         const p = payload as any
         if (!p?.userId || (!p?.id && !p?.messageId)) return
+        // §57: only real chat traffic flows through realtime — game/table
+        // events never render as messages (join/leave arrive via snapshot).
+        const kind = p.kind || 'user'
+        if (kind !== 'user' && kind !== 'join' && kind !== 'leave') return
         const msg: RoomMessage = {
           id: p.id || p.messageId || `rt_${Date.now()}`,
           userId: p.userId,
           text: p.text || '',
-          kind: p.kind || 'user',
+          kind,
           createdAt: p.createdAt || new Date().toISOString(),
           replyTo: p.replyTo ?? null,
         }
@@ -281,8 +318,8 @@ export function SpinBottleRoom({
       if (s.currentSpin && (!prev?.currentSpin || prev.currentSpin.id !== s.currentSpin.id)) {
         spinStartTimeRef.current = Date.now()
         setDisplayedRotation({ start: s.currentSpin.startRotation, end: s.currentSpin.endRotation })
-        // A NEW spin invalidates any stale optimistic answer
-        setMyResponse(null)
+        // A NEW spin invalidates any stale optimistic answer (§88)
+        optResetRef.current()
         setDismissedSpinId(null)
         // Cards must wait for the settle beat after the bottle stops (§24)
         setSettleDone(false)
@@ -359,25 +396,16 @@ export function SpinBottleRoom({
     }
   }, [roomId, streamOk, applySnapshot])
 
-  // ─── Response countdown — derived from the SERVER deadline (PRD §29) ──────
+  // ─── Response countdown — derived from the SERVER deadline (§29/§34-§40).
+  // The hook owns everything: 250ms ticks, hard stop at exactly 0, a short
+  // "Time's up" beat, and no negative values — ever.
   const currentSpinForTimer = snapshot?.currentSpin
   const awaiting = currentSpinForTimer?.status === 'awaiting'
   const deadlineMs = awaiting && currentSpinForTimer?.responseDeadline
     ? new Date(currentSpinForTimer.responseDeadline).getTime()
     : null
-  useEffect(() => {
-    if (deadlineMs == null) {
-      setRemaining(0)
-      return
-    }
-    const calc = () => {
-      const left = Math.max(0, deadlineMs - (Date.now() + clockSkewRef.current))
-      setRemaining(Math.ceil(left / 1000))
-    }
-    calc()
-    const t = setInterval(calc, 250)
-    return () => clearInterval(t)
-  }, [deadlineMs])
+  const getClockSkew = useCallback(() => clockSkewRef.current, [])
+  const { remaining, expired, timeUp } = useRoundTimer(deadlineMs, getClockSkew)
 
   // ─── DUEL RESULT FLOW (§31/§32) ───────────────────────────────────────────
   // When the round completes, the result panel replaces the response panel for
@@ -392,19 +420,32 @@ export function SpinBottleRoom({
     return () => clearTimeout(t)
   }, [snapshot?.currentSpin?.id, snapshot?.currentSpin?.status, dismissedSpinId])
 
-  const respond = async (choice: 'yes' | 'no') => {
+  // ─── Round response (§4-§13): instant optimistic UI + async server sync ──
+  const respond = (choice: 'yes' | 'no') => {
     if (!snapshot?.currentSpin || !roomId) return
+    if (snapshot.currentSpin.status !== 'awaiting') return
+    // §9: only the spinner or the target may respond
     if (!snapshot.iAmTarget && !snapshot.iAmSpinner) return
-    const spinId = snapshot.currentSpin.id
-    try {
-      await api.spinBottle.respond(roomId, choice)
-      // Optimistic: the responder sees the result immediately (the server has
-      // already recorded it — respond() only succeeds when it was accepted).
-      setMyResponse({ spinId, choice })
-    } catch (e: any) {
-      toast.error(e.message ?? 'Failed to respond')
-    }
+    // §6/§8: local selection flips NOW; submit fires right after (void)
+    optResponse.choose(snapshot.currentSpin.id, choice, (c) =>
+      api.spinBottle.respond(roomId, c)
+    )
   }
+
+  // Authoritative snapshot fetch — used by the optimistic hook to reconcile
+  // after server confirmations/rejections (§7/§10/§88).
+  const reconcile = useCallback(async () => {
+    if (!roomId) return
+    try {
+      const res = await api.spinBottle.room(roomId)
+      if (res?.snapshot) applySnapshot(res.snapshot)
+    } catch {
+      // stream/recovery poll covers it
+    }
+     
+  }, [roomId])
+  reconcileRef.current = () => void reconcile()
+  toastMsgRef.current = (m: string) => toast.error(m)
 
   const sendChat = async (t: string, replyTo?: RoomMessage['replyTo']) => {
     const text = t.trim()
@@ -477,7 +518,7 @@ export function SpinBottleRoom({
         setSnapshot(null)
         setChat([])
         setDismissedSpinId(null)
-        setMyResponse(null)
+        optResetRef.current()
         setDisplayedRotation({ start: 0, end: 0 })
         setRoomId(res.roomId)
         if (res.snapshot) applySnapshot(res.snapshot)
@@ -533,11 +574,11 @@ export function SpinBottleRoom({
   const iAmSpinner = !!snapshot?.iAmSpinner
   const iAmTarget = !!snapshot?.iAmTarget
   const iCanRespond = status === 'awaiting' && (iAmSpinner || iAmTarget)
-  // Optimistic answer of THIS client (covers stream latency between tap and
-  // the next snapshot) — never rendered as a result.
+  // Optimistic answer of THIS client (v2.1 §6: set the instant the finger
+  // lifts — never gated on the network) — never rendered as a result.
   const optimisticChoice =
-    myResponse && currentSpin && myResponse.spinId === currentSpin.id
-      ? myResponse.choice
+    optResponse.response && currentSpin && optResponse.response.spinId === currentSpin.id
+      ? optResponse.response.choice
       : null
   // My confirmed choice (server) or optimistic one — drives the locked chip
   // and disables the buttons after answering (§59: cannot change the answer).
@@ -638,12 +679,22 @@ export function SpinBottleRoom({
             <RoomEventBanner event={tonightEvent()} />
 
             {/* Wooden game stage — --seat-w is table-relative, set from the
-                measured stage box by the geometry engine (PRD §15-§18) */}
+                measured stage box by the geometry engine (v2.1 §18-§25).
+                --duel-top anchors the response panel BELOW the center cards;
+                --ring-rx/--ring-ry keep the dashed guide rings on the exact
+                seat ellipse for the active device class. */}
             <div
               ref={stageRef}
               className="sbr-stage"
               style={{
                 ...(seatSize ? ({ '--seat-w': `${seatSize}px` } as React.CSSProperties) : null),
+                ...(duelPanelTop != null
+                  ? ({ '--duel-top': `${duelPanelTop}px` } as React.CSSProperties)
+                  : null),
+                ...({
+                  '--ring-rx': `${geometry.radiusX}%`,
+                  '--ring-ry': `${geometry.radiusY}%`,
+                } as React.CSSProperties),
                 ...(kbHeight > 0 && lockedStageHeight
                   ? {
                       height: `${lockedStageHeight}px`,
@@ -668,12 +719,14 @@ export function SpinBottleRoom({
               </div>
 
               {seatPlayers.map((p) => {
-                const seatPos = SEATS[p.seatIndex] ?? { x: 50, y: 50 }
+                const seatPos = geometry.seats[p.seatIndex] ?? { x: 50, y: 50 }
                 // During the duel the spinner & target slide to the spotlight
                 // center; everyone else stays pinned to their seat (§23).
                 const inSpotlight = dueling && (p.userId === spinnerId || p.userId === targetId)
                 const pos = inSpotlight
-                  ? p.userId === spinnerId ? DUEL.spinner : DUEL.target
+                  ? p.userId === spinnerId
+                    ? geometry.duelPositions.spinner
+                    : geometry.duelPositions.target
                   : seatPos
                 return (
                   <RoomPlayerCard
@@ -689,7 +742,7 @@ export function SpinBottleRoom({
 
               {/* open / invite seats */}
               {openSeats.map((seatIdx) => {
-                const pos = SEATS[seatIdx]
+                const pos = geometry.seats[seatIdx]
                 return (
                   <button
                     key={`open-${seatIdx}`}
@@ -767,35 +820,41 @@ export function SpinBottleRoom({
                           <span aria-hidden>🎯</span> The bottle chose {targetName}
                         </p>
                         <p className="sbr-duel-question">Choose your response</p>
-                        {iCanRespond && (
-                          <span className="sbr-duel-timer">0:{String(Math.max(0, remaining)).padStart(2, '0')}s</span>
+                        {/* §39: countdown while counting, a short "Time's up"
+                            beat at zero, then it disappears — never 0:00 forever,
+                            never negative (hook guarantees the stop). */}
+                        {iCanRespond && !expired && remaining > 0 && (
+                          <span className="sbr-duel-timer">0:{String(remaining).padStart(2, '0')}s</span>
+                        )}
+                        {iCanRespond && timeUp && (
+                          <span className="sbr-duel-timer sbr-timer-up">Time&#39;s up</span>
                         )}
                         <div className="sbr-duel-actions">
                           <button
-                            className="sbr-btn-yes"
+                            className={`sbr-btn-yes${myChoice === 'yes' ? ' sbr-btn-chosen' : ''}`}
                             disabled={!iCanRespond || !!myChoice}
                             onClick={() => respond('yes')}
                           >
-                            <Heart className="h-4 w-4" fill="currentColor" /> Kiss
+                            <Heart className="h-4 w-4" fill="currentColor" /> {myChoice === 'yes' ? 'Kiss ✓' : 'Kiss'}
                           </button>
                           <button
-                            className="sbr-btn-no"
+                            className={`sbr-btn-no${myChoice === 'no' ? ' sbr-btn-chosen' : ''}`}
                             disabled={!iCanRespond || !!myChoice}
                             onClick={() => respond('no')}
                           >
-                            <X className="h-4 w-4" strokeWidth={3} /> No Thanks
+                            <X className="h-4 w-4" strokeWidth={3} /> {myChoice === 'no' ? 'No Thanks ✓' : 'No Thanks'}
                           </button>
                         </div>
                         {iCanRespond && myChoice ? (
                           <p className="sbr-duel-locked">
-                            ✓ Your response is locked — waiting for {otherName}…
+                            ✓ Waiting for {otherName}…
                           </p>
                         ) : iCanRespond ? (
                           <p className="sbr-duel-waiting">Your response: Kiss or No Thanks</p>
                         ) : (
                           <p className="sbr-duel-waiting">
                             Waiting for {spinnerName} &amp; {targetName}…
-                            {remaining > 0 ? ` 0:${String(Math.max(0, remaining)).padStart(2, '0')}` : ''}
+                            {remaining > 0 ? ` 0:${String(remaining).padStart(2, '0')}` : timeUp ? " — time's up" : ''}
                           </p>
                         )}
                       </motion.div>

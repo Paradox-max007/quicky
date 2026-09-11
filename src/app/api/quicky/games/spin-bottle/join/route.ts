@@ -67,6 +67,16 @@ export async function POST(_req: NextRequest) {
       turnIndex,
       connection: 'online',
     })
+    // Join chip (v2.1 §50/§52): name resolved from the event data itself,
+    // never guessed from the player list later.
+    await db.spinRoomMessage.create({
+      data: {
+        roomId,
+        userId: me.id,
+        kind: 'join',
+        text: `${(await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name ?? 'Someone'} joined`,
+      },
+    })
     await db.spinRoom.update({ where: { id: roomId }, data: { lastActivityAt: new Date() } })
     emitRoomUpdate(roomId) // players_changed — SSE subscribers refresh instantly
   } else {
@@ -90,8 +100,8 @@ export async function POST(_req: NextRequest) {
       data: {
         roomId,
         userId: me.id,
-        kind: 'system',
-        text: `👋 ${(await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name ?? 'Someone'} joined the room.`,
+        kind: 'join',
+        text: `${(await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name ?? 'Someone'} joined`,
       },
     })
   }

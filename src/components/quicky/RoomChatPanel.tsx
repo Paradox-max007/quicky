@@ -14,7 +14,9 @@ import { Keyboard } from '@capacitor/keyboard'
 //   - Keyboard overlay: composer row pops on top of the table when keyboard is up,
 //     and returns to original position when sent or dismissed
 //   - Reply context quote banner docked directly above the input row
-//   - "PARTY CHAT" divider between the system activity log and live messages
+//   - Join/leave events render as compact SystemMessageChips (v2.1 §48-§53);
+//     game/table logs NEVER appear (§47/§49) — only real user messages and
+//     the two chips exist in the timeline
 //   - Quick reaction bar (Kiss / Cheers / Wow / Dance) above the composer
 //   - On web (≥1024px) the panel becomes the right sidebar with the
 //     "Table Activity & Chat" header; on mobile it is the bottom sheet.
@@ -42,14 +44,6 @@ function timeFor(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-/* System activity pills get a tint by content, matching the mockups:
-   decisions involving me → cyan, other decisions → rose, timeouts → muted. */
-function systemTone(text: string, meId: string): '' | 'hot' | 'mine' {
-  const t = text.toLowerCase()
-  if (!t.includes('is up') && !t.includes('kiss')) return ''
-  return t.includes('you') && meId ? 'mine' : 'hot'
 }
 
 const EMOJIS = ['😄', '😂', '🥰', '😍', '🤔', '😅', '🙌', '👏', '🔥', '💔', '💋', '🍾', '🎉', '👀', '😎', '🤩', '😇', '🤣']
@@ -328,10 +322,6 @@ export function RoomChatPanel({
     onSend(`${emoji} ${label}`)
   }
 
-  // Index of the first live (non-system) message — the PARTY CHAT divider
-  // goes right above it, but only when there is activity log above.
-  const firstLiveIdx = messages.findIndex((m) => m.kind !== 'system')
-
   return (
     <div className={`sbr-chat${kbOpen ? ' sbr-kb-open' : ''}`}>
       {/* mobile sheet grabber */}
@@ -357,25 +347,28 @@ export function RoomChatPanel({
             <span>No messages yet — break the ice!</span>
           </div>
         ) : (
-          messages.map((m, idx) => {
-            const showDivider = idx === firstLiveIdx && firstLiveIdx > 0
-            if (m.kind === 'system') {
+          messages.map((m) => {
+            // ── System chips (§50-§53): join/leave only. Compact, centered,
+            // NO swipe/reply/react/report — they are not messages.
+            if (m.kind === 'join' || m.kind === 'leave') {
               return (
-                <div key={m.id} className="sbr-msg-system-row">
-                  {showDivider && <PartyChatDivider />}
-                  <div className={`sbr-msg-system${systemTone(m.text, meId) ? ` sbr-sys-${systemTone(m.text, meId)}` : ''}`}>
+                <div key={m.id} className="sbr-sys-chip-row">
+                  <span className={`sbr-sys-chip sbr-sys-${m.kind}`}>
+                    <span className="sbr-sys-chip-icon" aria-hidden>{m.kind === 'join' ? '👋' : '🚪'}</span>
                     {m.text}
-                  </div>
+                  </span>
                 </div>
               )
             }
+            // ── Legacy game/table logs (§49/§56): never rendered. The
+            // snapshot already filters them; this guards realtime races too.
+            if (m.kind !== 'user') return null
             const isMe = m.userId === meId
             const p = playerFor(m.userId)
             const displayName = isMe ? 'You' : (p?.displayName ?? 'Guest')
 
             return (
               <div key={m.id}>
-                {showDivider && <PartyChatDivider />}
                 <SwipeableBubble
                   onReply={() => startReply(m)}
                   onReact={(emoji) => onSend(emoji)}
@@ -494,21 +487,11 @@ export function RoomChatPanel({
   )
 }
 
-function PartyChatDivider() {
-  return (
-    <div className="sbr-party-divider" aria-hidden>
-      <span className="sbr-party-line" />
-      <span className="sbr-party-label">Party Chat</span>
-      <span className="sbr-party-line" />
-    </div>
-  )
-}
-
 function GiftAvatar({ player, me = false }: { player?: ChatPlayer; me?: boolean }) {
   const initial = me ? 'Y' : (player?.displayName ?? '?').trim().slice(0, 1).toUpperCase()
   if (player?.avatar) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
+       
       <img className="sbr-msg-avatar" src={player.avatar} alt="" draggable={false} />
     )
   }
