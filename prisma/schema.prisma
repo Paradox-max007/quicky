@@ -78,6 +78,9 @@ model User {
   spinRoomMessages    SpinRoomMessage[]
   // In-game economy
   coinBalance         Int              @default(500) // start with 500 coins
+  // Kiss Points — earned when another round participant chooses ❤️ for you
+  // (kept in sync with KissPointTransaction rows, PRD §5/§6)
+  kissPoints          Int              @default(0)
   sentGifts           SpinRoomGift[]   @relation("GiftSender")
   receivedGifts       SpinRoomGift[]   @relation("GiftRecipient")
   coinLedger          CoinLedger[]
@@ -482,15 +485,48 @@ model SpinBottleSpin {
   duration        Int      @default(3500)
   // "spinning" | "awaiting" | "completed"
   status          String   @default("spinning")
-  // "yes" | "no" | "timeout"
+  // Legacy single-answer field (target-only V1 rounds). Kept so old rows and
+  // any forgotten reader still resolve; new rounds leave it null.
   response        String?
+  // Two-party round responses ("yes" | "no" | "timeout") — BOTH the spinner
+  // and the target answer independently (PRD §4/§5/§28).
+  spinnerResponse String?
+  targetResponse  String?
+  // "mutual_kiss" | "partial_kiss" | "full_rejection" — computed SERVER-SIDE
+  // when both responses are in (PRD §5/§31).
+  result          String?
+  // Server timestamp: responseDeadline = landedAt + 10s. Clients derive the
+  // visible countdown from this + serverNow (PRD §29) — never from a local
+  // setInterval seeded at 10.
+  responseDeadline DateTime?
   startedAt       DateTime @default(now())
   completedAt     DateTime?
   room            SpinRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   events          SpinBottleEvent[]
+  kissPoints      KissPointTransaction[]
 
   @@index([roomId, turnIndex])
   @@index([roomId, status])
+}
+
+// Ledger of every Kiss Point awarded inside a round (PRD §6). A user earns a
+// point whenever ANOTHER participant chooses ❤️ for them — mutual = +1 each,
+// partial = +1 for the kissed party, full rejection = 0. Rows (not bare
+// counters) make duplicate rewards structurally impossible.
+model KissPointTransaction {
+  id          String   @id @default(cuid())
+  roundId     String
+  // Who chose ❤️ for the recipient (null = system adjustment)
+  fromUserId  String?
+  toUserId    String
+  points      Int
+  // "round_kiss"
+  reason      String
+  createdAt   DateTime @default(now())
+  spin        SpinBottleSpin @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+  @@index([toUserId, createdAt])
 }
 
 model SpinBottleEvent {

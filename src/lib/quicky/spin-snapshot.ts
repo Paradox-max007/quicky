@@ -1,5 +1,9 @@
-// Quicky — server-side snapshot builder for a Spin the Bottle room.
-// Returns the shape the client expects on every poll/refresh.
+// Quicky — server-side snapshot builder for a Spin the Bottle room (PRD v2).
+// Returns the shape the client expects on every stream push / poll / refresh.
+//
+// Privacy (PRD §28): while a round is still awaiting, a participant's choice
+// is only visible to THEMSELF — everyone else (including spectators) gets
+// nulls until the round is completed and the server publishes the result.
 import { db } from '@/lib/db'
 
 export type RoomPlayerSummary = {
@@ -11,6 +15,7 @@ export type RoomPlayerSummary = {
   displayName: string
   avatar: string | null
   gender: string | null
+  kissPoints: number
 }
 
 export type RoomSnapshot = {
@@ -28,11 +33,27 @@ export type RoomSnapshot = {
     endRotation: number
     duration: number
     status: string
+    /** Legacy V1 single-answer field — always null on new rounds. */
     response: string | null
+    /**
+     * Two-party responses. Masked until the round completes: each viewer
+     * sees their OWN answer only; after completion both are published.
+     * "yes" | "no" | "timeout" | null
+     */
+    spinnerResponse: string | null
+    targetResponse: string | null
+    /** "mutual_kiss" | "partial_kiss" | "full_rejection" — server-computed. */
+    result: string | null
+    /** ISO deadline of the 10s response window (server clock, PRD §29). */
+    responseDeadline: string | null
   } | null
   myTurnIndex: number
   myTurnIs: boolean
   iAmTarget: boolean
+  /** Viewer is the current round's spinner (responds too, PRD §28). */
+  iAmSpinner: boolean
+  /** Server wall clock (ms) — clients compute remaining = deadline − now. */
+  serverNow: number
   recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
 }
 
@@ -49,6 +70,7 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
               id: true,
               name: true,
               gender: true,
+              kissPoints: true,
               photos: {
                 orderBy: [{ position: 'asc' }],
                 select: { url: true, isPrimary: true, isPrivate: true, position: true },
@@ -77,6 +99,7 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
       displayName: p.user.name ?? 'Someone',
       avatar: photo?.url ?? null,
       gender: p.user.gender,
+      kissPoints: p.user.kissPoints,
     }
   })
 
@@ -84,6 +107,9 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
   const spin = room.currentSpinId
     ? await db.spinBottleSpin.findUnique({ where: { id: room.currentSpinId } })
     : null
+  const completed = spin?.status === 'completed'
+  const viewerIsSpinner = spin?.spinnerId === viewerId
+  const viewerIsTarget = spin?.targetId === viewerId
   const currentSpin = spin
     ? {
         id: spin.id,
@@ -94,6 +120,11 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
         duration: spin.duration,
         status: spin.status,
         response: spin.response,
+        // Mask responses until the round resolves (see file header)
+        spinnerResponse: completed || viewerIsSpinner ? spin.spinnerResponse : null,
+        targetResponse: completed || viewerIsTarget ? spin.targetResponse : null,
+        result: completed ? spin.result : null,
+        responseDeadline: spin.responseDeadline?.toISOString() ?? null,
       }
     : null
 
@@ -107,11 +138,12 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
     .reverse()
     .map((m) => ({ id: m.id, userId: m.userId, text: m.text, kind: m.kind, createdAt: m.createdAt.toISOString() }))
 
-  // myTurnIs / iAmTarget
+  // myTurnIs / iAmTarget / iAmSpinner
   const me = players.find((p) => p.userId === viewerId)
   const myTurnIndex = me?.turnIndex ?? -1
   const myTurnIs = currentSpin?.spinnerId === viewerId && currentSpin?.status === 'spinning'
   const iAmTarget = currentSpin?.targetId === viewerId && currentSpin?.status === 'awaiting'
+  const iAmSpinner = currentSpin?.spinnerId === viewerId && currentSpin?.status === 'awaiting'
 
   return {
     roomId: room.id,
@@ -124,6 +156,8 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
     myTurnIndex,
     myTurnIs,
     iAmTarget,
+    iAmSpinner,
+    serverNow: Date.now(),
     recentMessages,
   }
 }

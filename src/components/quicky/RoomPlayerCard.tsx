@@ -23,6 +23,8 @@ export type SeatPlayer = {
   isPremium?: boolean
   isCurrentTurn?: boolean
   isTarget?: boolean
+  /** Render order — only used to stagger the seat-pop entry animation. */
+  joinedAt?: number
 }
 
 /* Frame system — future shop frames only need a new entry here.
@@ -125,7 +127,11 @@ export function RoomPlayerCard({
         scale: { type: 'spring', stiffness: 320, damping: 20 },
         default: { duration: 0.2 },
       }}
-      style={{ animationDelay: `${joinedAt * 45}ms` }}
+      style={{
+        animationDelay: `${joinedAt * 45}ms`,
+        // §87: will-change ONLY on the actively animating (spotlight) cards
+        willChange: spotlight ? 'left, top, transform' : undefined,
+      }}
     >
       <div className={`sbr-seat-frame ${frame.frameClass ?? ''}`} style={frameVars}>
         <span

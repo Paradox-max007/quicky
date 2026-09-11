@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Send, Reply, X } from 'lucide-react'
+import { Send, Reply, X, MoreHorizontal, Flag } from 'lucide-react'
+import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 
@@ -61,30 +62,61 @@ const REACTIONS = [
 ] as const
 
 // ─── Swipeable bubble wrapper with visual badge & direction lock ───────────────
+// PRD §40: horizontal-only reply gesture, damped, haptic at threshold.
+// PRD §41: long-press opens the message actions (Reply / React / Report).
+const QUICK_REACTS = ['❤️', '🔥', '😂'] as const
+
 function SwipeableBubble({
   onReply,
+  onReact,
+  mine = false,
   children,
 }: {
   onReply: () => void
+  onReact: (emoji: string) => void
+  mine?: boolean
   children: React.ReactNode
 }) {
   const [offset, setOffset] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
   const startX = useRef(0)
   const startY = useRef(0)
   const isDragging = useRef(false)
   const directionLocked = useRef<'x' | 'y' | null>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse') return // desktop uses hover actions
     startX.current = e.clientX
     startY.current = e.clientY
     isDragging.current = true
     directionLocked.current = null
+    // Long-press → actions menu (§41)
+    clearLongPress()
+    longPressTimer.current = setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(8)
+        } catch {}
+      }
+      setMenuOpen(true)
+      isDragging.current = false
+    }, 500)
   }
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging.current) return
     const currentDx = e.clientX - startX.current
     const currentDy = e.clientY - startY.current
+
+    if (Math.abs(currentDx) > 7 || Math.abs(currentDy) > 7) clearLongPress()
 
     if (!directionLocked.current) {
       if (Math.abs(currentDx) > 7 || Math.abs(currentDy) > 7) {
@@ -107,6 +139,7 @@ function SwipeableBubble({
   }
 
   const handlePointerEnd = () => {
+    clearLongPress()
     if (isDragging.current && directionLocked.current === 'x') {
       if (offset > 40) {
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -172,6 +205,66 @@ function SwipeableBubble({
       >
         {children}
       </div>
+
+      {/* Web hover trigger — desktop gets hover actions (PRD §39) */}
+      <button
+        type="button"
+        className="sbr-msg-more"
+        aria-label="Message actions"
+        onClick={() => setMenuOpen((v) => !v)}
+      >
+        <MoreHorizontal size={14} />
+      </button>
+
+      {/* Actions popover — Reply / React / Report (PRD §39/§41) */}
+      {menuOpen && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 60 }}
+            onClick={() => setMenuOpen(false)}
+            onPointerDown={() => setMenuOpen(false)}
+          />
+          <div
+            className="sbr-msg-menu"
+            style={mine ? { right: 8, left: 'auto' } : { left: 8, right: 'auto' }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                onReply()
+              }}
+            >
+              <Reply size={13} /> Reply
+            </button>
+            <div className="sbr-msg-menu-reacts">
+              {QUICK_REACTS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={`React ${emoji}`}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onReact(emoji)
+                  }}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="sbr-msg-menu-report"
+              onClick={() => {
+                setMenuOpen(false)
+                toast('Message reported. Our moderators will take a look.')
+              }}
+            >
+              <Flag size={13} /> Report
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -283,7 +376,11 @@ export function RoomChatPanel({
             return (
               <div key={m.id}>
                 {showDivider && <PartyChatDivider />}
-                <SwipeableBubble onReply={() => startReply(m)}>
+                <SwipeableBubble
+                  onReply={() => startReply(m)}
+                  onReact={(emoji) => onSend(emoji)}
+                  mine={isMe}
+                >
                   <div className={`sbr-msg${isMe ? ' me' : ''}`}>
                     <GiftAvatar player={p} me={isMe} />
                     <div className="sbr-msg-body">

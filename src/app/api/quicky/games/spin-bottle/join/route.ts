@@ -7,6 +7,7 @@ import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { buildRoomSnapshot } from '@/lib/quicky/spin-snapshot'
 import { startSpinLoop } from '@/lib/quicky/spin-bottle'
+import { emitRoomUpdate } from '@/lib/quicky/spin-events'
 
 export async function POST(_req: NextRequest) {
   const me = await getCurrentUser()
@@ -67,6 +68,7 @@ export async function POST(_req: NextRequest) {
       connection: 'online',
     })
     await db.spinRoom.update({ where: { id: roomId }, data: { lastActivityAt: new Date() } })
+    emitRoomUpdate(roomId) // players_changed — SSE subscribers refresh instantly
   } else {
     // 3. Create a new WAITING room
     const room = await db.spinRoom.create({

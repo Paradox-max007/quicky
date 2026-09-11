@@ -597,18 +597,38 @@
 }
 
 /* ════════════════════════════════════════════════════════════
-   STATUS PILL (mobile — inside the table) / RESPOND / RESULT
+   BOTTLE-ANCHORED STATUS (PRD §25 — mobile) / RESPOND / RESULT
+   The status presentation lives UNDER the bottle, so the bottle
+   and its caption read as one unit (§85: they move together).
    ════════════════════════════════════════════════════════════ */
-.sbr-status {
+.sbr-bottle-status {
   position: absolute;
   left: 50%;
-  bottom: 24%;
-  transform: translateX(-50%);
+  top: 50%;
+  /* bottle is ~3× its width tall (aspect 60/180, width ≤ 54px) — the caption
+     starts just below the bottle body + drop shadow */
+  transform: translate(-50%, 88px);
   z-index: 4;
   pointer-events: none;
   max-width: 92%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
 }
-.sbr-status > span {
+.sbr-bs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #fff7e6;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.sbr-bs-text {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -714,14 +734,15 @@
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
-/* result state */
+/* result state — PRD §31: MUTUAL KISS / PARTIAL KISS / FULL REJECTION */
 .sbr-duel-result { gap: 3px; }
 .sbr-duel-emoji {
   font-size: 40px;
   line-height: 1.15;
   filter: drop-shadow(0 4px 14px rgba(244, 63, 94, 0.45));
 }
-.sbr-duel-emoji-kiss { animation: sbr-heart-beat 0.9s ease-in-out infinite; }
+.sbr-duel-emoji-mutual { animation: sbr-heart-beat 0.9s ease-in-out infinite; }
+.sbr-duel-emoji-partial { animation: sbr-heart-beat 1.3s ease-in-out infinite; }
 .sbr-duel-emoji-reject { animation: sbr-heart-shake 0.7s ease-in-out; }
 @keyframes sbr-heart-beat {
   0%, 100% { transform: scale(1); }
@@ -743,12 +764,42 @@
   color: #fff;
   text-shadow: 0 0 18px rgba(244, 63, 94, 0.55);
 }
-.sbr-duel-verdict-no { color: #fda4af; text-shadow: none; }
+.sbr-verdict-mutual {
+  background: linear-gradient(90deg, #fda4af, #f43f5e 45%, #fb7185);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgba(244, 63, 94, 0.6));
+}
+.sbr-verdict-partial { color: #fcd34d; text-shadow: 0 0 16px rgba(251, 191, 36, 0.4); }
+.sbr-verdict-reject { color: #94a3b8; text-shadow: none; }
 .sbr-duel-sub {
   font-size: 11px;
   font-weight: 700;
   color: rgba(245, 245, 247, 0.66);
 }
+.sbr-duel-points {
+  font-size: 11px;
+  font-weight: 900;
+  color: #fcd34d;
+  background: rgba(69, 26, 3, 0.85);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 999px;
+  padding: 3px 11px;
+  margin-top: 2px;
+}
+/* locked-in answer chip (PRD §59) */
+.sbr-duel-locked {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #86efac;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: sbr-wait-pulse 1.8s ease-in-out infinite;
+}
+/* hit target ≥44px on mobile (PRD §58) */
+.sbr-duel-actions button { min-height: 44px; }
 
 /* ── shared decision buttons (duel panel) ────────────────── */
 .sbr-btn-yes {
@@ -1371,8 +1422,8 @@
 
   .sbr-bottle { width: clamp(50px, 4.2vw, 62px); }
 
-  /* center status pill is replaced by corner pills + tablebar on web */
-  .sbr-status { display: none; }
+  /* center status caption is replaced by corner pills + tablebar on web */
+  .sbr-bottle-status { display: none; }
 
   /* duel spotlight panel fits BETWEEN the two center cards on desktop */
   .sbr-duel-anchor {
@@ -1448,3 +1499,83 @@
   .sbr-reactions { justify-content: flex-start; padding: 6px 14px 2px; }
   .sbr-composer { padding-bottom: max(9px, env(safe-area-inset-bottom, 0px)); }
 }
+
+/* ════════════════════════════════════════════════════════════
+   REDUCED MOTION (PRD §88) — keep the room usable without the
+   exaggerated animations. Framer springs respect <MotionConfig
+   reducedMotion="user"> in SpinBottleRoom; these cover the CSS
+   keyframes/transitions.
+   ════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .sbr-seat { animation: none; }
+  .sbr-bottle-float { animation: none; }
+  .sbr-duel-emoji-mutual,
+  .sbr-duel-emoji-partial,
+  .sbr-duel-emoji-reject,
+  .sbr-duel-waiting,
+  .sbr-duel-locked { animation: none; }
+  .sbr-bottle-layer { transition: opacity 0.2s ease; transform: translate(-50%, -50%) !important; }
+  .sbr-bottle-layer.sbr-bottle-hidden { transform: translate(-50%, -50%) !important; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   MESSAGE ACTIONS (PRD §39/§41) — web hover trigger + popover
+   menu (Reply / React / Report); mobile opens it via long-press.
+   ════════════════════════════════════════════════════════════ */
+.sbr-msg-more {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(20, 18, 26, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  z-index: 5;
+}
+.sbr-swipe-bubble-wrap:hover .sbr-msg-more { display: inline-flex; }
+.sbr-msg-menu {
+  position: absolute;
+  top: -6px;
+  transform: translateY(-100%);
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(16, 14, 22, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  min-width: 168px;
+}
+.sbr-msg-menu > button,
+.sbr-msg-menu .sbr-msg-menu-report {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e4e4e7;
+  text-align: left;
+}
+.sbr-msg-menu > button:hover { background: rgba(255, 255, 255, 0.08); }
+.sbr-msg-menu .sbr-msg-menu-report { color: #fda4af; }
+.sbr-msg-menu-reacts {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px;
+}
+.sbr-msg-menu-reacts button {
+  font-size: 17px;
+  line-height: 1;
+  padding: 5px 7px;
+  border-radius: 9px;
+}
+.sbr-msg-menu-reacts button:hover { background: rgba(255, 255, 255, 0.08); }
