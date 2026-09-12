@@ -55,6 +55,10 @@ export async function GET() {
       premiumUntil: full.premiumUntil,
       isVerified: full.isVerified,
       quickyScore: full.quickyScore,
+      // v3 economy + admin fields (PRD §15/§62) — real DB values, never placeholders
+      isAdmin: full.isAdmin,
+      coinBalance: full.coinBalance,
+      kissPoints: full.kissPoints,
       posts,
       postCount: posts.length,
       onboardedAt: full.onboardedAt,

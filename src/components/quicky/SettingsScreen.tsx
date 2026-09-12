@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Settings as SettingsIcon, User, Phone, Mail, SlidersHorizontal,
   Bell, Palette, Shield, Lock, HelpCircle, FileText, LogOut, ChevronRight,
-  Crown, RefreshCw, AlertCircle,
+  Crown, RefreshCw, AlertCircle, Gift,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -63,6 +63,22 @@ export function SettingsScreen() {
   }
 
   const sections: Section[] = [
+    ...(user?.isAdmin
+      ? [
+          {
+            title: 'Admin',
+            rows: [
+              {
+                id: 'admin-gifts',
+                label: 'Gift Catalog',
+                icon: Gift,
+                chevron: true,
+                onClick: () => setView('admin-gifts'),
+              },
+            ] as Row[],
+          },
+        ]
+      : []),
     {
       title: 'Account',
       rows: [

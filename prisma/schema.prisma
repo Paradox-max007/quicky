@@ -87,6 +87,9 @@ model User {
   userItems           UserItem[]
   equippedFrameId     String?          // FK to ProfileFrame.id (denormalized for speed)
   userFrames          UserFrame[]
+  // Admin panel access (gift catalog management, v3 PRD §62) — seeded per
+  // phone; never exposed as an editable client toggle.
+  isAdmin             Boolean          @default(false)
 }
 
 model Photo {
@@ -561,13 +564,34 @@ model SpinRoomMessage {
 
 // ── In-game economy ───────────────────────────────────────────────────────────
 
+// Gift catalog categories (v3 PRD §49) — admin-manageable grouping for the
+// gift catalog. Seed rows: Popular, Romantic, Cute, Funny, Premium, Special.
+model GiftCategory {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  icon      String   @default("🎁")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  gifts     GameItem[]
+}
+
 // Catalog of purchasable/sendable gift items
 model GameItem {
   id          String   @id @default(cuid())
   // "gift" | "frame" | "bottle_skin" | "table_skin"
   category    String   @default("gift")
+  // Gift catalog category (v3 PRD §50) — FK into GiftCategory
+  categoryId  String?
+  giftCategory GiftCategory? @relation(fields: [categoryId], references: [id])
   name        String
   emoji       String
+  // Future-proof icon storage (v3 PRD §67): "emoji" today, "image" (URL in
+  // iconValue) when admins can upload custom gift artwork.
+  iconType    String   @default("emoji")
+  iconValue   String?
   description String?
   coinPrice   Int      // cost in coins
   // For frames: the CSS/asset class name or URL
@@ -577,9 +601,12 @@ model GameItem {
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   userItems   UserItem[]
   gifts       SpinRoomGift[]
   frames      ProfileFrame[]
+
+  @@index([categoryId, isActive, sortOrder])
 }
 
 // User's owned items

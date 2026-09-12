@@ -210,10 +210,10 @@ export type GiftId = (typeof SPIN_BOTTLE_GIFTS)[number]['id']
 
 // Coin packs users can buy (for future IAP flow)
 export const COIN_PACKS = [
-  { id: 'coins_100',  coins: 100,  price: 0.99,  label: '100 Coins'  },
-  { id: 'coins_500',  coins: 500,  price: 3.99,  label: '500 Coins'  },
+  { id: 'coins_100',  coins: 100,  price: 0.99,  label: '100 Coins',  bestValue: false },
+  { id: 'coins_500',  coins: 500,  price: 3.99,  label: '500 Coins',  bestValue: false },
   { id: 'coins_1500', coins: 1500, price: 9.99,  label: '1,500 Coins', bestValue: true },
-  { id: 'coins_5000', coins: 5000, price: 24.99, label: '5,000 Coins' },
+  { id: 'coins_5000', coins: 5000, price: 24.99, label: '5,000 Coins', bestValue: false },
 ] as const
 
 // Coin rewards for game events

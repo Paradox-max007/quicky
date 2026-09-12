@@ -28,6 +28,7 @@ import { CommunityScreen } from './CommunityScreen'
 import { ProfileView } from './ProfileView'
 import { SpinBottleLanding } from './SpinBottleLanding'
 import { SpinBottleRoom } from './SpinBottleRoom'
+import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
@@ -170,11 +171,14 @@ export function AppRoot() {
                 roomId={roomId}
                 onClose={() => {
                   useQuickyStore.getState().setSpinBottleRoomId(null)
-                  setView('community')
+                  // v3 §37: Leave Room returns to the GAME LANDING screen
+                  // (Room → Leave → Game Landing → ← Back → Community)
+                  setView('spin-bottle')
                 }}
               />
             )
           })()}
+          {view === 'admin-gifts' && <AdminGiftsScreen />}
           </div>
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.

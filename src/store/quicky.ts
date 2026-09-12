@@ -29,6 +29,7 @@ export type AppView =
   | 'profile-view'
   | 'spin-bottle'
   | 'spin-bottle-room'
+  | 'admin-gifts'
 
 export type QuickyUser = {
   id: string
@@ -47,6 +48,10 @@ export type QuickyUser = {
   premiumUntil?: string | null
   isVerified: boolean
   quickyScore: number
+  // v3 economy + admin (real DB values via /auth/me)
+  isAdmin?: boolean
+  coinBalance?: number
+  kissPoints?: number
   onboardedAt: string | null
   discoveryAgeMin?: number | null
   discoveryAgeMax?: number | null

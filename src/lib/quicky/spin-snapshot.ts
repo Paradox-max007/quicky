@@ -54,6 +54,12 @@ export type RoomSnapshot = {
   iAmSpinner: boolean
   /** Server wall clock (ms) — clients compute remaining = deadline − now. */
   serverNow: number
+  /**
+   * The VIEWER's economy (v3 PRD §19-§25): the authoritative numbers the room
+   * HUD renders. Server wins on every snapshot — optimistic HUD bumps are
+   * reconciled against this on the next push.
+   */
+  viewer: { coinBalance: number; kissPoints: number; giftsReceived: number }
   recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
 }
 
@@ -147,6 +153,13 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
   const iAmTarget = currentSpin?.targetId === viewerId && currentSpin?.status === 'awaiting'
   const iAmSpinner = currentSpin?.spinnerId === viewerId && currentSpin?.status === 'awaiting'
 
+  // Viewer economy (v3 §19-§25): balance + gifts received in one query each,
+  // kiss points come from the player row already fetched above.
+  const [viewerUser, giftsReceivedAgg] = await Promise.all([
+    db.user.findUnique({ where: { id: viewerId }, select: { coinBalance: true, kissPoints: true } }),
+    db.spinRoomGift.aggregate({ where: { recipientId: viewerId }, _sum: { quantity: true } }),
+  ])
+
   return {
     roomId: room.id,
     status: room.status,
@@ -160,6 +173,11 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
     iAmTarget,
     iAmSpinner,
     serverNow: Date.now(),
+    viewer: {
+      coinBalance: viewerUser?.coinBalance ?? 0,
+      kissPoints: viewerUser?.kissPoints ?? me?.kissPoints ?? 0,
+      giftsReceived: giftsReceivedAgg._sum.quantity ?? 0,
+    },
     recentMessages,
   }
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import { motion } from 'framer-motion'
 import { nameSideFor } from '@/lib/quicky/spin-geometry'
 
@@ -92,6 +93,8 @@ export function RoomPlayerCard({
   y,
   joinedAt = 0,
   spotlight = false,
+  interactive = false,
+  onTap,
 }: {
   player: SeatPlayer
   /** Seat center as percentages of the stage box. */
@@ -100,7 +103,12 @@ export function RoomPlayerCard({
   joinedAt?: number
   /** True while this card is in the duel spotlight (center stage). */
   spotlight?: boolean
+  /** v3 §40: tappable (opens the interaction panel) — off for me + duels. */
+  interactive?: boolean
+  /** Receives the card's wrapper element (for §84 rect-anchored popover). */
+  onTap?: (el: HTMLElement) => void
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
   const frame = frameForPlayer(player)
   const initial = (player.displayName ?? '?').trim().slice(0, 1).toUpperCase()
   const name = player.isMe ? `${player.displayName} (you)` : player.displayName
@@ -120,7 +128,11 @@ export function RoomPlayerCard({
 
   return (
     <motion.div
-      className={`sbr-seat ${spotlight ? 'sbr-seat-dueling' : ''}${nameAbove ? ' sbr-name-top' : ''}`}
+      ref={wrapRef}
+      className={`sbr-seat ${spotlight ? 'sbr-seat-dueling' : ''}${nameAbove ? ' sbr-name-top' : ''}${interactive ? ' sbr-seat-tappable' : ''}`}
+      onClick={interactive ? () => onTap?.(wrapRef.current!) : undefined}
+      role={interactive ? 'button' : undefined}
+      aria-label={interactive ? `Interact with ${player.displayName}` : undefined}
       initial={false}
       animate={{
         left: `${x}%`,

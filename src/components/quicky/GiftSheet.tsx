@@ -1,16 +1,18 @@
 ﻿'use client'
 
 // Quicky — Gift Sheet
-// Bottom-sheet gift selector for the Spin the Bottle room.
-// Shows the full gift catalog, the sender's coin balance, and a recipient picker.
+// Bottom-sheet gift selector for the Spin the Bottle room (chat composer 🎁
+// entry). v3 (PRD §47): the catalog is DB-DRIVEN — categories + gifts come
+// from the backend (admin-manageable), nothing is hardcoded here. Shows the
+// full gift catalog, the sender's coin balance, and a recipient picker.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Coins } from 'lucide-react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { SPIN_BOTTLE_GIFTS } from '@/lib/quicky/constants'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
+import type { CatalogGift } from './PlayerInteractionSheet'
 
 type Player = { userId: string; displayName: string }
 
@@ -29,11 +31,25 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, c
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [recipientId, setRecipientId] = useState<string>(currentTargetId ?? '')
   const [sending, setSending] = useState(false)
+  const [gifts, setGifts] = useState<CatalogGift[]>([])
+
+  // DB-driven catalog (§47/§71) — shared session cache with the interaction sheet
+  useEffect(() => {
+    if (!open) return
+    void (async () => {
+      try {
+        const res = await api.spinBottle.gifts.catalog()
+        setGifts((res.catalog ?? []) as CatalogGift[])
+      } catch {
+        toast.error('Could not load gifts')
+      }
+    })()
+  }, [open])
 
   const others = players.filter((p) => p.userId !== meId)
-  const giftDef = SPIN_BOTTLE_GIFTS.find((g) => g.id === selectedItem)
+  const giftDef = gifts.find((g) => g.id === selectedItem)
   const recipient = others.find((p) => p.userId === recipientId)
-  const canSend = !!selectedItem && !!recipientId && !sending && (giftDef?.coinPrice ?? 0) <= coinBalance
+  const canSend = !!selectedItem && !!recipientId && !sending && (giftDef?.priceCoins ?? 0) <= coinBalance
 
   const send = async () => {
     if (!canSend || !selectedItem) return
@@ -41,7 +57,7 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, c
     try {
       const res = await api.spinBottle.gifts.send(roomId, recipientId, selectedItem)
       if (res?.ok) {
-        toast.success(`${giftDef?.emoji} Sent to ${recipient?.displayName}!`)
+        toast.success(`${giftDef?.icon} Sent to ${recipient?.displayName}!`)
         onGiftSent?.(res.coinBalance)
         setSelectedItem(null)
         onClose()
@@ -118,11 +134,11 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, c
               </div>
             </div>
 
-            {/* Gift grid */}
+            {/* Gift grid — DB-driven catalog (v3 §47) */}
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-4">
               <div className="grid grid-cols-4 gap-3">
-                {SPIN_BOTTLE_GIFTS.map((gift) => {
-                  const canAfford = coinBalance >= gift.coinPrice
+                {gifts.map((gift) => {
+                  const canAfford = coinBalance >= gift.priceCoins
                   const isSelected = selectedItem === gift.id
                   return (
                     <button
@@ -138,12 +154,12 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, c
                           : 'bg-white/3 border-white/5 opacity-40'
                       )}
                     >
-                      <span className="text-2xl leading-none">{gift.emoji}</span>
+                      <span className="text-2xl leading-none">{gift.icon}</span>
                       <span className="text-[9px] text-white/60 font-medium truncate w-full text-center">{gift.name}</span>
                       <div className="flex items-center gap-0.5">
                         <span className="text-[var(--qk-gold)] text-[9px]">🪙</span>
                         <span className={cn('text-[9px] font-bold', canAfford ? 'text-[var(--qk-gold)]' : 'text-white/30')}>
-                          {gift.coinPrice}
+                          {gift.priceCoins}
                         </span>
                       </div>
                     </button>
@@ -163,9 +179,9 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, c
                   <span className="text-sm">Sending…</span>
                 ) : giftDef && recipient ? (
                   <>
-                    <span>{giftDef.emoji}</span>
+                    <span>{giftDef.icon}</span>
                     <span>Send {giftDef.name} to {recipient.displayName}</span>
-                    <span className="opacity-70">· 🪙 {giftDef.coinPrice}</span>
+                    <span className="opacity-70">· 🪙 {giftDef.priceCoins}</span>
                   </>
                 ) : (
                   <span>Select a gift and recipient</span>

@@ -1609,3 +1609,148 @@
   border-radius: 9px;
 }
 .sbr-msg-menu-reacts button:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* ════════════════════════════════════════════════════════════
+   v3 — SAFE-AREA SHEETS (§81): every bottom sheet clears the
+   home indicator / gesture bar on Capacitor + PWA installs.
+   ════════════════════════════════════════════════════════════ */
+.sbr-sheet-safe {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── HUD: gift tile + door exit control (§19/§31) ─────────── */
+.sbr-tile.sbr-tile-gift {
+  background: linear-gradient(140deg, rgba(236, 72, 153, 0.16), rgba(190, 24, 93, 0.10));
+  border-color: rgba(244, 114, 182, 0.28);
+}
+.sbr-exit-btn {
+  background: rgba(244, 63, 94, 0.14);
+  border-color: rgba(244, 63, 94, 0.30);
+  color: #fda4af;
+}
+.sbr-exit-btn:hover { background: rgba(244, 63, 94, 0.24); }
+
+/* ── Tappable player cards (§40) ──────────────────────────── */
+.sbr-seat-tappable { cursor: pointer; }
+.sbr-seat-tappable .sbr-seat-frame { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.sbr-seat-tappable:hover .sbr-seat-frame {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 0 16px 3px rgba(255, 255, 255, 0.14), 0 6px 14px rgba(20, 8, 2, 0.6);
+}
+.sbr-seat-tappable:active .sbr-seat-frame { transform: scale(0.97); }
+
+/* ════════════════════════════════════════════════════════════
+   v3 — COIN STORE (§28): mock purchase packages
+   ════════════════════════════════════════════════════════════ */
+.sbr-coin-pack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 8px 12px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(251, 191, 36, 0.12), rgba(245, 158, 11, 0.05));
+  border: 1px solid rgba(251, 191, 36, 0.30);
+  color: #fde68a;
+  transition: transform 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+.sbr-coin-pack:hover { border-color: rgba(251, 191, 36, 0.55); transform: translateY(-1px); }
+.sbr-coin-pack:active { transform: scale(0.97); }
+.sbr-coin-pack:disabled { opacity: 0.55; }
+.sbr-coin-pack-buying { border-color: #fbbf24; }
+.sbr-coin-pack-cta {
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: #fbbf24;
+  color: #1c1917;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   v3 — PLAYER INTERACTION PANEL (§40-§46, §82-§84)
+   ════════════════════════════════════════════════════════════ */
+.sbr-ix-popover {
+  position: absolute;           /* anchored INSIDE the stage */
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.65);
+  border-radius: 20px;
+  max-height: min(460px, 92%);
+}
+.sbr-ix-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: #e4e4e7;
+  font-size: 10.5px;
+  font-weight: 700;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.sbr-ix-action:hover { background: rgba(255, 255, 255, 0.10); }
+.sbr-ix-action:active { transform: scale(0.95); }
+/* Independently scrollable gift area — the room itself never scrolls (§82) */
+.sbr-ix-gifts {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 96px;
+  max-height: 168px;
+  padding-right: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.sbr-ix-gift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 7px 3px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: #f4f4f5;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.sbr-ix-gift:hover { background: rgba(255, 255, 255, 0.09); }
+.sbr-ix-gift:active { transform: scale(0.94); }
+.sbr-ix-gift-sel {
+  border-color: var(--sbr-accent);
+  background: rgba(244, 63, 94, 0.14);
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.25);
+}
+.sbr-ix-gift-poor { opacity: 0.45; }
+.sbr-ix-send {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 0;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #e11d48 0%, #f43f5e 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-weight: 900;
+  font-size: 13px;
+}
+.sbr-ix-send:disabled { opacity: 0.5; }
+
+/* Room options sheet buttons keep full width when used standalone */
+.sbr-sheet .sbr-sheet-btn-stay,
+.sbr-sheet .sbr-sheet-btn-leave {
+  display: flex;
+  align-items: center;
+  flex: none;
+  width: 100%;
+}
+.sbr-sheet .sbr-sheet-btn-stay:disabled,
+.sbr-sheet .sbr-sheet-btn-leave:disabled {
+  opacity: 0.45;
+}

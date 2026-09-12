@@ -271,6 +271,7 @@ export function RoomChatPanel({
   onSend,
   sending,
   kbOpen = false,
+  onOpenGifts,
 }: {
   messages: RoomMessage[]
   players: ChatPlayer[]
@@ -278,6 +279,8 @@ export function RoomChatPanel({
   onSend: (text: string, replyTo?: RoomMessage['replyTo']) => Promise<void>
   sending: boolean
   kbOpen?: boolean
+  /** v3: opens the gift sheet (DB-driven catalog) — no more dead button. */
+  onOpenGifts?: () => void
 }) {
   const [text, setText] = useState('')
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -476,7 +479,7 @@ export function RoomChatPanel({
           </button>
         </div>
 
-        <button className="sbr-comp-btn" aria-label="Send a gift" title="Gifts coming soon">
+        <button className="sbr-comp-btn" onClick={onOpenGifts} aria-label="Send a gift" title="Send a gift">
           🎁
         </button>
         <button className="sbr-send" onClick={send} disabled={!text.trim() || sending} aria-label="Send">

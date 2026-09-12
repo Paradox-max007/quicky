@@ -38,6 +38,7 @@ import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { joinRoomChannel } from '@/lib/quicky/realtime'
 import type { RoomChannel } from '@/lib/quicky/realtime'
+import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import {
   calculateTableGeometry,
   deviceClassFor,
@@ -46,11 +47,14 @@ import {
 } from '@/lib/quicky/spin-geometry'
 import { useRoundTimer } from '@/hooks/useRoundTimer'
 import { useOptimisticResponse } from '@/hooks/useOptimisticResponse'
-import { RoomTopHud, RoomHudChips } from './RoomTopHud'
+import { RoomTopHud, RoomHudChips, RoomExitControl } from './RoomTopHud'
 import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from './RoomChatPanel'
+import { CoinStoreSheet } from './CoinStoreSheet'
+import { PlayerInteractionSheet, type CatalogGift, type InteractionPlayer } from './PlayerInteractionSheet'
+import { GiftSheet } from './GiftSheet'
 import './spin-bottle-room.css'
 
 type Snapshot = {
@@ -89,6 +93,8 @@ type Snapshot = {
   iAmTarget: boolean
   iAmSpinner: boolean
   serverNow: number
+  /** v3 §19-§25 — viewer economy, authoritative on EVERY snapshot push. */
+  viewer: { coinBalance: number; kissPoints: number; giftsReceived: number }
   recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
 }
 
@@ -145,6 +151,20 @@ export function SpinBottleRoom({
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
   const [settleDone, setSettleDone] = useState(true)
   const [kbHeight, setKbHeight] = useState(0)
+  // ─── v3 state domains (§91): economy, coin store, gift sheet, player
+  // interaction — each isolated so a gift arriving never rebuilds the table.
+  const [economy, setEconomy] = useState({ coinBalance: 0, kissPoints: 0, giftsReceived: 0 })
+  const economyRef = useRef(economy)
+  economyRef.current = economy
+  const [gamesPlayed, setGamesPlayed] = useState(0) // HUD 🏆 (DB-driven)
+  const [showCoinStore, setShowCoinStore] = useState(false)
+  const [showGiftSheet, setShowGiftSheet] = useState(false)
+  const [interaction, setInteraction] = useState<{
+    player: InteractionPlayer
+    anchor: { card: DOMRect; stage: DOMRect } | null
+  } | null>(null)
+  // Web breakpoint (≥1024px) → popover interaction; below → bottom sheet (§82/§83)
+  const [isDesktop, setIsDesktop] = useState(false)
   const kbHeightRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
@@ -232,11 +252,43 @@ export function SpinBottleRoom({
     return Math.max(0, Math.round(Math.min(top, stageBox.h - DUEL_PANEL_ESTIMATE - 20)))
   }, [stageBox.h, centerCardSize, geometry.duelPositions.spinner.y])
 
-  // Keyboard OVERLAY mode — the OS keyboard never resizes the page
-  // (Capacitor config plugins.Keyboard.resize='none' on native;
-  // interactive-widget=resizes-visual on web), so the game table keeps its
-  // full size and the keyboard simply covers the lower part of the screen.
-  // The chat composer lifts itself above the keyboard via --sbr-kb.
+  // ─── v3 §72-§77: screen stays awake while the room is mounted ──────────
+  useGameWakeLock(true)
+
+  // Desktop breakpoint for the interaction popover (single listener, cheap)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const apply = () => setIsDesktop(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  // HUD 🏆 — real games-played from the DB (landing stats endpoint)
+  useEffect(() => {
+    let stopped = false
+    api.spinBottle
+      .landing()
+      .then((s) => {
+        if (!stopped) setGamesPlayed(s.gamesPlayed ?? 0)
+      })
+      .catch(() => {})
+    return () => {
+      stopped = true
+    }
+  }, [])
+
+  // ─── Economy (§21-§25/§91): the snapshot is authoritative — server wins
+  // on every push, so optimistic HUD bumps reconcile automatically.
+  const bumpEconomy = useCallback((delta: Partial<{ coinBalance: number; kissPoints: number; giftsReceived: number }>) => {
+    setEconomy((e) => ({
+      coinBalance: e.coinBalance + (delta.coinBalance ?? 0),
+      kissPoints: e.kissPoints + (delta.kissPoints ?? 0),
+      giftsReceived: e.giftsReceived + (delta.giftsReceived ?? 0),
+    }))
+  }, [])
+
+  // ─── Keyboard OVERLAY mode (unchanged from v2.1) ─────────────────────────
   useEffect(() => {
     const doc = document.documentElement
     const setKb = (px: number) => {
@@ -274,7 +326,7 @@ export function SpinBottleRoom({
     }
   }, [])
 
-  // Supabase Realtime — instant chat push for all room members
+  // Supabase Realtime — instant chat push + economy nudges for room members
   useEffect(() => {
     if (!roomId) return
     const ch = joinRoomChannel(roomId, {
@@ -302,17 +354,34 @@ export function SpinBottleRoom({
           return [...withoutTmp, msg]
         })
       },
+      // v3 §59/§60: a gift landing on ME bumps my 🎁 HUD immediately (the
+      // authoritative snapshot reconciles on the next SSE push).
+      onGift: (payload) => {
+        const p = payload as any
+        if (p?.recipientId === (useQuickyStore.getState().user?.id ?? '')) {
+          bumpEconomy({ giftsReceived: Math.max(1, Number(p?.quantity ?? 1)) })
+        }
+      },
+      onBalance: (payload) => {
+        const p = payload as any
+        if (p?.userId === (useQuickyStore.getState().user?.id ?? '') && Number.isFinite(p?.coinBalance)) {
+          setEconomy((e) => ({ ...e, coinBalance: Number(p.coinBalance) }))
+        }
+      },
     })
     roomChannelRef.current = ch
     return () => {
       ch?.unsubscribe()
       roomChannelRef.current = null
     }
-  }, [roomId])
+  }, [roomId, bumpEconomy])
 
   // Apply snapshot, handling side effects for spin transitions
   const applySnapshot = useCallback((s: Snapshot) => {
     if (s.serverNow) clockSkewRef.current = s.serverNow - Date.now()
+    // v3 §25: server economy is authoritative — reconciles any optimistic HUD
+    // bump (kiss +1, coin spend) the moment the fresh snapshot lands.
+    if (s.viewer) setEconomy({ coinBalance: s.viewer.coinBalance, kissPoints: s.viewer.kissPoints, giftsReceived: s.viewer.giftsReceived })
     setSnapshot((prev) => {
       // Track spin start for the bottle
       if (s.currentSpin && (!prev?.currentSpin || prev.currentSpin.id !== s.currentSpin.id)) {
@@ -490,6 +559,88 @@ export function SpinBottleRoom({
     }
   }
 
+  // ─── Player interaction (v3 §40-§46) ────────────────────────────────────
+  // §85: while a duel is on stage the interaction stays disabled — it must
+  // never interfere with the round or cover the center cards.
+  const openInteraction = (p: SeatPlayer, cardEl: HTMLElement | null) => {
+    if (duelPhaseRef.current !== 'table') {
+      toast('Wait for the round to finish — the spotlight is busy ✨')
+      return
+    }
+    if (p.isMe) {
+      toast("That's you! Tap someone else to interact.")
+      return
+    }
+    const card = cardEl?.getBoundingClientRect() ?? null
+    const stage = stageRef.current?.getBoundingClientRect() ?? null
+    setInteraction({
+      player: { userId: p.userId, displayName: p.displayName, avatar: p.avatar },
+      anchor: card && stage ? { card, stage } : null,
+    })
+  }
+  // duelPhase in a ref so the seat click handler never goes stale
+  const duelPhaseRef = useRef<'table' | 'duel' | 'result'>('table')
+
+  const handleTag = (p: InteractionPlayer) => {
+    // §43: the tag action/state layer exists; the tagging feature itself is
+    // intentionally not invented here.
+    toast(`Tag — coming soon. You picked ${p.displayName}.`)
+    setInteraction(null)
+  }
+  const handleMessage = (_p: InteractionPlayer) => {
+    // §44: no DM layer between non-matched players yet — explicit notice,
+    // never a silent failure.
+    toast('Direct messages are coming soon!')
+    setInteraction(null)
+  }
+  const handleProfile = (p: InteractionPlayer) => {
+    // §45: the app's real profile route
+    setInteraction(null)
+    useQuickyStore.getState().openProfile(p.userId, 'spin-bottle-room')
+  }
+
+  // ─── Gift send (v3 §53-§59) ─────────────────────────────────────────────
+  // Optimistic coin move at the HUD (§59), server transaction is the truth,
+  // the returned balance reconciles instantly.
+  const sendGift = async (recipientId: string, gift: CatalogGift): Promise<boolean> => {
+    if (!roomId) return false
+    bumpEconomy({ coinBalance: -gift.priceCoins })
+    try {
+      const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id)
+      if (res?.ok) {
+        setEconomy((e) => ({ ...e, coinBalance: res.coinBalance }))
+        // Supabase cosmetic push for the rest of the table (toast path)
+        const me2 = useQuickyStore.getState().user
+        const recipientName = snapshot?.players.find((p) => p.userId === recipientId)?.displayName
+        roomChannelRef.current?.sendGift({
+          senderId: me2?.id ?? '',
+          senderName: me2?.name ?? 'Someone',
+          recipientId,
+          recipientName: recipientName ?? 'Someone',
+          itemId: gift.id,
+          itemName: gift.name,
+          itemEmoji: gift.icon,
+          quantity: 1,
+        })
+        return true
+      }
+      return false
+    } catch (e: any) {
+      // Revert the optimistic spend (server value wins if provided)
+      if (e?.body?.coinBalance !== undefined) {
+        setEconomy((prev) => ({ ...prev, coinBalance: Number(e.body.coinBalance) }))
+      } else {
+        void reconcile()
+      }
+      if (e?.body?.error === 'insufficient_coins') {
+        toast.error('Not enough coins — top up in the coin store.')
+      } else {
+        toast.error(e?.message ?? 'Failed to send gift')
+      }
+      return false
+    }
+  }
+
   const leave = async () => {
     if (!roomId) return
     try {
@@ -569,6 +720,8 @@ export function SpinBottleRoom({
         ? 'result'
         : 'table'
   const dueling = duelPhase !== 'table'
+  // Keep the interaction guard (§85) in sync without re-binding handlers
+  duelPhaseRef.current = duelPhase
 
   // ─── Two-party response derivation (§27/§28) ──────────────────────────────
   const iAmSpinner = !!snapshot?.iAmSpinner
@@ -641,13 +794,8 @@ export function SpinBottleRoom({
   return (
     <MotionConfig reducedMotion="user">
       <div className="sbr-root absolute inset-0">
-        {/* ═══ WEB top bar (hidden <1024px) — Club Royale header ═══ */}
+        {/* ═══ WEB top bar (hidden <1024px) — Club Royale header (§78) ═══ */}
         <header className="sbr-webtop safe-area-top sbr-d-only">
-          <button className="sbr-round-btn" onClick={() => setShowExit(true)} aria-label="Leave room">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
           <span className="sbr-webtop-emoji" aria-hidden>🍾</span>
           <div className="sbr-webtop-title">
             <div className="sbr-webtop-line">
@@ -657,18 +805,29 @@ export function SpinBottleRoom({
             <p className="sbr-webtop-sub">Casual Dating &amp; Friendship • {roomLabel}</p>
           </div>
           <div className="sbr-webtop-center">
-            <RoomHudChips hearts={0} trophies={0} crowns={me?.isPremium ? 1 : 0} coins={989} />
+            <RoomHudChips
+              hearts={economy.kissPoints}
+              trophies={gamesPlayed}
+              crowns={me?.isPremium ? 1 : 0}
+              gifts={economy.giftsReceived}
+              coins={economy.coinBalance}
+              onAddCoins={() => setShowCoinStore(true)}
+            />
           </div>
+          {/* §31/§32: the room's only control — leave/change room, top-right */}
+          <RoomExitControl onClick={() => setShowExit(true)} />
         </header>
 
-        {/* ═══ MOBILE HUD (hidden ≥1024px) ═══ */}
+        {/* ═══ MOBILE HUD (hidden ≥1024px) — no back arrow (§31) ═══ */}
         <div className="sbr-m-only">
           <RoomTopHud
-            hearts={0}
-            trophies={0}
+            hearts={economy.kissPoints}
+            trophies={gamesPlayed}
             crowns={me?.isPremium ? 1 : 0}
-            coins={989}
-            onBack={() => setShowExit(true)}
+            gifts={economy.giftsReceived}
+            coins={economy.coinBalance}
+            onRoomOptions={() => setShowExit(true)}
+            onAddCoins={() => setShowCoinStore(true)}
           />
         </div>
 
@@ -736,6 +895,8 @@ export function SpinBottleRoom({
                     y={pos.y}
                     joinedAt={p.joinedAt}
                     spotlight={inSpotlight}
+                    interactive={!dueling && !p.isMe}
+                    onTap={(el) => openInteraction(p, el)}
                   />
                 )
               })}
@@ -914,8 +1075,8 @@ export function SpinBottleRoom({
                 <span className="sbr-tablebar-dot" aria-hidden />
                 Table status: {statusPill.text}
               </div>
-              <button className="sbr-tablebar-btn sbr-tablebar-gift" onClick={() => toast('Gifts are coming soon!')}>
-                <span aria-hidden>🍷</span> Gift Wine
+              <button className="sbr-tablebar-btn sbr-tablebar-gift" onClick={() => setShowGiftSheet(true)}>
+                <span aria-hidden>🎁</span> Send a Gift
               </button>
             </div>
           </div>
@@ -928,10 +1089,13 @@ export function SpinBottleRoom({
             onSend={sendChat}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
+            onOpenGifts={() => setShowGiftSheet(true)}
           />
         </div>
 
-        {/* Exit confirmation — locked while I'm in an active round (§66) */}
+        {/* ═══ v3 §34-§39 — ROOM OPTIONS (opened by the 🚪 RoomExitControl).
+            Round lock (§36): while I'm spinning/deciding, BOTH move & leave
+            are disabled and the sheet explains why; Cancel always works. */}
         <AnimatePresence>
           {showExit && (
             <>
@@ -947,33 +1111,85 @@ export function SpinBottleRoom({
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-                className="sbr-sheet fixed inset-x-0 bottom-0 z-[201] p-4 pb-6 flex flex-col gap-3"
+                className="sbr-sheet fixed inset-x-0 bottom-0 z-[201] mx-auto max-w-md p-4 sbr-sheet-safe flex flex-col gap-3"
               >
                 <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
-                <h3 className="text-base font-black">
-                  {iAmRoundParticipant ? 'Round in progress' : 'Leave the room?'}
-                </h3>
-                <p className="text-sm font-semibold text-white/60">
-                  {iAmRoundParticipant
-                    ? 'Finish the current round first — the table is locked while you decide.'
-                    : "You'll need to rejoin or find a new table to play again."}
-                </p>
-                <div className="flex gap-2">
-                  <button className="sbr-sheet-btn-stay" onClick={() => setShowExit(false)}>
-                    {iAmRoundParticipant ? 'Back to the round' : 'Stay'}
-                  </button>
-                  {!iAmRoundParticipant && (
-                    <button className="sbr-sheet-btn-leave" onClick={leave}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <DoorOpen className="h-4 w-4" /> Leave
-                      </span>
-                    </button>
-                  )}
-                </div>
+                <h3 className="text-base font-black">Room options</h3>
+                {iAmRoundParticipant && (
+                  <p className="text-sm font-semibold text-amber-300/90 -mt-1">
+                    Round in progress — finish it first, the table is locked while you decide.
+                  </p>
+                )}
+                <button
+                  className="sbr-sheet-btn-stay w-full justify-center"
+                  disabled={switching || iAmRoundParticipant}
+                  onClick={async () => {
+                    setShowExit(false)
+                    await changeTable()
+                  }}
+                >
+                  <RefreshCw className={`h-4 w-4${switching ? ' animate-spin' : ''}`} />
+                  {switching ? 'Finding a table…' : 'Move to Random Room'}
+                </button>
+                <button
+                  className="sbr-sheet-btn-leave w-full justify-center"
+                  disabled={switching || iAmRoundParticipant}
+                  onClick={() => {
+                    setShowExit(false)
+                    void leave()
+                  }}
+                >
+                  <DoorOpen className="h-4 w-4" /> Leave Room
+                </button>
+                <button
+                  className="text-sm font-semibold text-white/60 hover:text-white py-2"
+                  onClick={() => setShowExit(false)}
+                >
+                  Cancel
+                </button>
               </motion.div>
             </>
           )}
         </AnimatePresence>
+
+        {/* ═══ v3 §26-§30 — mock coin store (opened by the ＋ on the chip) ═══ */}
+        <CoinStoreSheet
+          open={showCoinStore}
+          onClose={() => setShowCoinStore(false)}
+          coinBalance={economy.coinBalance}
+          onPurchased={(newBalance) => setEconomy((e) => ({ ...e, coinBalance: newBalance }))}
+        />
+
+        {/* ═══ v3 §40-§46 — player interaction (mobile sheet / desktop popover) */}
+        <PlayerInteractionSheet
+          player={interaction?.player ?? null}
+          mode={isDesktop ? 'popover' : 'sheet'}
+          anchor={interaction?.anchor ?? null}
+          coinBalance={economy.coinBalance}
+          onClose={() => setInteraction(null)}
+          onTag={handleTag}
+          onMessage={handleMessage}
+          onProfile={handleProfile}
+          onBuyCoins={() => {
+            setInteraction(null)
+            setShowCoinStore(true)
+          }}
+          onSendGift={sendGift}
+        />
+
+        {/* ═══ v3 — chat composer 🎁 gift sheet (recipient picker + catalog) */}
+        <GiftSheet
+          open={showGiftSheet}
+          onClose={() => setShowGiftSheet(false)}
+          roomId={roomId}
+          players={chatPlayers}
+          meId={meId}
+          coinBalance={economy.coinBalance}
+          onGiftSent={(newBalance) => {
+            setEconomy((e) => ({ ...e, coinBalance: newBalance }))
+            // My sent total also moves — the next snapshot reconciles fully.
+          }}
+        />
       </div>
     </MotionConfig>
   )

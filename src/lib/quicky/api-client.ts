@@ -197,7 +197,15 @@ export const api = {
     jsonFetch(`/api/quicky/matches/${matchId}/unmatch`, { method: 'POST' }),
   spinBottle: {
     landing: () =>
-      jsonFetch<{ gamesPlayed: number; kissesReceived: number; kissesGiven: number; coins: number; level: number }>(
+      jsonFetch<{
+        gamesPlayed: number
+        kissesReceived: number
+        kissesGiven: number
+        giftsSent: number
+        giftsReceived: number
+        coins: number
+        level: number
+      }>(
         '/api/quicky/games/spin-bottle/landing-stats'
       ),
     join: () =>
@@ -230,7 +238,23 @@ export const api = {
       }),
     gifts: {
       catalog: () =>
-        jsonFetch<{ catalog: any[]; coinBalance: number }>('/api/quicky/games/spin-bottle/gifts'),
+        jsonFetch<{
+          categories: { id: string; name: string; slug: string; icon: string; sortOrder: number }[]
+          catalog: {
+            id: string
+            categoryId: string | null
+            name: string
+            icon: string
+            iconType: string
+            iconValue: string
+            emoji: string
+            priceCoins: number
+            tier: string
+            sortOrder: number
+            isActive: boolean
+          }[]
+          coinBalance: number
+        }>('/api/quicky/games/spin-bottle/gifts'),
       send: (roomId: string, recipientId: string, itemId: string, quantity = 1) =>
         jsonFetch<{ ok: boolean; coinBalance: number }>('/api/quicky/games/spin-bottle/gifts', {
           method: 'POST',
@@ -240,6 +264,34 @@ export const api = {
     coins: {
       balance: () =>
         jsonFetch<{ coinBalance: number }>('/api/quicky/games/spin-bottle/coins'),
+      // v3 §30: the SINGLE purchase entry point — swapping the mock for
+      // Google Play / Apple IAP / Stripe later only changes this route.
+      purchase: (packageId: string) =>
+        jsonFetch<{ ok: boolean; mock: boolean; coinsAdded: number; coinBalance: number }>(
+          '/api/quicky/games/spin-bottle/coins',
+          { method: 'POST', body: JSON.stringify({ packageId }) }
+        ),
+    },
+  },
+  admin: {
+    gifts: {
+      list: () =>
+        jsonFetch<{ categories: any[]; gifts: any[] }>('/api/quicky/admin/gifts'),
+      create: (kind: 'category' | 'gift', data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/gifts', {
+          method: 'POST',
+          body: JSON.stringify({ kind, data }),
+        }),
+      update: (kind: 'category' | 'gift', id: string, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/gifts', {
+          method: 'PATCH',
+          body: JSON.stringify({ kind, id, data }),
+        }),
+      remove: (kind: 'category' | 'gift', id: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/gifts', {
+          method: 'DELETE',
+          body: JSON.stringify({ kind, id }),
+        }),
     },
   },
   frames: {
