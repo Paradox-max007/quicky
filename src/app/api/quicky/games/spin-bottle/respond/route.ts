@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { recordRoundResponse } from '@/lib/quicky/spin-bottle'
+import { touchMemberActivity } from '@/lib/quicky/room-activity'
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
@@ -35,5 +36,7 @@ export async function POST(req: NextRequest) {
 
   const outcome = await recordRoundResponse(roomId, spin.id, me.id, choice)
   if (outcome === false) return NextResponse.json({ error: 'Round no longer accepting responses' }, { status: 409 })
+  // Lifecycle §12: choosing Kiss / No Thanks is a valid activity signal.
+  await touchMemberActivity(roomId, me.id).catch(() => {})
   return NextResponse.json({ ok: true, outcome })
 }

@@ -13,15 +13,7 @@
 // isActive, sortOrder. Category fields (§63): name, slug, icon, sortOrder.
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getCurrentUser } from '@/lib/quicky/auth'
-
-async function requireAdmin() {
-  const me = await getCurrentUser()
-  if (!me) return { error: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) }
-  const u = await db.user.findUnique({ where: { id: me.id }, select: { isAdmin: true } })
-  if (!u?.isAdmin) return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
-  return { me }
-}
+import { requireAdmin } from '@/lib/quicky/admin'
 
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)

@@ -10,8 +10,9 @@
 //        gift chat message, then wakes the room SSE stream so every member's
 //        HUD updates instantly (§59/§60).
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/quicky/auth'
+import { db } from '@/lib/db'
+import { touchMemberActivity } from '@/lib/quicky/room-activity'
 import { getClient } from '@/lib/quicky/realtime'
 import { emitRoomUpdate } from '@/lib/quicky/spin-events'
 
@@ -118,7 +119,11 @@ export async function POST(req: NextRequest) {
       // Throws → whole transaction rolls back → API maps to 402 below.
       throw new Error('insufficient_coins')
     }
-    await tx.user.update({ where: { id: recipientId }, data: { coinBalance: { increment: recipientReward } } })
+    await tx.user.update({ where: { id: recipientId }, data: { coinBalance: { increment: recipientReward }, giftsReceivedCount: { increment: quantity } } })
+    // Lifecycle PRD §20/§21: lifetime gift counters live on the USER rows —
+    // SpinRoomGift rows are temporary room data and cascade away with the
+    // room, but these counters (like the CoinLedger) are permanent.
+    await tx.user.update({ where: { id: me.id }, data: { giftsSentCount: { increment: quantity } } })
     await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
     if (recipientReward > 0) {
       await tx.coinLedger.create({ data: { userId: recipientId, delta: recipientReward, reason: 'gift_received', meta: metadata } })
@@ -142,6 +147,9 @@ export async function POST(req: NextRequest) {
     const bal = (await db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } }))?.coinBalance ?? 0
     return NextResponse.json({ error: 'insufficient_coins', coinBalance: bal }, { status: 402 })
   }
+
+  // Lifecycle §12: sending a gift counts as room activity (sender side).
+  await touchMemberActivity(roomId, me.id).catch(() => {})
 
   // Wake every room member's SSE stream → fresh snapshot → HUD counters
   // (coins, gifts received) update without a refresh (§59/§60).

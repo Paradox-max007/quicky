@@ -63,6 +63,8 @@ type Snapshot = {
   maxPlayers: number
   minPlayers: number
   currentTurnIdx: number
+  /** Lifecycle §6/§23 — when the room became a 1-player room (ISO), else null. */
+  singletonStartedAt: string | null
   players: {
     userId: string
     seatIndex: number
@@ -170,6 +172,12 @@ export function SpinBottleRoom({
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const [streamOk, setStreamOk] = useState(false)
+  // ─── Room-lifecycle closure state (lifecycle PRD §27/§28/§29): when the
+  // server deletes this room (empty / 5-min singleton / manual close) the
+  // UI must NEVER pretend the room still exists — a full-screen dialog
+  // explains why and walks the player back to the game screen.
+  const [closure, setClosure] = useState<null | { reason: string }>(null)
+  const closureHandledRef = useRef(false)
   const spinStartTimeRef = useRef<number>(0)
   const roomChannelRef = useRef<RoomChannel | null>(null)
   // Server clock skew (ms) — remaining = deadline − (localNow + skew) (§29)
@@ -413,8 +421,21 @@ export function SpinBottleRoom({
   }, [])
 
   // ─── GAME-STATE SYNC — SSE stream is primary (PRD STEP 3) ────────────────
+  // Lifecycle §27: a `room_gone` push stops everything and surfaces the
+  // closure dialog — never a silent retry loop against a deleted room.
+  const handleRoomGone = useCallback(async () => {
+    if (closureHandledRef.current) return
+    closureHandledRef.current = true
+    let reason = 'closed'
+    try {
+      const st = await api.spinBottle.roomStatus(roomId)
+      if (st?.closed && st.reason) reason = st.reason
+    } catch {}
+    setClosure({ reason })
+  }, [roomId])
+
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId || closureHandledRef.current) return
     let es: EventSource | null = null
     let cancelled = false
     try {
@@ -428,7 +449,7 @@ export function SpinBottleRoom({
         } catch {}
       })
       es.addEventListener('room_gone', () => {
-        if (!cancelled) toast('This table has closed — find a new one.')
+        if (!cancelled) void handleRoomGone()
       })
       es.onerror = () => {
         // EventSource auto-reconnects; flag down so the recovery poll resumes
@@ -442,18 +463,24 @@ export function SpinBottleRoom({
       es?.close()
       setStreamOk(false)
     }
-  }, [roomId, applySnapshot])
+  }, [roomId, applySnapshot, handleRoomGone])
 
   // Recovery poll — runs ONLY while the stream is down (PRD §2/§63: polling
-  // is a recovery mechanism, never the primary sync path).
+  // is a recovery mechanism, never the primary sync path). Lifecycle §27:
+  // a `closed: true` 404 body means the room was DELETED — surface the
+  // closure dialog instead of polling a ghost forever.
   useEffect(() => {
-    if (!roomId || streamOk) return
+    if (!roomId || streamOk || closureHandledRef.current) return
     let cancelled = false
     const tick = async () => {
       try {
         const res = await api.spinBottle.room(roomId)
         if (!cancelled && res?.snapshot) applySnapshot(res.snapshot)
-      } catch {
+      } catch (e: any) {
+        if (e?.body?.closed || e?.status === 404) {
+          void handleRoomGone()
+          return
+        }
         // Silent: keep recovering
       }
     }
@@ -463,7 +490,21 @@ export function SpinBottleRoom({
       cancelled = true
       clearInterval(t)
     }
-  }, [roomId, streamOk, applySnapshot])
+  }, [roomId, streamOk, applySnapshot, handleRoomGone])
+
+  // ─── Presence keep-alive (lifecycle §12/§13): the server tracks room
+  // activity authoritatively. While THIS screen is open we ping every 60s
+  // (throttled server-side); if the app dies the pings stop and the cleanup
+  // worker auto-leaves us after 10 minutes.
+  useEffect(() => {
+    if (!roomId) return
+    const beat = () => {
+      void api.spinBottle.ping(roomId).catch(() => {})
+    }
+    beat()
+    const t = setInterval(beat, 60_000)
+    return () => clearInterval(t)
+  }, [roomId])
 
   // ─── Response countdown — derived from the SERVER deadline (§29/§34-§40).
   // The hook owns everything: 250ms ticks, hard stop at exactly 0, a short
@@ -745,6 +786,28 @@ export function SpinBottleRoom({
           : null
   const otherName = iAmSpinner ? targetName : spinnerName
 
+  // ─── Singleton-room countdown hint (lifecycle §5/§6/§10): while the room
+  // has exactly one player, show a gentle "this table closes in mm:ss".
+  // The deadline is the SERVER timestamp (singletonStartedAt + 5 min) read
+  // through the server-clock skew — the client never owns the timer.
+  const [nowTick, setNowTick] = useState(Date.now())
+  const alone = playerCount === 1 && !currentSpin
+  useEffect(() => {
+    if (!alone) return
+    const t = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [alone])
+  const singletonCloseInMs =
+    alone && snapshot?.singletonStartedAt
+      ? new Date(snapshot.singletonStartedAt).getTime() + 5 * 60_000 - (nowTick + clockSkewRef.current)
+      : null
+  const singletonCloseLabel =
+    singletonCloseInMs == null
+      ? null
+      : `${Math.max(0, Math.floor(singletonCloseInMs / 60000))}:${String(
+          Math.max(0, Math.floor(singletonCloseInMs / 1000)) % 60
+        ).padStart(2, '0')}`
+
   // ─── Result content (§31) ─────────────────────────────────────────────────
   const resultKind = status === 'completed' ? currentSpin?.result : null
   const sResp = (currentSpin?.spinnerResponse ?? 'timeout') as string
@@ -874,6 +937,11 @@ export function SpinBottleRoom({
                 </span>
                 {status === 'awaiting' && (
                   <span className="sbr-corner-pill sbr-corner-target">🎯 {targetName} Targeted</span>
+                )}
+                {alone && singletonCloseLabel && (
+                  <span className="sbr-corner-pill" title="This table closes if nobody joins">
+                    ⏳ Closes in {singletonCloseLabel}
+                  </span>
                 )}
               </div>
 
@@ -1074,6 +1142,9 @@ export function SpinBottleRoom({
               <div className="sbr-tablebar-status">
                 <span className="sbr-tablebar-dot" aria-hidden />
                 Table status: {statusPill.text}
+                {alone && singletonCloseLabel && (
+                  <span className="text-white/50"> · closes in {singletonCloseLabel}</span>
+                )}
               </div>
               <button className="sbr-tablebar-btn sbr-tablebar-gift" onClick={() => setShowGiftSheet(true)}>
                 <span aria-hidden>🎁</span> Send a Gift
@@ -1146,6 +1217,48 @@ export function SpinBottleRoom({
                   onClick={() => setShowExit(false)}
                 >
                   Cancel
+                </button>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* ═══ Room-lifecycle closure dialog (lifecycle PRD §27/§28/§29).
+            Shown when the SERVER deletes this room — empty sweep, 5-minute
+            singleton rule, inactivity removal, or manual close. The player
+            always gets a clean way back; never a raw error or a ghost table. */}
+        <AnimatePresence>
+          {closure && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[220] bg-black/85 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+                className="fixed inset-x-0 top-1/2 z-[221] mx-auto w-[min(92vw,24rem)] -translate-y-1/2 bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 text-center flex flex-col items-center gap-3"
+              >
+                <div className="text-4xl" aria-hidden>
+                  {closure.reason === 'inactivity' ? '😴' : '🔒'}
+                </div>
+                <h2 className="text-xl font-black tracking-wide">ROOM CLOSED</h2>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  {closure.reason === 'inactivity'
+                    ? 'You were removed from the room due to inactivity.'
+                    : closure.reason === 'singleton'
+                      ? 'No other players joined. Try playing again to find another room.'
+                      : 'This room was closed. Try playing again to find another room.'}
+                </p>
+                <button
+                  onClick={onClose}
+                  className="mt-2 bg-coral-gradient glow-coral rounded-2xl py-3 px-8 font-bold tracking-wide active:scale-[0.98] transition-transform"
+                >
+                  BACK TO GAME
                 </button>
               </motion.div>
             </>

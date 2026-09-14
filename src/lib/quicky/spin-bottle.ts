@@ -299,6 +299,11 @@ async function resolveRound(roomId: string, spin: {
   if (updated.count === 0) return false // already resolved by a racing path
 
   // Kiss Point ledger + counter — only when someone chose ❤️ FOR the other.
+  // Lifecycle PRD §20/§21: the PERMANENT user stats live on the User row —
+  // kissPoints (received), kissesGiven, gamesPlayed — so deleting the
+  // temporary room can never rewrite a player's lifetime totals. The
+  // room-scoped ledger rows (KissPointTransaction) still cascade away with
+  // their spin; the counters above are the surviving source of truth.
   const awards: { to: string; from: string }[] = []
   if (spinnerResponse === 'yes' && spin.targetId)
     awards.push({ to: spin.targetId, from: spin.spinnerId }) // target was chosen
@@ -310,6 +315,28 @@ async function resolveRound(roomId: string, spin: {
     })
     await db.user.update({ where: { id: a.to }, data: { kissPoints: { increment: 1 } } })
   }
+  // Permanent lifetime counters: games played (both participants) + kisses
+  // given (each ❤️ choice that awarded the other player a point).
+  const permanentUpdates: Promise<unknown>[] = []
+  if (spin.targetId) {
+    permanentUpdates.push(
+      db.user.update({ where: { id: spin.spinnerId }, data: { gamesPlayed: { increment: 1 } } }).catch(() => {})
+    )
+    permanentUpdates.push(
+      db.user.update({ where: { id: spin.targetId }, data: { gamesPlayed: { increment: 1 } } }).catch(() => {})
+    )
+  }
+  if (spinnerResponse === 'yes' && spin.targetId) {
+    permanentUpdates.push(
+      db.user.update({ where: { id: spin.spinnerId }, data: { kissesGiven: { increment: 1 } } }).catch(() => {})
+    )
+  }
+  if (targetResponse === 'yes' && spin.targetId) {
+    permanentUpdates.push(
+      db.user.update({ where: { id: spin.targetId }, data: { kissesGiven: { increment: 1 } } }).catch(() => {})
+    )
+  }
+  await Promise.all(permanentUpdates)
 
   await db.spinBottleEvent.create({
     data: {

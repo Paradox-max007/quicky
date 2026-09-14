@@ -1,15 +1,23 @@
-// Quicky — Leave a Spin the Bottle room (PRD §9/§66/§67)
+// Quicky — Leave a Spin the Bottle room (PRD §9/§66/§67 + lifecycle PRD §5/§8/§17)
 // POST /api/quicky/games/spin-bottle/leave { roomId }
 //
 // Room lock: while a round is SPINNING/AWAITING, its spinner and target are
 // locked — the server refuses their leave with 409 ("Finish the current
 // round first"). Spectators may leave any time. Crash/disconnect recovery
 // never depends on this endpoint: the response-deadline watchdog resolves
-// every round within 10s even if a participant simply vanishes.
+// every round within 10s, and the cleanup worker (instrumentation.ts) sweeps
+// members idle ≥ 10 min plus every empty/singleton room.
+//
+// Lifecycle transitions handled here (server-authoritative):
+//   · last player left  → the room and ALL its temporary data are deleted
+//     immediately (§17) — chat, membership, round state, gifts (cascade);
+//   · exactly 1 player remains → their 5-minute singleton timer starts
+//     (singletonStartedAt = now, §8) unless already running.
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { cancelRoomTimers, advanceTurn, activeRoundParticipant } from '@/lib/quicky/spin-bottle'
+import { deleteRoomCompletely } from '@/lib/quicky/room-cleanup'
 import { emitRoomUpdate } from '@/lib/quicky/spin-events'
 
 export async function POST(req: NextRequest) {
@@ -49,14 +57,26 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Room empty → close it
+  // Recount CURRENT active membership (lifecycle §8/§9 — never history).
   const remaining = await db.spinRoomPlayer.count({
     where: { roomId, leftAt: null, isActive: true },
   })
+
   if (remaining === 0) {
+    // §17: a zero-player temporary room has no reason to exist — delete the
+    // room AND its chat/rounds/gifts immediately (transaction-safe, §26).
     cancelRoomTimers(roomId)
-    await db.spinRoom.update({ where: { id: roomId }, data: { status: 'CLOSING', lastActivityAt: new Date() } })
-    return NextResponse.json({ ok: true })
+    await deleteRoomCompletely(roomId)
+    return NextResponse.json({ ok: true, roomDeleted: true })
+  }
+
+  if (remaining === 1) {
+    // §8: the room just reached exactly one player — start/restart the
+    // 5-minute singleton timer (a DB timestamp the cleanup worker checks).
+    await db.spinRoom.updateMany({
+      where: { id: roomId, singletonStartedAt: null },
+      data: { singletonStartedAt: new Date(), lastActivityAt: new Date() },
+    })
   }
 
   const room = await db.spinRoom.findUnique({ where: { id: roomId } })

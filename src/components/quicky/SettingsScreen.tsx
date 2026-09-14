@@ -75,6 +75,13 @@ export function SettingsScreen() {
                 chevron: true,
                 onClick: () => setView('admin-gifts'),
               },
+              {
+                id: 'admin-rules',
+                label: 'How It Works Rules',
+                icon: HelpCircle,
+                chevron: true,
+                onClick: () => setView('admin-rules'),
+              },
             ] as Row[],
           },
         ]

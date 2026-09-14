@@ -29,10 +29,12 @@ import { ProfileView } from './ProfileView'
 import { SpinBottleLanding } from './SpinBottleLanding'
 import { SpinBottleRoom } from './SpinBottleRoom'
 import { AdminGiftsScreen } from './AdminGiftsScreen'
+import { AdminRulesScreen } from './AdminRulesScreen'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
 import { Toaster as SonnerToaster } from 'sonner'
+import { Capacitor } from '@capacitor/core'
 import { cn } from '@/lib/utils'
 import type { AppView } from '@/store/quicky'
 
@@ -71,6 +73,36 @@ export function AppRoot() {
   const hydrated = useQuickyStore((s) => s.hydrated)
   const user = useQuickyStore((s) => s.user)
   const setView = useQuickyStore((s) => s.setView)
+
+  // ─── Capacitor hardware back button (lifecycle PRD §56/§57) ────────────
+  // The on-screen back arrows are explicit (Community ↔ Game ↔ Room); the
+  // native back key must mirror them — never trap the user, never push a
+  // stale room route. Views outside the game keep the platform default.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let handle: Awaited<ReturnType<typeof import('@capacitor/app').App.addListener>> | null = null
+    let cancelled = false
+    void import('@capacitor/app').then(({ App }) =>
+      App.addListener('backButton', () => {
+        const { view: v, setView: sv } = useQuickyStore.getState()
+        if (v === 'spin-bottle') sv('community')
+        else if (v === 'spin-bottle-room') {
+          useQuickyStore.getState().setSpinBottleRoomId(null)
+          sv('spin-bottle')
+        } else if (v === 'admin-gifts' || v === 'admin-rules') {
+          sv('settings')
+        }
+        // anything else → default Android behavior (navigate back / minimize)
+      })
+    ).then((h) => {
+      if (cancelled) h?.remove?.()
+      else handle = h
+    })
+    return () => {
+      cancelled = true
+      handle?.remove?.()
+    }
+  }, [])
 
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
@@ -179,6 +211,7 @@ export function AppRoot() {
             )
           })()}
           {view === 'admin-gifts' && <AdminGiftsScreen />}
+          {view === 'admin-rules' && <AdminRulesScreen />}
           </div>
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.

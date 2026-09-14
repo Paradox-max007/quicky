@@ -17,6 +17,7 @@ import { ArrowLeft, Sparkles, Gamepad2, Dices, Heart, Coins, Gift } from 'lucide
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
+import { HowItWorksRules } from './HowItWorksRules'
 
 type Stats = {
   gamesPlayed: number
@@ -114,19 +115,20 @@ export function SpinBottleLanding({
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">
-      {/* Ambient glows */}
+      {/* Ambient glows — decorative only: pointer-events-none so they can
+          NEVER swallow taps meant for the header back arrow (lifecycle §54). */}
       <motion.div
-        className="absolute -top-24 -left-20 w-72 h-72 rounded-full bg-[var(--qk-accent)]/20 blur-3xl"
+        className="pointer-events-none absolute -top-24 -left-20 w-72 h-72 rounded-full bg-[var(--qk-accent)]/20 blur-3xl"
         animate={{ x: [0, 24, 0], y: [0, 16, 0] }}
         transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute -bottom-24 -right-20 w-80 h-80 rounded-full bg-[var(--qk-purple)]/20 blur-3xl"
+        className="pointer-events-none absolute -bottom-24 -right-20 w-80 h-80 rounded-full bg-[var(--qk-purple)]/20 blur-3xl"
         animate={{ x: [0, -24, 0], y: [0, -16, 0] }}
         transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2 flex items-center gap-2">
+      <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2 flex items-center gap-2 relative z-20">
         <button
           onClick={onClose}
           className="p-2 rounded-full hover:bg-white/10"
@@ -257,16 +259,10 @@ export function SpinBottleLanding({
                 Play Now
               </button>
 
-              {/* Rules card */}
-              <div className="w-full max-w-sm bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white/70 leading-relaxed">
-                <p className="text-white font-semibold mb-1.5">How it works</p>
-                <ul className="list-disc pl-4 space-y-1">
-                  <li>Join a room with up to 12 players.</li>
-                  <li>The system spins the bottle — you don&apos;t.</li>
-                  <li>When the bottle points at you, say Kiss ❤️ or No Thanks ❌.</li>
-                  <li>Tap a player&apos;s card to send gifts and more.</li>
-                </ul>
-              </div>
+              {/* Lifecycle PRD §38-§53: ONE admin-managed rule at a time,
+                  slow readable rotation, stable height — DB-driven via
+                  /games/spin-bottle/rules (fallback copy if empty). */}
+              <HowItWorksRules />
             </motion.div>
           )}
         </AnimatePresence>

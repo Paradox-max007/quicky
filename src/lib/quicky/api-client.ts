@@ -214,6 +214,23 @@ export const api = {
       }),
     room: (roomId: string) =>
       jsonFetch<{ ok: boolean; snapshot: any }>(`/api/quicky/games/spin-bottle/room?roomId=${roomId}`),
+    // Lifecycle PRD §27/§28/§29: why did my room disappear? Drives the
+    // closure dialog ("no other players joined" vs "removed for inactivity").
+    roomStatus: (roomId: string) =>
+      jsonFetch<{ closed: boolean; exists: boolean; amMember: boolean; reason?: string }>(
+        `/api/quicky/games/spin-bottle/room-status?roomId=${roomId}`
+      ),
+    // Lifecycle PRD §12/§13: throttled server-side presence keep-alive.
+    ping: (roomId: string) =>
+      jsonFetch<{ ok: boolean; touched: boolean }>('/api/quicky/games/spin-bottle/ping', {
+        method: 'POST',
+        body: JSON.stringify({ roomId }),
+      }),
+    // Lifecycle PRD §50: active "How It Works" rules, admin-defined order.
+    rules: () =>
+      jsonFetch<{ rules: { id: string; title: string; description: string; icon: string; sortOrder: number }[] }>(
+        '/api/quicky/games/spin-bottle/rules'
+      ),
     leave: (roomId: string) =>
       jsonFetch('/api/quicky/games/spin-bottle/leave', {
         method: 'POST',
@@ -291,6 +308,26 @@ export const api = {
         jsonFetch<{ ok: boolean }>('/api/quicky/admin/gifts', {
           method: 'DELETE',
           body: JSON.stringify({ kind, id }),
+        }),
+    },
+    // Lifecycle PRD §44/§48: "How It Works" rules CRUD (admin-managed).
+    gameRules: {
+      list: () =>
+        jsonFetch<{ rules: any[] }>('/api/quicky/admin/game-rules'),
+      create: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; rule: any }>('/api/quicky/admin/game-rules', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      update: (id: string, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; rule: any }>('/api/quicky/admin/game-rules', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, data }),
+        }),
+      remove: (id: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/game-rules', {
+          method: 'DELETE',
+          body: JSON.stringify({ id }),
         }),
     },
   },

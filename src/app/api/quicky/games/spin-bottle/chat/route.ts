@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
+import { touchMemberActivity } from '@/lib/quicky/room-activity'
 
 const RATE_LIMIT_MS = 1500
 
@@ -64,6 +65,8 @@ export async function POST(req: NextRequest) {
     include: { user: { select: { name: true, id: true } } },
   })
   await db.spinRoom.update({ where: { id: roomId }, data: { lastActivityAt: new Date() } })
+  // Lifecycle §12: sending a chat message counts as room activity.
+  await touchMemberActivity(roomId, me.id).catch(() => {})
 
   return NextResponse.json({
     ok: true,

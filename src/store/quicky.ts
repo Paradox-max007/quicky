@@ -30,6 +30,7 @@ export type AppView =
   | 'spin-bottle'
   | 'spin-bottle-room'
   | 'admin-gifts'
+  | 'admin-rules'
 
 export type QuickyUser = {
   id: string

@@ -24,6 +24,12 @@ export type RoomSnapshot = {
   maxPlayers: number
   minPlayers: number
   currentTurnIdx: number
+  /**
+   * Lifecycle PRD §6/§23 — when the room has exactly one active player this
+   * is when that state began (ISO). The client renders a gentle "table closes
+   * in ~mm:ss" hint from it; the cleanup worker enforces the real deadline.
+   */
+  singletonStartedAt: string | null
   players: RoomPlayerSummary[]
   currentSpin: {
     id: string
@@ -166,6 +172,7 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
     maxPlayers: room.maxPlayers,
     minPlayers: room.minPlayers,
     currentTurnIdx: room.currentTurnIdx,
+    singletonStartedAt: room.singletonStartedAt?.toISOString() ?? null,
     players,
     currentSpin,
     myTurnIndex,
