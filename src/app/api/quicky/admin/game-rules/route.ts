@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/quicky/auth'
-import { requireAdmin } from '@/lib/quicky/admin'
+import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 
 const cleanIcon = (v: unknown): string | undefined => {
   if (v === undefined) return undefined
@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
       isActive: data.isActive !== false,
     },
   })
+  await logAdminAction(gate.me.id, 'create', 'game_rule', created.id, { title: created.title })
   return NextResponse.json({ ok: true, rule: created })
 }
 
@@ -92,6 +93,7 @@ export async function PATCH(req: NextRequest) {
 
   const updated = await db.gameRule.update({ where: { id }, data: patch }).catch(() => null)
   if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  await logAdminAction(gate.me.id, 'update', 'game_rule', id, patch)
   return NextResponse.json({ ok: true, rule: updated })
 }
 
@@ -104,5 +106,6 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id_required' }, { status: 400 })
   const gone = await db.gameRule.delete({ where: { id } }).catch(() => null)
   if (!gone) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  await logAdminAction(gate.me.id, 'delete', 'game_rule', id, { title: gone.title })
   return NextResponse.json({ ok: true })
 }

@@ -6,9 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -94,6 +93,13 @@ model User {
   // Admin panel access (gift catalog management, v3 PRD §62) — seeded per
   // phone; never exposed as an editable client toggle.
   isAdmin             Boolean          @default(false)
+  // ─── Game Chat (private player-to-player, game-chat PRD §7/§114) ─────────
+  gameConversationsA  GameConversation[] @relation("GameConvA")
+  gameConversationsB  GameConversation[] @relation("GameConvB")
+  gameConvMembers     GameConversationMember[]
+  gameMessages        GameMessage[]
+  gameMessageReactions GameMessageReaction[]
+  ownedStickerBundles UserGameStickerBundle[]
 }
 
 model Photo {
@@ -718,3 +724,184 @@ model SpinRoomClosure {
   @@index([createdAt])
 }
 
+
+// ═══ GAME CHAT — private player-to-player messaging (game-chat PRD §11-§16) ═══
+// Deliberately SEPARATE from the Dating Chat (Match/Message) system and from
+// the temporary room chat (SpinRoomMessage): conversations are a persistent
+// relationship between two USERS, never tied to a room id (§59/§60/§61).
+// Canonical pair ordering (userAId < userBId) makes conversation(userA,userB)
+// resolve to EXACTLY one row (§11 — no duplicate A→B conversations).
+model GameConversation {
+  id            String    @id @default(cuid())
+  userAId       String
+  userBId       String
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  userA    User @relation("GameConvA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB    User @relation("GameConvB", fields: [userBId], references: [id], onDelete: Cascade)
+  members  GameConversationMember[]
+  messages GameMessage[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId, lastMessageAt])
+  @@index([userBId, lastMessageAt])
+}
+
+// Read-receipt model (§15): per-member lastReadAt — unread = messages with
+// createdAt > lastReadAt AND senderId != me. Simple + efficient for 1-to-1.
+model GameConversationMember {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime @default(now())
+
+  conversation GameConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastReadAt])
+}
+
+// game_messages (§13): message_type text | sticker (future types addable).
+// clientMessageId gives optimistic sends a deterministic id for safe
+// de-duplication (§92/§93) — unique per (conversation, sender).
+model GameMessage {
+  id               String    @id @default(cuid())
+  conversationId   String
+  senderId         String
+  messageType      String    @default("text") // text | sticker
+  text             String?
+  stickerId        String?
+  replyToMessageId String?
+  clientMessageId  String?
+  createdAt        DateTime  @default(now())
+  editedAt         DateTime?
+  deletedAt        DateTime?
+
+  conversation GameConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User             @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  sticker      GameSticker?     @relation(fields: [stickerId], references: [id], onDelete: SetNull)
+  reactions    GameMessageReaction[]
+
+  @@index([conversationId, createdAt])
+  @@unique([conversationId, senderId, clientMessageId])
+}
+
+// One active reaction per user per message (§31).
+model GameMessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  reaction  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  message GameMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+}
+
+// ═══ GAME STICKERS — admin-managed bundles (game-chat PRD §62-§77) ══════════
+// Architecture NOW, purchasing/rewards later (§76/§77): bundles belong to an
+// optional league and/or season (never hardcoded in the frontend, §65), are
+// acquired by coin purchase and/or league reward, and users OWN bundles via
+// UserGameStickerBundle before they may send a sticker (§68/§75).
+model GameLeague {
+  id            String   @id @default(cuid())
+  name          String
+  minimumPoints Int      @default(0)
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  bundles GameStickerBundle[]
+}
+
+model GameSeason {
+  id        String    @id @default(cuid())
+  name      String
+  startsAt  DateTime?
+  endsAt    DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  bundles GameStickerBundle[]
+}
+
+model GameStickerBundle {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?
+  icon                String   @default("✨")
+  leagueId            String?
+  seasonId            String?
+  priceCoins          Int      @default(0)
+  minimumLeaguePoints Int      @default(0)
+  purchaseEnabled     Boolean  @default(true)
+  rewardEnabled       Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  league   GameLeague?  @relation(fields: [leagueId], references: [id], onDelete: SetNull)
+  season   GameSeason?  @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  stickers GameSticker[]
+  owners   UserGameStickerBundle[]
+
+  @@index([isActive, sortOrder])
+}
+
+// Sticker assets are REFERENCES (asset_url), never binaries in the row (§73).
+model GameSticker {
+  id        String   @id @default(cuid())
+  bundleId  String
+  name      String
+  assetUrl  String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bundle   GameStickerBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  messages GameMessage[]
+
+  @@index([bundleId, sortOrder])
+}
+
+// Ownership (§68): source = purchase | league_reward | admin_grant.
+model UserGameStickerBundle {
+  id         String   @id @default(cuid())
+  userId     String
+  bundleId   String
+  source     String
+  acquiredAt DateTime @default(now())
+
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bundle GameStickerBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bundleId])
+  @@index([userId])
+}
+
+// ═══ ADMIN AUDIT (game-chat PRD §120) ═══════════════════════════════════════
+// Who changed what important configuration, and when. No FK — the audit
+// trail must survive the admin account being deleted.
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String
+  entityType String
+  entityId   String
+  meta       String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([adminId, createdAt])
+}

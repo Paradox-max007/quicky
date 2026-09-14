@@ -330,6 +330,96 @@ export const api = {
           body: JSON.stringify({ id }),
         }),
     },
+    // Game-chat PRD §69/§70/§115: admin sticker bundle + item management.
+    stickers: {
+      bundles: () =>
+        jsonFetch<{ bundles: any[]; leagues: any[]; seasons: any[] }>(
+          '/api/quicky/admin/stickers/bundles'
+        ),
+      createBundle: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; bundle: any }>('/api/quicky/admin/stickers/bundles', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      updateBundle: (id: string, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; bundle: any }>('/api/quicky/admin/stickers/bundles', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, data }),
+        }),
+      removeBundle: (id: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/stickers/bundles', {
+          method: 'DELETE',
+          body: JSON.stringify({ id }),
+        }),
+      listByBundle: (bundleId: string) =>
+        jsonFetch<{ stickers: any[] }>(`/api/quicky/admin/stickers?bundleId=${bundleId}`),
+      createSticker: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; sticker: any }>('/api/quicky/admin/stickers', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      updateSticker: (id: string, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; sticker: any }>('/api/quicky/admin/stickers', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, data }),
+        }),
+      removeSticker: (id: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/stickers', {
+          method: 'DELETE',
+          body: JSON.stringify({ id }),
+        }),
+    },
+  },
+  // ─── GAME CHAT (game-chat PRD §7+) — private player-to-player messaging,
+  // fully separate from the Dating Chat (matches) system above.
+  gameChat: {
+    conversations: () =>
+      jsonFetch<{ conversations: any[] }>('/api/quicky/game-chat/conversations'),
+    messages: (params: { peerUserId?: string; conversationId?: string; before?: string }) => {
+      const q = new URLSearchParams()
+      if (params.peerUserId) q.set('peerUserId', params.peerUserId)
+      if (params.conversationId) q.set('conversationId', params.conversationId)
+      if (params.before) q.set('before', params.before)
+      return jsonFetch<{
+        conversationId: string | null
+        peer: { id: string; name: string | null; avatar: string | null }
+        hasMore: boolean
+        oldestCursor: string | null
+        messages: any[]
+        myLastReadAt: string | null
+        peerLastReadAt: string | null
+      }>(`/api/quicky/game-chat/messages?${q.toString()}`)
+    },
+    send: (data: {
+      peerUserId?: string
+      conversationId?: string
+      messageType?: 'text' | 'sticker'
+      text?: string
+      stickerId?: string
+      replyToMessageId?: string
+      clientMessageId?: string
+    }) =>
+      jsonFetch<{ ok: boolean; conversationId: string; message: any }>(
+        '/api/quicky/game-chat/messages',
+        { method: 'POST', body: JSON.stringify(data) }
+      ),
+    markRead: (conversationId: string) =>
+      jsonFetch<{ ok: boolean; lastReadAt: string }>('/api/quicky/game-chat/read', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId }),
+      }),
+    react: (messageId: string, reaction: string | null) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/game-chat/react', {
+        method: 'POST',
+        body: JSON.stringify({ messageId, reaction }),
+      }),
+    stickers: () =>
+      jsonFetch<{ bundles: any[]; coinBalance: number }>('/api/quicky/game-chat/stickers'),
+    stickerAction: (action: 'purchase' | 'claim', bundleId: string) =>
+      jsonFetch<{ ok: boolean; coinBalance?: number; alreadyOwned?: boolean }>(
+        '/api/quicky/game-chat/stickers',
+        { method: 'POST', body: JSON.stringify({ action, bundleId }) }
+      ),
   },
   frames: {
     catalog: () =>

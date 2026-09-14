@@ -29,8 +29,10 @@ export type AppView =
   | 'profile-view'
   | 'spin-bottle'
   | 'spin-bottle-room'
+  | 'game-chat'
   | 'admin-gifts'
   | 'admin-rules'
+  | 'admin-stickers'
 
 export type QuickyUser = {
   id: string
@@ -154,6 +156,11 @@ type State = {
   communityFocusPostId: string | null
   // Active Spin the Bottle roomId (set when join succeeds; cleared on leave)
   spinBottleRoomId: string | null
+  // ─── Game Chat (private player-to-player, game-chat PRD §7) — SEPARATE
+  // from Dating Chat: own list, own messages, own notifications.
+  gameChatPeer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
+  // Where the back arrow returns to (room screen / game landing / chat list)
+  gameChatReturnView: AppView
 
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
@@ -180,6 +187,11 @@ type State = {
   openCommunityPost: (postId: string) => void
   clearCommunityFocus: () => void
   setSpinBottleRoomId: (id: string | null) => void
+  openGameChat: (
+    peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null },
+    returnView?: AppView
+  ) => void
+  closeGameChat: () => void
   logout: () => void
 }
 
@@ -194,6 +206,8 @@ export const useQuickyStore = create<State>((set) => ({
   paywall: null,
   communityFocusPostId: null,
   spinBottleRoomId: null,
+  gameChatPeer: null,
+  gameChatReturnView: 'spin-bottle',
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -225,6 +239,22 @@ export const useQuickyStore = create<State>((set) => ({
   clearPaywall: () => set({ paywall: null }),
   openCommunityPost: (postId) => set({ communityFocusPostId: postId, view: 'community' }),
   clearCommunityFocus: () => set({ communityFocusPostId: null }),
-  setSpinBottleRoomId: (id) => set({ spinBottleRoomId: id }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, communityFocusPostId: null }),
+  setSpinBottleRoomId: (id) => {
+    // game-chat PRD §100: the active room id survives a browser refresh so
+    // the runtime can be restored IF the server still says we are a member.
+    try {
+      if (id) localStorage.setItem('quicky_room_id', id)
+      else localStorage.removeItem('quicky_room_id')
+    } catch {}
+    set({ spinBottleRoomId: id })
+  },
+  openGameChat: (peer, returnView) =>
+    set({
+      gameChatPeer: peer,
+      gameChatReturnView: returnView ?? 'spin-bottle',
+      view: 'game-chat',
+    }),
+  closeGameChat: () =>
+    set((prev) => ({ view: prev.gameChatReturnView || 'spin-bottle', gameChatPeer: null })),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', communityFocusPostId: null }),
 }))

@@ -30,11 +30,16 @@ import { SpinBottleLanding } from './SpinBottleLanding'
 import { SpinBottleRoom } from './SpinBottleRoom'
 import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { AdminRulesScreen } from './AdminRulesScreen'
+import { AdminStickersScreen } from './AdminStickersScreen'
+import { GameChatScreen } from './game-chat/GameChatScreen'
+import { GameDecisionDrawer } from './game-chat/GameDecisionDrawer'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
 import { Toaster as SonnerToaster } from 'sonner'
 import { Capacitor } from '@capacitor/core'
+import { useGameChatStore } from '@/store/game-chat'
+import { useGameRoomStore } from '@/store/game-room'
 import { cn } from '@/lib/utils'
 import type { AppView } from '@/store/quicky'
 
@@ -63,6 +68,9 @@ function shellFor(view: AppView): string {
     case 'spin-bottle':
     case 'premium':
       return 'md:max-w-2xl'
+    case 'game-chat':
+      // §81: phone-style chat column on web
+      return 'md:max-w-lg'
     default:
       return 'md:max-w-3xl'
   }
@@ -89,7 +97,11 @@ export function AppRoot() {
         else if (v === 'spin-bottle-room') {
           useQuickyStore.getState().setSpinBottleRoomId(null)
           sv('spin-bottle')
-        } else if (v === 'admin-gifts' || v === 'admin-rules') {
+        } else if (v === 'game-chat') {
+          // game-chat PRD §97: back returns to the context that opened it
+          useGameChatStore.getState().closeConversation()
+          useQuickyStore.getState().closeGameChat()
+        } else if (v === 'admin-gifts' || v === 'admin-rules' || v === 'admin-stickers') {
           sv('settings')
         }
         // anything else → default Android behavior (navigate back / minimize)
@@ -107,6 +119,54 @@ export function AppRoot() {
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
   }, [user?.settings?.theme])
+
+  // ─── Room runtime restore after refresh (game-chat PRD §100) ────────────
+  // The server is authoritative: ask it whether the stored room id still
+  // has me as an active member. Yes → re-attach the runtime in the
+  // background (decision drawer works from any game-section screen). No →
+  // drop the stored id and NEVER restore game decision state.
+  useEffect(() => {
+    if (!hydrated) return
+    let cancelled = false
+    const stored = (() => {
+      try {
+        return localStorage.getItem('quicky_room_id')
+      } catch {
+        return null
+      }
+    })()
+    if (!stored) return
+    void (async () => {
+      try {
+        const res = await api.spinBottle.room(stored)
+        if (!cancelled && res?.snapshot) {
+          useQuickyStore.getState().setSpinBottleRoomId(stored)
+          useGameRoomStore.getState().attach(stored)
+        }
+      } catch {
+        try {
+          localStorage.removeItem('quicky_room_id')
+        } catch {}
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated])
+
+  // ─── GAME CHAT stream lifecycle (game-chat PRD §91) ──────────────────────
+  // ONE lightweight stream serves every conversation. It lives while the
+  // user is anywhere in the Spin the Bottle section (landing, table, chat,
+  // profile popped from the room) — and ends when they leave the section.
+  const gameSectionActive =
+    view === 'spin-bottle' ||
+    view === 'spin-bottle-room' ||
+    view === 'game-chat' ||
+    (view === 'profile-view' && useQuickyStore.getState().profileReturnView === 'spin-bottle-room')
+  useEffect(() => {
+    if (gameSectionActive) useGameChatStore.getState().connectStream()
+    else useGameChatStore.getState().disconnectStream()
+  }, [gameSectionActive])
 
   // Keep the unread-messages badge fresh across all tabs
   useEffect(() => {
@@ -212,6 +272,8 @@ export function AppRoot() {
           })()}
           {view === 'admin-gifts' && <AdminGiftsScreen />}
           {view === 'admin-rules' && <AdminRulesScreen />}
+          {view === 'admin-stickers' && <AdminStickersScreen />}
+          {view === 'game-chat' && <GameChatScreen />}
           </div>
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.
@@ -229,6 +291,11 @@ export function AppRoot() {
       <MatchCelebration />
       <PaywallModal />
       <GameInvitePopup />
+      {/* game-chat PRD §82: the off-screen decision drawer is a top-level
+          overlay — above chat content, composer and keyboard; it only ever
+          renders over game-section screens (§53) and never over the table
+          itself (§54), which has its own inline duel UI. */}
+      <GameDecisionDrawer />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
           app on desktop and respects safe-area on mobile.

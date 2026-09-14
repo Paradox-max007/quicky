@@ -18,6 +18,7 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { HowItWorksRules } from './HowItWorksRules'
+import { GameChatList } from './game-chat/GameChatList'
 
 type Stats = {
   gamesPlayed: number
@@ -263,6 +264,10 @@ export function SpinBottleLanding({
                   slow readable rotation, stable height — DB-driven via
                   /games/spin-bottle/rules (fallback copy if empty). */}
               <HowItWorksRules />
+
+              {/* game-chat PRD §8: Game Chats live INSIDE the Spin the
+                  Bottle section, separate from Dating → Chats (§7). */}
+              <GameChatList />
             </motion.div>
           )}
         </AnimatePresence>

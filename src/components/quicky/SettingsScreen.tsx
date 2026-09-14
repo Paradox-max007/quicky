@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Settings as SettingsIcon, User, Phone, Mail, SlidersHorizontal,
   Bell, Palette, Shield, Lock, HelpCircle, FileText, LogOut, ChevronRight,
-  Crown, RefreshCw, AlertCircle, Gift,
+  Crown, RefreshCw, AlertCircle, Gift, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -81,6 +81,13 @@ export function SettingsScreen() {
                 icon: HelpCircle,
                 chevron: true,
                 onClick: () => setView('admin-rules'),
+              },
+              {
+                id: 'admin-stickers',
+                label: 'Sticker Bundles',
+                icon: Sparkles,
+                chevron: true,
+                onClick: () => setView('admin-stickers'),
               },
             ] as Row[],
           },

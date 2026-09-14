@@ -1,4 +1,4 @@
-// Quicky — shared ADMIN API guard (lifecycle PRD §30/§35/§36)
+// Quicky — shared ADMIN API guard (lifecycle PRD §30/§35/§36 + game-chat §127)
 //
 // Every protected backend operation resolves the caller's session, then
 // re-reads `isAdmin` FRESH from the database on every request. Non-admins
@@ -15,4 +15,28 @@ export async function requireAdmin(): Promise<
   const u = await db.user.findUnique({ where: { id: me.id }, select: { isAdmin: true } })
   if (!u?.isAdmin) return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) }
   return { me }
+}
+
+// ─── Admin audit trail (game-chat PRD §120) ────────────────────────────────
+// Record who changed what important configuration (gift price changes,
+// activation toggles, sticker bundles, rules). Fire-and-forget safe: audit
+// failures must never break the admin operation itself.
+export async function logAdminAction(
+  adminId: string,
+  action: string,
+  entityType: string,
+  entityId: string,
+  meta?: unknown
+) {
+  await db.adminAuditLog
+    .create({
+      data: {
+        adminId,
+        action,
+        entityType,
+        entityId,
+        meta: meta === undefined ? null : JSON.stringify(meta).slice(0, 2000),
+      },
+    })
+    .catch(() => {})
 }

@@ -36,8 +36,7 @@ import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
-import { joinRoomChannel } from '@/lib/quicky/realtime'
-import type { RoomChannel } from '@/lib/quicky/realtime'
+import { useGameRoomStore } from '@/store/game-room'
 import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import {
   calculateTableGeometry,
@@ -56,49 +55,6 @@ import { CoinStoreSheet } from './CoinStoreSheet'
 import { PlayerInteractionSheet, type CatalogGift, type InteractionPlayer } from './PlayerInteractionSheet'
 import { GiftSheet } from './GiftSheet'
 import './spin-bottle-room.css'
-
-type Snapshot = {
-  roomId: string
-  status: string
-  maxPlayers: number
-  minPlayers: number
-  currentTurnIdx: number
-  /** Lifecycle §6/§23 — when the room became a 1-player room (ISO), else null. */
-  singletonStartedAt: string | null
-  players: {
-    userId: string
-    seatIndex: number
-    turnIndex: number
-    connection: string
-    isActive: boolean
-    displayName: string
-    avatar: string | null
-    gender: string | null
-    kissPoints: number
-  }[]
-  currentSpin: {
-    id: string
-    spinnerId: string
-    targetId: string | null
-    startRotation: number
-    endRotation: number
-    duration: number
-    status: string
-    response: string | null
-    spinnerResponse: string | null
-    targetResponse: string | null
-    result: string | null
-    responseDeadline: string | null
-  } | null
-  myTurnIndex: number
-  myTurnIs: boolean
-  iAmTarget: boolean
-  iAmSpinner: boolean
-  serverNow: number
-  /** v3 §19-§25 — viewer economy, authoritative on EVERY snapshot push. */
-  viewer: { coinBalance: number; kissPoints: number; giftsReceived: number }
-  recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
-}
 
 // The 12-seat ring + duel spotlight are derived per-measure from the shared
 // geometry engine (PRD v2.1 §64 — calculateTableGeometry is the ONLY source).
@@ -128,6 +84,12 @@ function openSeatLabel(seatIndex: number) {
   return seatIndex === 6 ? 'Invite' : 'Open Seat'
 }
 
+// ─── SHARED GAME ROOM RUNTIME (game-chat PRD §5/§6) ─────────────────────────
+// ALL game state (snapshot, chat, economy, optimistic response, closure) and
+// ALL sync machinery (SSE, recovery poll, presence ping, realtime channel)
+// live in useGameRoomStore — the runtime survives navigating away to Game
+// Chat / profiles and both the table UI and the decision drawer consume it.
+// This component is now purely PRESENTATION over the shared runtime.
 export function SpinBottleRoom({
   roomId: initialRoomId,
   onClose,
@@ -137,27 +99,28 @@ export function SpinBottleRoom({
 }) {
   const me = useQuickyStore((s) => s.user)
   const meId = me?.id ?? ''
-  // Room id lives in state so "Change Table" can swap rooms without a
-  // remount of the whole app shell (§65).
-  const [roomId, setRoomId] = useState(initialRoomId)
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  const [chat, setChat] = useState<RoomMessage[]>([])
+  // Runtime state (shared — survives navigation to chat/profile)
+  const storeRoomId = useGameRoomStore((s) => s.roomId)
+  const roomId = storeRoomId ?? initialRoomId
+  const snapshot = useGameRoomStore((s) => s.snapshot)
+  const chat = useGameRoomStore((s) => s.chat)
+  const economy = useGameRoomStore((s) => s.economy)
+  const closure = useGameRoomStore((s) => s.closure)
+  const optimistic = useGameRoomStore((s) => s.optimistic)
+  const bumpEconomy = useGameRoomStore((s) => s.bumpEconomy)
+  const setCoinBalance = useGameRoomStore((s) => s.setCoinBalance)
+  const getSkew = useGameRoomStore((s) => s.getSkew)
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
   const [switching, setSwitching] = useState(false)
   // Duel spotlight presentation state — `dismissedSpinId` is the spin whose
-  // result panel has been shown & dismissed (cards slide back); `myResponse`
-  // is the optimistic answer of THIS client (the responder sees the result
-  // instantly, before the stream confirms it).
+  // result panel has been shown & dismissed (cards slide back).
   const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
   const [settleDone, setSettleDone] = useState(true)
   const [kbHeight, setKbHeight] = useState(0)
-  // ─── v3 state domains (§91): economy, coin store, gift sheet, player
-  // interaction — each isolated so a gift arriving never rebuilds the table.
-  const [economy, setEconomy] = useState({ coinBalance: 0, kissPoints: 0, giftsReceived: 0 })
-  const economyRef = useRef(economy)
-  economyRef.current = economy
+  // ─── v3 state domains (§91): coin store, gift sheet, player interaction —
+  // each isolated so a gift arriving never rebuilds the table.
   const [gamesPlayed, setGamesPlayed] = useState(0) // HUD 🏆 (DB-driven)
   const [showCoinStore, setShowCoinStore] = useState(false)
   const [showGiftSheet, setShowGiftSheet] = useState(false)
@@ -171,29 +134,7 @@ export function SpinBottleRoom({
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
-  const [streamOk, setStreamOk] = useState(false)
-  // ─── Room-lifecycle closure state (lifecycle PRD §27/§28/§29): when the
-  // server deletes this room (empty / 5-min singleton / manual close) the
-  // UI must NEVER pretend the room still exists — a full-screen dialog
-  // explains why and walks the player back to the game screen.
-  const [closure, setClosure] = useState<null | { reason: string }>(null)
-  const closureHandledRef = useRef(false)
-  const spinStartTimeRef = useRef<number>(0)
-  const roomChannelRef = useRef<RoomChannel | null>(null)
-  // Server clock skew (ms) — remaining = deadline − (localNow + skew) (§29)
-  const clockSkewRef = useRef(0)
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Indirection refs so stable hook callbacks can reach later-defined fns
-  const optResetRef = useRef<() => void>(() => {})
-  const reconcileRef = useRef<() => void>(() => {})
-  const toastMsgRef = useRef<(m: string) => void>(() => {})
-  // ─── Optimistic round response (v2.1 §4-§13) — the button flips THIS
-  // frame; the server request is fired right after, asynchronously.
-  const optResponse = useOptimisticResponse({
-    reconcile: () => reconcileRef.current(),
-    onError: (m) => toastMsgRef.current(m),
-  })
-  optResetRef.current = optResponse.reset
 
   // Keep a locked copy of the stage height so that, on engines that still
   // resize the layout when the keyboard shows (older WebViews / browsers
@@ -286,15 +227,34 @@ export function SpinBottleRoom({
     }
   }, [])
 
-  // ─── Economy (§21-§25/§91): the snapshot is authoritative — server wins
-  // on every push, so optimistic HUD bumps reconcile automatically.
-  const bumpEconomy = useCallback((delta: Partial<{ coinBalance: number; kissPoints: number; giftsReceived: number }>) => {
-    setEconomy((e) => ({
-      coinBalance: e.coinBalance + (delta.coinBalance ?? 0),
-      kissPoints: e.kissPoints + (delta.kissPoints ?? 0),
-      giftsReceived: e.giftsReceived + (delta.giftsReceived ?? 0),
-    }))
-  }, [])
+  // ─── RUNTIME ATTACH (game-chat PRD §5/§99) ──────────────────────────────
+  // The shared runtime owns the SSE stream, recovery poll, presence ping and
+  // realtime channel. attach() is idempotent — remounting this screen after
+  // visiting Game Chat re-attaches to the SAME live runtime (no restart).
+  useEffect(() => {
+    useGameRoomStore.getState().attach(initialRoomId)
+  }, [initialRoomId])
+
+  // ─── Spin-transition presentation (new spin / room swap) ─────────────────
+  // The store resets its optimistic answer when a new spin id appears; this
+  // effect drives the PRESENTATION side: bottle rotation target, the ~150ms
+  // settle beat before the duel slide (§24) and the dismissed-result flag.
+  const spinId = snapshot?.currentSpin?.id ?? null
+  useEffect(() => {
+    if (!roomId) return
+    setDismissedSpinId(null)
+    const spin = snapshot?.currentSpin
+    if (spin) {
+      setDisplayedRotation({ start: spin.startRotation, end: spin.endRotation })
+      setSettleDone(false)
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
+      settleTimerRef.current = setTimeout(() => setSettleDone(true), SETTLE_MS)
+    } else {
+      setDisplayedRotation({ start: 0, end: 0 })
+      setSettleDone(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, spinId])
 
   // ─── Keyboard OVERLAY mode (unchanged from v2.1) ─────────────────────────
   useEffect(() => {
@@ -334,177 +294,8 @@ export function SpinBottleRoom({
     }
   }, [])
 
-  // Supabase Realtime — instant chat push + economy nudges for room members
-  useEffect(() => {
-    if (!roomId) return
-    const ch = joinRoomChannel(roomId, {
-      onChat: (payload) => {
-        const p = payload as any
-        if (!p?.userId || (!p?.id && !p?.messageId)) return
-        // §57: only real chat traffic flows through realtime — game/table
-        // events never render as messages (join/leave arrive via snapshot).
-        const kind = p.kind || 'user'
-        if (kind !== 'user' && kind !== 'join' && kind !== 'leave') return
-        const msg: RoomMessage = {
-          id: p.id || p.messageId || `rt_${Date.now()}`,
-          userId: p.userId,
-          text: p.text || '',
-          kind,
-          createdAt: p.createdAt || new Date().toISOString(),
-          replyTo: p.replyTo ?? null,
-        }
-        setChat((prev) => {
-          // de-duplicate: replace optimistic tmp_ msg or skip if already present
-          const withoutTmp = prev.filter(
-            (m) => m.userId !== msg.userId || !m.id.startsWith('tmp_') || m.text !== msg.text
-          )
-          if (withoutTmp.some((m) => m.id === msg.id)) return withoutTmp
-          return [...withoutTmp, msg]
-        })
-      },
-      // v3 §59/§60: a gift landing on ME bumps my 🎁 HUD immediately (the
-      // authoritative snapshot reconciles on the next SSE push).
-      onGift: (payload) => {
-        const p = payload as any
-        if (p?.recipientId === (useQuickyStore.getState().user?.id ?? '')) {
-          bumpEconomy({ giftsReceived: Math.max(1, Number(p?.quantity ?? 1)) })
-        }
-      },
-      onBalance: (payload) => {
-        const p = payload as any
-        if (p?.userId === (useQuickyStore.getState().user?.id ?? '') && Number.isFinite(p?.coinBalance)) {
-          setEconomy((e) => ({ ...e, coinBalance: Number(p.coinBalance) }))
-        }
-      },
-    })
-    roomChannelRef.current = ch
-    return () => {
-      ch?.unsubscribe()
-      roomChannelRef.current = null
-    }
-  }, [roomId, bumpEconomy])
-
-  // Apply snapshot, handling side effects for spin transitions
-  const applySnapshot = useCallback((s: Snapshot) => {
-    if (s.serverNow) clockSkewRef.current = s.serverNow - Date.now()
-    // v3 §25: server economy is authoritative — reconciles any optimistic HUD
-    // bump (kiss +1, coin spend) the moment the fresh snapshot lands.
-    if (s.viewer) setEconomy({ coinBalance: s.viewer.coinBalance, kissPoints: s.viewer.kissPoints, giftsReceived: s.viewer.giftsReceived })
-    setSnapshot((prev) => {
-      // Track spin start for the bottle
-      if (s.currentSpin && (!prev?.currentSpin || prev.currentSpin.id !== s.currentSpin.id)) {
-        spinStartTimeRef.current = Date.now()
-        setDisplayedRotation({ start: s.currentSpin.startRotation, end: s.currentSpin.endRotation })
-        // A NEW spin invalidates any stale optimistic answer (§88)
-        optResetRef.current()
-        setDismissedSpinId(null)
-        // Cards must wait for the settle beat after the bottle stops (§24)
-        setSettleDone(false)
-        if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
-        settleTimerRef.current = setTimeout(() => setSettleDone(true), SETTLE_MS)
-      }
-      return s
-    })
-    // Update chat list — merge preserving optimistic/realtime items and replyTo
-    setChat((prev) => {
-      const prevMap = new Map(prev.map((m) => [m.id, m]))
-      const merged = s.recentMessages.map((m) => {
-        const existing = prevMap.get(m.id)
-        return {
-          ...m,
-          replyTo: existing?.replyTo ?? null,
-        }
-      })
-      const pendingOptimistic = prev.filter((m) => m.id.startsWith('tmp_'))
-      return [...merged, ...pendingOptimistic]
-    })
-  }, [])
-
-  // ─── GAME-STATE SYNC — SSE stream is primary (PRD STEP 3) ────────────────
-  // Lifecycle §27: a `room_gone` push stops everything and surfaces the
-  // closure dialog — never a silent retry loop against a deleted room.
-  const handleRoomGone = useCallback(async () => {
-    if (closureHandledRef.current) return
-    closureHandledRef.current = true
-    let reason = 'closed'
-    try {
-      const st = await api.spinBottle.roomStatus(roomId)
-      if (st?.closed && st.reason) reason = st.reason
-    } catch {}
-    setClosure({ reason })
-  }, [roomId])
-
-  useEffect(() => {
-    if (!roomId || closureHandledRef.current) return
-    let es: EventSource | null = null
-    let cancelled = false
-    try {
-      es = new EventSource(`/api/quicky/games/spin-bottle/stream?roomId=${encodeURIComponent(roomId)}`)
-      es.addEventListener('snapshot', (e) => {
-        if (cancelled) return
-        try {
-          const snap = JSON.parse((e as MessageEvent).data) as Snapshot
-          setStreamOk(true)
-          applySnapshot(snap)
-        } catch {}
-      })
-      es.addEventListener('room_gone', () => {
-        if (!cancelled) void handleRoomGone()
-      })
-      es.onerror = () => {
-        // EventSource auto-reconnects; flag down so the recovery poll resumes
-        setStreamOk(false)
-      }
-    } catch {
-      setStreamOk(false)
-    }
-    return () => {
-      cancelled = true
-      es?.close()
-      setStreamOk(false)
-    }
-  }, [roomId, applySnapshot, handleRoomGone])
-
-  // Recovery poll — runs ONLY while the stream is down (PRD §2/§63: polling
-  // is a recovery mechanism, never the primary sync path). Lifecycle §27:
-  // a `closed: true` 404 body means the room was DELETED — surface the
-  // closure dialog instead of polling a ghost forever.
-  useEffect(() => {
-    if (!roomId || streamOk || closureHandledRef.current) return
-    let cancelled = false
-    const tick = async () => {
-      try {
-        const res = await api.spinBottle.room(roomId)
-        if (!cancelled && res?.snapshot) applySnapshot(res.snapshot)
-      } catch (e: any) {
-        if (e?.body?.closed || e?.status === 404) {
-          void handleRoomGone()
-          return
-        }
-        // Silent: keep recovering
-      }
-    }
-    tick()
-    const t = setInterval(tick, 3000)
-    return () => {
-      cancelled = true
-      clearInterval(t)
-    }
-  }, [roomId, streamOk, applySnapshot, handleRoomGone])
-
-  // ─── Presence keep-alive (lifecycle §12/§13): the server tracks room
-  // activity authoritatively. While THIS screen is open we ping every 60s
-  // (throttled server-side); if the app dies the pings stop and the cleanup
-  // worker auto-leaves us after 10 minutes.
-  useEffect(() => {
-    if (!roomId) return
-    const beat = () => {
-      void api.spinBottle.ping(roomId).catch(() => {})
-    }
-    beat()
-    const t = setInterval(beat, 60_000)
-    return () => clearInterval(t)
-  }, [roomId])
+  // Supabase room realtime channel + SSE + recovery poll + presence ping now
+  // live in the shared runtime (useGameRoomStore.attach above).
 
   // ─── Response countdown — derived from the SERVER deadline (§29/§34-§40).
   // The hook owns everything: 250ms ticks, hard stop at exactly 0, a short
@@ -514,8 +305,7 @@ export function SpinBottleRoom({
   const deadlineMs = awaiting && currentSpinForTimer?.responseDeadline
     ? new Date(currentSpinForTimer.responseDeadline).getTime()
     : null
-  const getClockSkew = useCallback(() => clockSkewRef.current, [])
-  const { remaining, expired, timeUp } = useRoundTimer(deadlineMs, getClockSkew)
+  const { remaining, expired, timeUp } = useRoundTimer(deadlineMs, getSkew)
 
   // ─── DUEL RESULT FLOW (§31/§32) ───────────────────────────────────────────
   // When the round completes, the result panel replaces the response panel for
@@ -530,71 +320,18 @@ export function SpinBottleRoom({
     return () => clearTimeout(t)
   }, [snapshot?.currentSpin?.id, snapshot?.currentSpin?.status, dismissedSpinId])
 
-  // ─── Round response (§4-§13): instant optimistic UI + async server sync ──
+  // ─── Round response (§4-§13 + game-chat PRD §38/§110): the SHARED action.
+  // Both the table UI and the off-screen decision drawer call exactly this —
+  // one optimistic flip, one respond API, one set of guards.
   const respond = (choice: 'yes' | 'no') => {
-    if (!snapshot?.currentSpin || !roomId) return
-    if (snapshot.currentSpin.status !== 'awaiting') return
-    // §9: only the spinner or the target may respond
-    if (!snapshot.iAmTarget && !snapshot.iAmSpinner) return
-    // §6/§8: local selection flips NOW; submit fires right after (void)
-    optResponse.choose(snapshot.currentSpin.id, choice, (c) =>
-      api.spinBottle.respond(roomId, c)
-    )
+    useGameRoomStore.getState().respond(choice)
   }
 
-  // Authoritative snapshot fetch — used by the optimistic hook to reconcile
-  // after server confirmations/rejections (§7/§10/§88).
-  const reconcile = useCallback(async () => {
-    if (!roomId) return
-    try {
-      const res = await api.spinBottle.room(roomId)
-      if (res?.snapshot) applySnapshot(res.snapshot)
-    } catch {
-      // stream/recovery poll covers it
-    }
-     
-  }, [roomId])
-  reconcileRef.current = () => void reconcile()
-  toastMsgRef.current = (m: string) => toast.error(m)
-
   const sendChat = async (t: string, replyTo?: RoomMessage['replyTo']) => {
-    const text = t.trim()
-    if (!text || sendingChat || !roomId) return
+    if (sendingChat) return
     setSendingChat(true)
-    // Optimistic insert
-    const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    const optimistic: RoomMessage = {
-      id: tmpId,
-      userId: meId,
-      text,
-      kind: 'user',
-      createdAt: new Date().toISOString(),
-      replyTo: replyTo ?? null,
-    }
-    setChat((prev) => [...prev, optimistic])
     try {
-      const res = await api.spinBottle.sendChat(roomId, text)
-      if (res?.message) {
-        const confirmed: RoomMessage = { ...res.message, replyTo: replyTo ?? null }
-        // Broadcast to all other room members via Supabase Realtime
-        roomChannelRef.current?.sendChat({
-          id: confirmed.id,
-          messageId: confirmed.id,
-          userId: confirmed.userId,
-          text: confirmed.text,
-          kind: confirmed.kind,
-          createdAt: confirmed.createdAt,
-          replyTo: confirmed.replyTo,
-        })
-        setChat((prev) => {
-          const without = prev.filter((m) => m.id !== tmpId)
-          if (without.some((m) => m.id === confirmed.id)) return without
-          return [...without, confirmed]
-        })
-      }
-    } catch (e: any) {
-      toast.error(e.message ?? 'Failed to send')
-      setChat((prev) => prev.filter((m) => m.id !== tmpId))
+      await useGameRoomStore.getState().sendChat(t, replyTo)
     } finally {
       setSendingChat(false)
     }
@@ -628,11 +365,15 @@ export function SpinBottleRoom({
     toast(`Tag — coming soon. You picked ${p.displayName}.`)
     setInteraction(null)
   }
-  const handleMessage = (_p: InteractionPlayer) => {
-    // §44: no DM layer between non-matched players yet — explicit notice,
-    // never a silent failure.
-    toast('Direct messages are coming soon!')
+  const handleMessage = (p: InteractionPlayer) => {
+    // Game-chat PRD §94/§96: Message opens the PRIVATE GAME CHAT with this
+    // player; the interaction popup must close first (never linger behind
+    // the chat route).
     setInteraction(null)
+    useQuickyStore.getState().openGameChat(
+      { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar },
+      'spin-bottle-room'
+    )
   }
   const handleProfile = (p: InteractionPlayer) => {
     // §45: the app's real profile route
@@ -649,11 +390,11 @@ export function SpinBottleRoom({
     try {
       const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id)
       if (res?.ok) {
-        setEconomy((e) => ({ ...e, coinBalance: res.coinBalance }))
+        setCoinBalance(res.coinBalance)
         // Supabase cosmetic push for the rest of the table (toast path)
         const me2 = useQuickyStore.getState().user
         const recipientName = snapshot?.players.find((p) => p.userId === recipientId)?.displayName
-        roomChannelRef.current?.sendGift({
+        useGameRoomStore.getState().broadcastGift({
           senderId: me2?.id ?? '',
           senderName: me2?.name ?? 'Someone',
           recipientId,
@@ -669,9 +410,9 @@ export function SpinBottleRoom({
     } catch (e: any) {
       // Revert the optimistic spend (server value wins if provided)
       if (e?.body?.coinBalance !== undefined) {
-        setEconomy((prev) => ({ ...prev, coinBalance: Number(e.body.coinBalance) }))
+        setCoinBalance(Number(e.body.coinBalance))
       } else {
-        void reconcile()
+        void useGameRoomStore.getState().reconcile()
       }
       if (e?.body?.error === 'insufficient_coins') {
         toast.error('Not enough coins — top up in the coin store.')
@@ -687,6 +428,8 @@ export function SpinBottleRoom({
     try {
       await api.spinBottle.leave(roomId)
     } catch {}
+    // Room left → the background runtime ends (game-chat PRD §56).
+    useGameRoomStore.getState().detach()
     onClose()
   }
 
@@ -707,13 +450,10 @@ export function SpinBottleRoom({
       const res = await api.spinBottle.join()
       if (res?.roomId && res.roomId !== roomId) {
         useQuickyStore.getState().setSpinBottleRoomId(res.roomId)
-        setSnapshot(null)
-        setChat([])
-        setDismissedSpinId(null)
-        optResetRef.current()
-        setDisplayedRotation({ start: 0, end: 0 })
-        setRoomId(res.roomId)
-        if (res.snapshot) applySnapshot(res.snapshot)
+        // attach() resets the runtime state (snapshot/chat/optimistic/closure)
+        // for the new room; the presentation effect below re-syncs the
+        // rotation/settle/dismissed flags from the roomId change.
+        useGameRoomStore.getState().attach(res.roomId)
         toast('Moved to a new table 🍾')
       } else {
         toast('No other table available right now — try again soon.')
@@ -771,8 +511,8 @@ export function SpinBottleRoom({
   // Optimistic answer of THIS client (v2.1 §6: set the instant the finger
   // lifts — never gated on the network) — never rendered as a result.
   const optimisticChoice =
-    optResponse.response && currentSpin && optResponse.response.spinId === currentSpin.id
-      ? optResponse.response.choice
+    optimistic && currentSpin && optimistic.spinId === currentSpin.id
+      ? optimistic.choice
       : null
   // My confirmed choice (server) or optimistic one — drives the locked chip
   // and disables the buttons after answering (§59: cannot change the answer).
@@ -799,7 +539,7 @@ export function SpinBottleRoom({
   }, [alone])
   const singletonCloseInMs =
     alone && snapshot?.singletonStartedAt
-      ? new Date(snapshot.singletonStartedAt).getTime() + 5 * 60_000 - (nowTick + clockSkewRef.current)
+      ? new Date(snapshot.singletonStartedAt).getTime() + 5 * 60_000 - (nowTick + getSkew())
       : null
   const singletonCloseLabel =
     singletonCloseInMs == null
@@ -1255,7 +995,12 @@ export function SpinBottleRoom({
                       : 'This room was closed. Try playing again to find another room.'}
                 </p>
                 <button
-                  onClick={onClose}
+                  onClick={() => {
+                    // Game-chat PRD §131: room deleted → runtime ends; the
+                    // chat list stays available but the game session is over.
+                    useGameRoomStore.getState().dismissClosure()
+                    onClose()
+                  }}
                   className="mt-2 bg-coral-gradient glow-coral rounded-2xl py-3 px-8 font-bold tracking-wide active:scale-[0.98] transition-transform"
                 >
                   BACK TO GAME
@@ -1270,7 +1015,7 @@ export function SpinBottleRoom({
           open={showCoinStore}
           onClose={() => setShowCoinStore(false)}
           coinBalance={economy.coinBalance}
-          onPurchased={(newBalance) => setEconomy((e) => ({ ...e, coinBalance: newBalance }))}
+          onPurchased={(newBalance) => setCoinBalance(newBalance)}
         />
 
         {/* ═══ v3 §40-§46 — player interaction (mobile sheet / desktop popover) */}
@@ -1299,7 +1044,7 @@ export function SpinBottleRoom({
           meId={meId}
           coinBalance={economy.coinBalance}
           onGiftSent={(newBalance) => {
-            setEconomy((e) => ({ ...e, coinBalance: newBalance }))
+            setCoinBalance(newBalance)
             // My sent total also moves — the next snapshot reconciles fully.
           }}
         />

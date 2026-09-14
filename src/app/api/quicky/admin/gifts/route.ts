@@ -13,7 +13,7 @@
 // isActive, sortOrder. Category fields (§63): name, slug, icon, sortOrder.
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requireAdmin } from '@/lib/quicky/admin'
+import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
         isActive: data.isActive !== false,
       },
     })
+    await logAdminAction(gate.me.id, 'create', 'gift_category', created.id, { name: created.name })
     return NextResponse.json({ ok: true, category: created })
   }
 
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
         sortOrder: Number.isFinite(Number(data.sortOrder)) ? Math.floor(Number(data.sortOrder)) : 99,
       },
     })
+    await logAdminAction(gate.me.id, 'create', 'gift', created.id, { name: created.name, priceCoins: price })
     return NextResponse.json({ ok: true, gift: created })
   }
 
@@ -116,6 +118,7 @@ export async function PATCH(req: NextRequest) {
     if (!Object.keys(patch).length) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
     const updated = await db.giftCategory.update({ where: { id }, data: patch }).catch(() => null)
     if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    await logAdminAction(gate.me.id, 'update', 'gift_category', id, patch)
     return NextResponse.json({ ok: true, category: updated })
   }
 
@@ -149,6 +152,7 @@ export async function PATCH(req: NextRequest) {
     if (!Object.keys(patch).length) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
     const updated = await db.gameItem.update({ where: { id }, data: patch }).catch(() => null)
     if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    await logAdminAction(gate.me.id, 'update', 'gift', id, patch)
     return NextResponse.json({ ok: true, gift: updated })
   }
 
@@ -168,11 +172,13 @@ export async function DELETE(req: NextRequest) {
   if (kind === 'category') {
     const updated = await db.giftCategory.update({ where: { id }, data: { isActive: false } }).catch(() => null)
     if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    await logAdminAction(gate.me.id, 'deactivate', 'gift_category', id)
     return NextResponse.json({ ok: true })
   }
   if (kind === 'gift') {
     const updated = await db.gameItem.update({ where: { id }, data: { isActive: false } }).catch(() => null)
     if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    await logAdminAction(gate.me.id, 'deactivate', 'gift', id)
     return NextResponse.json({ ok: true })
   }
   return NextResponse.json({ error: 'invalid_kind' }, { status: 400 })
