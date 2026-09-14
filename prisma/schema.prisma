@@ -81,6 +81,10 @@ model User {
   // Kiss Points — earned when another round participant chooses ❤️ for you
   // (kept in sync with KissPointTransaction rows, PRD §5/§6)
   kissPoints          Int              @default(0)
+  gamesPlayed         Int              @default(0)
+  kissesGiven         Int              @default(0)
+  giftsSentCount      Int              @default(0)
+  giftsReceivedCount  Int              @default(0)
   sentGifts           SpinRoomGift[]   @relation("GiftSender")
   receivedGifts       SpinRoomGift[]   @relation("GiftRecipient")
   coinLedger          CoinLedger[]
@@ -444,6 +448,7 @@ model SpinRoom {
   // ID of the active spin row (kept here for fast polling lookup)
   currentSpinId   String?
   startedAt       DateTime?
+  singletonStartedAt DateTime?
   lastActivityAt  DateTime @default(now())
   createdAt       DateTime @default(now())
   players         SpinRoomPlayer[]
@@ -466,6 +471,7 @@ model SpinRoomPlayer {
   connection    String   @default("online")
   joinedAt      DateTime @default(now())
   leftAt        DateTime?
+  lastActivityAt DateTime @default(now())
   isActive      Boolean  @default(true)
   room          SpinRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -473,6 +479,7 @@ model SpinRoomPlayer {
   @@unique([roomId, userId])
   @@index([userId, leftAt])
   @@index([roomId, isActive, turnIndex])
+  @@index([roomId, isActive, lastActivityAt])
 }
 
 model SpinBottleSpin {
@@ -681,5 +688,33 @@ model UserFrame {
   frame     ProfileFrame @relation(fields: [frameId], references: [id], onDelete: Cascade)
   @@unique([userId, frameId])
   @@index([userId, equipped])
+}
+
+// "How It Works" rules (admin managed, lifecycle PRD §44/§48/§49)
+model GameRule {
+  id          String   @id @default(cuid())
+  gameType    String   @default("spin_the_bottle")
+  title       String
+  description String
+  icon        String   @default("🎲")
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([gameType, isActive, sortOrder])
+}
+
+// Record WHY a user's room vanished — survives the room itself (§28/§29)
+model SpinRoomClosure {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  // "singleton" | "inactivity" | "closed"
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([roomId, userId, createdAt])
+  @@index([createdAt])
 }
 
