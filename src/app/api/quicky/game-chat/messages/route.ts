@@ -20,6 +20,7 @@ import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import {
   amIMember,
+  awardQuickyImage,
   canonicalPair,
   ensureMembers,
   getOrCreateConversation,
@@ -30,10 +31,15 @@ import {
   MESSAGE_PAGE_SIZE,
 } from '@/lib/quicky/game-chat'
 import { emitGameChatPair } from '@/lib/quicky/game-chat-events'
+import { rateLimit } from '@/lib/quicky/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
 const MAX_TEXT = 2000
+// Message types (bug-fix PRD §81). Media URLs MUST come from our own upload
+// endpoint (§117 — never an arbitrary client-supplied external URL).
+const MEDIA_TYPES = new Set(['image', 'voice', 'quicky_image'])
+const ALL_TYPES = new Set(['text', 'sticker', ...MEDIA_TYPES])
 
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser()
@@ -89,8 +95,15 @@ export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // §120: basic server-side flood protection (messages + media uploads).
+  if (!rateLimit('gchat_msg', me.id, 30)) {
+    return NextResponse.json({ error: 'rate_limited' }, { status: 429 })
+  }
+
   const body = await req.json().catch(() => null)
-  const messageType = body?.messageType === 'sticker' ? 'sticker' : 'text'
+  const messageType = typeof body?.messageType === 'string' && ALL_TYPES.has(body.messageType)
+    ? body.messageType
+    : 'text'
   let peerUserId: string | null = body?.peerUserId ? String(body.peerUserId) : null
   let conversationId: string | null = body?.conversationId ? String(body.conversationId) : null
 
@@ -119,11 +132,13 @@ export async function POST(req: NextRequest) {
   // ── Validate payload (§75 — never trust the client) ─────────────────────
   let text: string | null = null
   let stickerId: string | null = null
+  let mediaUrl: string | null = null
+  let mediaDuration: number | null = null
 
   if (messageType === 'text') {
     text = String(body?.text ?? '').trim().slice(0, MAX_TEXT)
     if (!text) return NextResponse.json({ error: 'text_required' }, { status: 400 })
-  } else {
+  } else if (messageType === 'sticker') {
     stickerId = body?.stickerId ? String(body.stickerId) : null
     if (!stickerId) return NextResponse.json({ error: 'stickerId_required' }, { status: 400 })
     const sticker = await db.gameSticker.findUnique({
@@ -138,6 +153,22 @@ export async function POST(req: NextRequest) {
       where: { userId_bundleId: { userId: me.id, bundleId: sticker.bundle.id } },
     })
     if (!owned) return NextResponse.json({ error: 'sticker_not_owned' }, { status: 403 })
+  } else {
+    // ── image | voice | quicky_image (bug-fix PRD §56-§67/§116-§118) ──
+    if (!rateLimit('gchat_media', me.id, 12)) {
+      return NextResponse.json({ error: 'rate_limited' }, { status: 429 })
+    }
+    mediaUrl = body?.mediaUrl ? String(body.mediaUrl) : null
+    // §117/§118: ONLY our own upload endpoint's paths are accepted — an
+    // arbitrary external URL can never be injected into the message DB.
+    if (!mediaUrl || !mediaUrl.startsWith('/uploads/')) {
+      return NextResponse.json({ error: 'media_required' }, { status: 400 })
+    }
+    if (messageType === 'voice') {
+      const d = Number(body?.mediaDuration)
+      mediaDuration = Number.isFinite(d) && d > 0 && d <= 5 * 60_000 ? Math.round(d) : null
+      if (!mediaDuration) return NextResponse.json({ error: 'media_duration_required' }, { status: 400 })
+    }
   }
 
   // Reply reference must belong to the same conversation (§27)
@@ -151,33 +182,51 @@ export async function POST(req: NextRequest) {
 
   const clientMessageId = body?.clientMessageId ? String(body.clientMessageId).slice(0, 64) : null
 
-  // ── Idempotent insert (§92/§93) + lastMessageAt stamp ────────────────────
-  const created = await db.gameMessage
-    .create({
+  const insertMessage = () =>
+    db.gameMessage.create({
       data: {
         conversationId: conversationId!,
         senderId: me.id,
         messageType,
         text,
         stickerId,
+        mediaUrl,
+        mediaDuration,
         replyToMessageId,
         clientMessageId,
       },
       include: { reactions: true, sticker: { select: { id: true, name: true, assetUrl: true } } },
     })
-    .catch(async (e: any) => {
-      if (e?.code === 'P2002' && clientMessageId) {
-        // Same optimistic send retried — return the stored row (§92)
-        const existing = await db.gameMessage.findFirst({
-          where: { conversationId: conversationId!, senderId: me.id, clientMessageId },
-          include: { reactions: true, sticker: { select: { id: true, name: true, assetUrl: true } } },
-        })
-        return existing
-      }
+
+  // ── Idempotent insert (§92/§93) + lastMessageAt stamp ────────────────────
+  let created: Awaited<ReturnType<typeof insertMessage>> | null = null
+  // §73/§148: the award path must know whether THIS request actually
+  // inserted the row — a P2002 recovery (optimistic retry) returns the
+  // stored row but must NEVER re-run the Quicky economy.
+  let freshInsert = false
+  try {
+    created = await insertMessage()
+    freshInsert = true
+  } catch (e: any) {
+    if (e?.code === 'P2002' && clientMessageId) {
+      // Same optimistic send retried — return the stored row (§92).
+      created = await db.gameMessage.findFirst({
+        where: { conversationId: conversationId!, senderId: me.id, clientMessageId },
+        include: { reactions: true, sticker: { select: { id: true, name: true, assetUrl: true } } },
+      })
+    } else {
       throw e
-    })
+    }
+  }
 
   if (!created) return NextResponse.json({ error: 'send_failed' }, { status: 500 })
+
+  // ── Quicky Image economy (bug-fix PRD §70-§79) — server-calculated award,
+  // applied exactly once per STORED message (§72/§73): only a FRESH insert
+  // awards; the P2002 retry path above never reaches this.
+  if (created.messageType === 'quicky_image' && freshInsert) {
+    await awardQuickyImage(me.id, peerUserId ?? (userAId === me.id ? userBId : userAId), created.id)
+  }
 
   await Promise.all([
     db.gameConversation

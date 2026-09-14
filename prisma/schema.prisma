@@ -100,6 +100,8 @@ model User {
   gameMessages        GameMessage[]
   gameMessageReactions GameMessageReaction[]
   ownedStickerBundles UserGameStickerBundle[]
+  // Bug-fix PRD §77: per-user Quicky streak (Quicky Images in Game Chat).
+  gameQuickyStreak    GameQuickyStreak?
 }
 
 model Photo {
@@ -596,6 +598,9 @@ model GameItem {
   id          String   @id @default(cuid())
   // "gift" | "frame" | "bottle_skin" | "table_skin"
   category    String   @default("gift")
+  // Stable seed/admin identifier (bug-fix PRD §127) — e.g. "gift_rose".
+  // Nullable: admin-created rows may omit it. Unique for idempotent seeding.
+  slug        String?  @unique
   // Gift catalog category (v3 PRD §50) — FK into GiftCategory
   categoryId  String?
   giftCategory GiftCategory? @relation(fields: [categoryId], references: [id])
@@ -764,16 +769,22 @@ model GameConversationMember {
   @@index([userId, lastReadAt])
 }
 
-// game_messages (§13): message_type text | sticker (future types addable).
+// game_messages (§13): message_type text | sticker | image | voice |
+// quicky_image (bug-fix PRD §81 — strongly typed set, future types addable).
 // clientMessageId gives optimistic sends a deterministic id for safe
 // de-duplication (§92/§93) — unique per (conversation, sender).
+// Media messages store a storage REFERENCE (media_url), never binaries
+// (bug-fix PRD §58/§117): the upload endpoint is the only source of URLs.
 model GameMessage {
   id               String    @id @default(cuid())
   conversationId   String
   senderId         String
-  messageType      String    @default("text") // text | sticker
+  messageType      String    @default("text") // text | sticker | image | voice | quicky_image
   text             String?
   stickerId        String?
+  mediaUrl         String?
+  // Voice note duration in milliseconds (bug-fix PRD §65).
+  mediaDuration    Int?
   replyToMessageId String?
   clientMessageId  String?
   createdAt        DateTime  @default(now())
@@ -803,6 +814,25 @@ model GameMessageReaction {
 
   @@unique([messageId, userId])
   @@index([messageId])
+}
+
+// ─── QUICKY STREAK (bug-fix PRD §75-§79) ─────────────────────────────────────
+// Per-user streak for qualifying Quicky interactions sent through Game Chat.
+// The Dating-Chat per-match streak is a DIFFERENT product surface — this one
+// is per USER and follows the same consecutive-calendar-day rule computed
+// with SERVER time (§76/§78). One qualifying event updates it exactly once
+// (same transaction as the message insert + points award, §79).
+model GameQuickyStreak {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  currentStreak      Int      @default(0)
+  longestStreak      Int      @default(0)
+  // UTC calendar date (YYYY-MM-DD) of the last qualifying interaction.
+  lastQualifyingDate String?
+  totalQuickyImages  Int      @default(0)
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ═══ GAME STICKERS — admin-managed bundles (game-chat PRD §62-§77) ══════════

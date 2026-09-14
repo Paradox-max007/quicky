@@ -36,6 +36,13 @@ import { emitRoomUpdate } from './spin-events'
 
 export const SPIN_DURATION_MS = 3500
 export const RESPONSE_TIMEOUT_MS = 10000
+// Bug-fix PRD §32/§33/§35: the timeout watchdog fires with a small GRACE
+// after the authoritative deadline. A response that arrives at 9.999s is
+// processed while the round is STILL awaiting — its conditional write wins
+// the race and the watchdog finds both fields filled and does nothing. The
+// deadline itself is enforced in the respond endpoint (ROUND_EXPIRED past
+// it), so the grace never stretches the round beyond the client display.
+export const RESPONSE_WATCHDOG_GRACE_MS = 800
 // Result reveal on the client is ~2.6s (cards return + brief idle); the next
 // spin starts right after so the table never sits dead (PRD §32).
 export const RESULT_PAUSE_MS = 3000
@@ -200,8 +207,12 @@ async function onSpinLanded(roomId: string, spinId: string) {
   })
   if (updated.count === 0) return
   emitRoomUpdate(roomId)
-  // Deadline watchdog — timeout = reject for whoever hasn't answered (§30)
-  const t = setTimeout(() => onResponseTimeout(roomId, spinId), RESPONSE_TIMEOUT_MS)
+  // Deadline watchdog — timeout = reject for whoever hasn't answered (§30).
+  // Fires at deadline + GRACE so a last-moment response always wins (§35).
+  const t = setTimeout(
+    () => onResponseTimeout(roomId, spinId),
+    RESPONSE_TIMEOUT_MS + RESPONSE_WATCHDOG_GRACE_MS
+  )
   pushTimer(roomId, t)
 }
 
@@ -356,6 +367,9 @@ async function resolveRound(roomId: string, spin: {
 async function onResponseTimeout(roomId: string, spinId: string) {
   const spin = await db.spinBottleSpin.findUnique({ where: { id: spinId } })
   if (!spin || spin.status !== 'awaiting') return
+  // §37: both responses already in (last-moment write won the grace race) →
+  // the round resolves through the normal path; nothing to do here.
+  if (spin.spinnerResponse && spin.targetResponse) return
   // Missing response = reject (PRD §30). resolveRound fills both fields.
   const timedOut: string[] = []
   if (!spin.spinnerResponse) timedOut.push(spin.spinnerId)

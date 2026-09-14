@@ -46,17 +46,18 @@ const api = (cookie) => async (path, init = {}) => {
   return { status: res.status, body }
 }
 
-// ── Setup: three users + one admin ──────────────────────────────────────────
+// ── Setup: four users + one admin ────────────────────────────────────────────
 const A = await login('+15555550201')
 const B = await login('+15555550202')
 const C = await login('+15555550203')
+const D = await login('+15555550204')
 const admin = await login('+15555550000')
 
 // Idempotency: wipe THIS QA trio's game-chat state so re-runs start clean
 // (conversations are keyed by the canonical user pair, so leftover rows from
 // a previous run would otherwise pollute counts).
 {
-  const ids = [A.userId, B.userId, C.userId]
+  const ids = [A.userId, B.userId, C.userId, D.userId]
   const convos = await db.gameConversation.findMany({
     where: { OR: [{ userAId: { in: ids } }, { userBId: { in: ids } }] },
     select: { id: true },
@@ -66,6 +67,12 @@ const admin = await login('+15555550000')
   await db.gameStickerBundle.deleteMany({ where: { name: { startsWith: 'QA ' } } })
   // previous-run purchases would make the "un-owned sticker" test pass falsely
   await db.userGameStickerBundle.deleteMany({ where: { userId: { in: ids } } })
+  // fresh Quicky economy for the quicky_image tests (§71/§77)
+  await db.user.update({ where: { id: A.userId }, data: { quickyScore: 0 } })
+  await db.gameQuickyStreak.deleteMany({ where: { userId: { in: ids } } })
+  // QA users persist across runs — refill coins so the purchase test is
+  // deterministic regardless of how many previous runs bought bundles.
+  await db.user.updateMany({ where: { id: { in: ids } }, data: { coinBalance: 5000 } })
 }
 const Aa = api(A.cookie)
 const Bb = api(B.cookie)
@@ -179,12 +186,20 @@ ok('outsider cannot react (§125)', badReact.status === 403)
 
 // ── Test 6 (§24): cursor pagination ─────────────────────────────────────────
 console.log('\nTest 6 — pagination')
+// Bulk history goes straight through the DB (the API path is covered by the
+// other tests; the flood would trip the §120 rate limiter, which has its own
+// dedicated test at the end).
+const bulkRows = []
 for (let i = 0; i < 45; i++) {
-  await Aa('/api/quicky/game-chat/messages', {
-    method: 'POST',
-    body: JSON.stringify({ conversationId: convId, messageType: 'text', text: `bulk ${i}`, clientMessageId: `qa_${Date.now()}_bulk${i}` }),
+  bulkRows.push({
+    conversationId: convId,
+    senderId: i % 2 === 0 ? A.userId : B.userId,
+    messageType: 'text',
+    text: `bulk ${i}`,
+    createdAt: new Date(Date.now() + (i + 1) * 1000),
   })
 }
+await db.gameMessage.createMany({ data: bulkRows })
 const page1 = await Aa(`/api/quicky/game-chat/messages?conversationId=${convId}`)
 ok('latest page capped at 40 (§24)', page1.body?.messages?.length === 40, String(page1.body?.messages?.length))
 const page2 = await Aa(`/api/quicky/game-chat/messages?conversationId=${convId}&before=${encodeURIComponent(page1.body.oldestCursor)}`)
@@ -330,6 +345,179 @@ ok('room deleted after leave', roomGone === null)
 const chatAlive = await Aa(`/api/quicky/game-chat/messages?conversationId=${convId}`)
 ok('PRIVATE game chat still accessible (§60/§132)', chatAlive.body?.conversationId === convId)
 ok('messages intact after room deletion (§145)', (chatAlive.body?.messages?.length ?? 0) > 0)
+
+// ── Test 12 (bug-fix PRD §29-§38/§99-§106): deadline authority + codes ──────
+console.log('\nTest 12 — server deadline authority + specific error codes')
+const joinA2 = await Aa('/api/quicky/games/spin-bottle/join', { method: 'POST' })
+const joinB2 = await Bb('/api/quicky/games/spin-bottle/join', { method: 'POST' })
+ok('round 2: both in one room', joinA2.body?.ok && joinB2.body?.roomId === joinA2.body?.roomId)
+let awaiting2 = null
+for (let i = 0; i < 40; i++) {
+  await new Promise((r) => setTimeout(r, 700))
+  const snap = await Aa(`/api/quicky/games/spin-bottle/room?roomId=${joinA2.body.roomId}`)
+  const spin = snap.body?.snapshot?.currentSpin
+  if (spin?.status === 'awaiting' && spin.spinnerId && spin.targetId) { awaiting2 = spin; break }
+}
+ok('round 2 reached awaiting', !!awaiting2)
+if (awaiting2) {
+  // §30/§33: past the authoritative deadline → ROUND_EXPIRED (not a generic
+  // "already resolved"), while the round is still technically awaiting.
+  await db.spinBottleSpin.update({
+    where: { id: awaiting2.id },
+    data: { responseDeadline: new Date(Date.now() - 150) },
+  })
+  const targetSession = awaiting2.targetId === B.userId ? Bb : Aa
+  const late = await targetSession('/api/quicky/games/spin-bottle/respond', {
+    method: 'POST',
+    body: JSON.stringify({ roomId: joinA2.body.roomId, choice: 'yes' }),
+  })
+  ok('expired response → ROUND_EXPIRED code (§102)', late.status === 410 && late.body?.error === 'ROUND_EXPIRED', JSON.stringify(late.body))
+
+  // §101/§102: outsider gets the SPECIFIC NOT_TARGET code.
+  const notTarget = await Cc('/api/quicky/games/spin-bottle/respond', {
+    method: 'POST',
+    body: JSON.stringify({ roomId: joinA2.body.roomId, choice: 'yes' }),
+  })
+  ok('outsider → NOT_TARGET code (§102)', notTarget.status === 403 && notTarget.body?.error === 'NOT_TARGET', JSON.stringify(notTarget.body))
+
+  // Wait out the watchdog (+grace) and the RESULT pause; the next round opens.
+  let awaiting3 = null
+  for (let i = 0; i < 45; i++) {
+    await new Promise((r) => setTimeout(r, 700))
+    const snap = await Aa(`/api/quicky/games/spin-bottle/room?roomId=${joinA2.body.roomId}`)
+    const spin = snap.body?.snapshot?.currentSpin
+    if (spin?.status === 'awaiting' && spin.spinnerId && spin.targetId && spin.id !== awaiting2.id) { awaiting3 = spin; break }
+  }
+  ok('next round opened after timeout resolve', !!awaiting3)
+  if (awaiting3) {
+    // §35/§141: a response that reaches the server BEFORE the deadline is
+    // ACCEPTED even with a sliver of time left (last-moment tap).
+    await db.spinBottleSpin.update({
+      where: { id: awaiting3.id },
+      data: { responseDeadline: new Date(Date.now() + 250) },
+    })
+    const tSession = awaiting3.targetId === B.userId ? Bb : Aa
+    const lastMoment = await tSession('/api/quicky/games/spin-bottle/respond', {
+      method: 'POST',
+      body: JSON.stringify({ roomId: joinA2.body.roomId, choice: 'yes' }),
+    })
+    ok('last-moment response ACCEPTED (§35/§141)', lastMoment.body?.ok === true, JSON.stringify(lastMoment.body))
+    // §102: a second tap from the SAME player is ALREADY_RESPONDED.
+    const again = await tSession('/api/quicky/games/spin-bottle/respond', {
+      method: 'POST',
+      body: JSON.stringify({ roomId: joinA2.body.roomId, choice: 'no' }),
+    })
+    ok('double tap → ALREADY_RESPONDED code (§102/§142)', again.status === 409 && again.body?.error === 'ALREADY_RESPONDED', JSON.stringify(again.body))
+    // §37/§139: the OTHER party answers → the round resolves IMMEDIATELY
+    // (second responder's reply carries outcome 'resolved').
+    const oSession = awaiting3.spinnerId === A.userId ? Aa : Bb
+    const second = await oSession('/api/quicky/games/spin-bottle/respond', {
+      method: 'POST',
+      body: JSON.stringify({ roomId: joinA2.body.roomId, choice: 'yes' }),
+    })
+    ok('both answered → resolves immediately (§37/§139)', second.body?.ok === true && second.body?.outcome === 'resolved', JSON.stringify(second.body))
+  }
+  // Cleanup: leave (retry while the round lock holds).
+  const leave2 = async (sessionApi) => {
+    for (let i = 0; i < 25; i++) {
+      const r = await sessionApi('/api/quicky/games/spin-bottle/leave', {
+        method: 'POST',
+        body: JSON.stringify({ roomId: joinA2.body.roomId }),
+      })
+      if (r.status !== 409) return r
+      await new Promise((res) => setTimeout(res, 1200))
+    }
+    return { status: 0 }
+  }
+  await leave2(Aa)
+  await leave2(Bb)
+}
+
+// ── Test 13 (bug-fix PRD §56-§80/§116-§118/§147-§149): media + Quicky ──────
+console.log('\nTest 13 — image/voice/Quicky messaging + points + streak')
+const img = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'image', mediaUrl: '/uploads/gc_qa_test.png', clientMessageId: `qa_${Date.now()}_img` }),
+})
+ok('image message accepted (§56)', img.body?.ok === true, JSON.stringify(img.body))
+ok('image carries storage reference (§58)', img.body?.message?.mediaUrl === '/uploads/gc_qa_test.png')
+const evil = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'image', mediaUrl: 'https://evil.example/x.png', clientMessageId: `qa_${Date.now()}_evil` }),
+})
+ok('external media URL rejected (§117)', evil.status === 400, `got ${evil.status}`)
+const voiceNoDur = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'voice', mediaUrl: '/uploads/gc_qa_voice.webm', clientMessageId: `qa_${Date.now()}_v0` }),
+})
+ok('voice without duration rejected (§66)', voiceNoDur.status === 400, `got ${voiceNoDur.status}`)
+const voice = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'voice', mediaUrl: '/uploads/gc_qa_voice.webm', mediaDuration: 2500, clientMessageId: `qa_${Date.now()}_v1` }),
+})
+ok('voice message accepted (§63)', voice.body?.ok === true, JSON.stringify(voice.body))
+ok('voice duration stored (§65)', voice.body?.message?.mediaDuration === 2500)
+// §83: media reply previews are compact per-type references
+const replyImg = await Bb('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'text', text: 'nice pic', replyToMessageId: img.body?.message?.id, clientMessageId: `qa_${Date.now()}_ri` }),
+})
+ok('reply to image previews as 🖼 (§83)', replyImg.body?.message?.replyTo?.text === '🖼 Image', JSON.stringify(replyImg.body?.message?.replyTo))
+
+// §70-§79: Quicky Image — points + streak, exactly once (§147/§148)
+const scoreBefore = (await db.user.findUnique({ where: { id: A.userId } })).quickyScore
+const q1 = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'quicky_image', mediaUrl: '/uploads/gc_qa_quicky.png', clientMessageId: `qa_${Date.now()}_q1` }),
+})
+ok('quicky image accepted (§69)', q1.body?.ok === true)
+const scoreMid = (await db.user.findUnique({ where: { id: A.userId } })).quickyScore
+ok('sender Quicky Points +10 server-side (§71/§72)', scoreMid === scoreBefore + 10, `${scoreBefore} -> ${scoreMid}`)
+const qEvent = await db.quickyEvent.findFirst({ where: { senderId: A.userId, eventType: 'sent', pointsAwarded: 10 }, orderBy: { createdAt: 'desc' } })
+ok('QuickyEvent ledger row written (§70)', !!qEvent)
+const streak1 = await db.gameQuickyStreak.findUnique({ where: { userId: A.userId } })
+ok('streak started at 1 (§77/§78)', streak1?.currentStreak === 1, JSON.stringify(streak1))
+// same-day second quicky: points accumulate, streak does NOT double
+const q2Cmi = `qa_${Date.now()}_q2`
+const q2 = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'quicky_image', mediaUrl: '/uploads/gc_qa_quicky2.png', clientMessageId: q2Cmi }),
+})
+ok('second quicky accepted', q2.body?.ok === true)
+const scoreAfter = (await db.user.findUnique({ where: { id: A.userId } })).quickyScore
+ok('each valid quicky awards points once (§71)', scoreAfter === scoreMid + 10, `${scoreMid} -> ${scoreAfter}`)
+const streak2 = await db.gameQuickyStreak.findUnique({ where: { userId: A.userId } })
+ok('same-day streak does NOT double (§78)', streak2?.currentStreak === 1 && streak2?.totalQuickyImages === 2, JSON.stringify(streak2))
+// §148: duplicate retry with the SAME clientMessageId → no double award
+const q2Retry = await Aa('/api/quicky/game-chat/messages', {
+  method: 'POST',
+  body: JSON.stringify({ conversationId: convId, messageType: 'quicky_image', mediaUrl: '/uploads/gc_qa_quicky2.png', clientMessageId: q2Cmi }),
+})
+ok('quicky retry idempotent on message (§92)', q2Retry.body?.message?.id === q2.body?.message?.id)
+const scoreRetry = (await db.user.findUnique({ where: { id: A.userId } })).quickyScore
+ok('retry does NOT double points/streak (§148)', scoreRetry === scoreAfter)
+
+// ── Test 14 (bug-fix PRD §120): rate limiting (dedicated user, last) ────────
+console.log('\nTest 14 — message rate limiting')
+let hit429 = false
+for (let i = 0; i < 35; i++) {
+  const r = await api(D.cookie)('/api/quicky/game-chat/messages', {
+    method: 'POST',
+    body: JSON.stringify({ peerUserId: A.userId, messageType: 'text', text: `spam ${i}`, clientMessageId: `qa_spam_${Date.now()}_${i}` }),
+  })
+  if (r.status === 429) { hit429 = true; break }
+}
+ok('flood beyond the window is throttled (§120)', hit429)
+// cleanup the spam conversation
+{
+  const ids = [A.userId, D.userId]
+  const convos = await db.gameConversation.findMany({
+    where: { OR: [{ userAId: { in: ids } }, { userBId: { in: ids } }] },
+    select: { id: true },
+  })
+  await db.gameConversation.deleteMany({ where: { id: { in: convos.map((c) => c.id) } } })
+  await db.gameConversationMember.deleteMany({ where: { userId: { in: ids } } })
+}
 
 console.log(`\n═══ RESULT: ${passed} passed, ${failed} failed ═══`)
 await db.$disconnect()

@@ -168,6 +168,30 @@ export function AppRoot() {
     else useGameChatStore.getState().disconnectStream()
   }, [gameSectionActive])
 
+  // ─── BLACK SCREEN ROOT FIX (bug-fix PRD §3/§7/§8/§156) ───────────────────
+  // "Message" on a player sets `gameChatPeer` and navigates to the
+  // game-chat view — but the chat SCREEN renders from the game-chat STORE's
+  // `activePeer`. Nothing used to bridge the two, so the screen returned
+  // null → an empty (black) page. The bridge lives HERE, in exactly one
+  // place: entering game-chat resolves the peer through the shared
+  // getOrCreateGameConversation path (server-side §8) and never renders
+  // nothing — missing peer bounces back to the section that opened it.
+  useEffect(() => {
+    if (view !== 'game-chat') return
+    const qk = useQuickyStore.getState()
+    const chat = useGameChatStore.getState()
+    const wanted = qk.gameChatPeer
+    if (wanted) {
+      if (chat.activePeer?.peerUserId !== wanted.peerUserId) {
+        chat.openConversation(wanted)
+      }
+    } else if (!chat.activePeer) {
+      // No peer requested and nothing open — there is nothing to render,
+      // so return to the context that opened the view (never a blank page).
+      qk.setView(qk.gameChatReturnView || 'spin-bottle')
+    }
+  }, [view])
+
   // Keep the unread-messages badge fresh across all tabs
   useEffect(() => {
     if (!user) return

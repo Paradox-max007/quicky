@@ -161,6 +161,11 @@ type State = {
   gameChatPeer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
   // Where the back arrow returns to (room screen / game landing / chat list)
   gameChatReturnView: AppView
+  // Bug-fix PRD §9/§10: the WEB room sidebar is a 3-state chat section —
+  // 'room' (Room Chat, stays mounted underneath), 'contacts' (Game Contact
+  // List) and 'personal' (Personal Game Chat). Capacitor ignores this and
+  // uses the dedicated 'game-chat' screen instead (§17).
+  roomChatPanel: 'room' | 'contacts' | 'personal'
 
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
@@ -192,6 +197,7 @@ type State = {
     returnView?: AppView
   ) => void
   closeGameChat: () => void
+  setRoomChatPanel: (p: 'room' | 'contacts' | 'personal') => void
   logout: () => void
 }
 
@@ -208,6 +214,7 @@ export const useQuickyStore = create<State>((set) => ({
   spinBottleRoomId: null,
   gameChatPeer: null,
   gameChatReturnView: 'spin-bottle',
+  roomChatPanel: 'room',
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -256,5 +263,6 @@ export const useQuickyStore = create<State>((set) => ({
     }),
   closeGameChat: () =>
     set((prev) => ({ view: prev.gameChatReturnView || 'spin-bottle', gameChatPeer: null })),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', communityFocusPostId: null }),
+  setRoomChatPanel: (p) => set({ roomChatPanel: p }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', communityFocusPostId: null }),
 }))

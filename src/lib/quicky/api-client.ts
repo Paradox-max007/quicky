@@ -22,7 +22,7 @@ async function jsonFetch<T = any>(input: string, init?: RequestInit): Promise<T>
   return data as T
 }
 
-async function uploadFile(file: File, kind: 'photo' | 'quicky' | 'voice' = 'photo'): Promise<{ ok: boolean; url: string; filename?: string; kind?: string }> {
+export async function uploadFile(file: File | Blob, kind: 'photo' | 'quicky' | 'voice' = 'photo'): Promise<{ ok: boolean; url: string; filename?: string; kind?: string }> {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('kind', kind)
@@ -393,9 +393,11 @@ export const api = {
     send: (data: {
       peerUserId?: string
       conversationId?: string
-      messageType?: 'text' | 'sticker'
+      messageType?: 'text' | 'sticker' | 'image' | 'voice' | 'quicky_image'
       text?: string
       stickerId?: string
+      mediaUrl?: string
+      mediaDuration?: number
       replyToMessageId?: string
       clientMessageId?: string
     }) =>

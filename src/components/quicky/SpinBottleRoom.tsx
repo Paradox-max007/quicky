@@ -51,6 +51,9 @@ import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from './RoomChatPanel'
+import { GameChatScreen } from './game-chat/GameChatScreen'
+import { GameContactsPanel } from './game-chat/GameContactsPanel'
+import { useGameChatStore } from '@/store/game-chat'
 import { CoinStoreSheet } from './CoinStoreSheet'
 import { PlayerInteractionSheet, type CatalogGift, type InteractionPlayer } from './PlayerInteractionSheet'
 import { GiftSheet } from './GiftSheet'
@@ -110,6 +113,12 @@ export function SpinBottleRoom({
   const bumpEconomy = useGameRoomStore((s) => s.bumpEconomy)
   const setCoinBalance = useGameRoomStore((s) => s.setCoinBalance)
   const getSkew = useGameRoomStore((s) => s.getSkew)
+  // Bug-fix PRD §9: web sidebar chat-section state (room | contacts | personal)
+  const roomChatPanel = useQuickyStore((s) => s.roomChatPanel)
+  const setRoomChatPanel = useQuickyStore((s) => s.setRoomChatPanel)
+  const gameChatsUnread = useGameChatStore((s) =>
+    s.list.reduce((sum, c) => sum + c.unread, 0)
+  )
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
   const [switching, setSwitching] = useState(false)
@@ -235,6 +244,14 @@ export function SpinBottleRoom({
     useGameRoomStore.getState().attach(initialRoomId)
   }, [initialRoomId])
 
+  // Sidebar chat panel resets when the room screen goes away — the next
+  // visit starts on the Room Chat state (§9: room is the default panel).
+  useEffect(() => {
+    return () => {
+      useQuickyStore.getState().setRoomChatPanel('room')
+    }
+  }, [])
+
   // ─── Spin-transition presentation (new spin / room swap) ─────────────────
   // The store resets its optimistic answer when a new spin id appears; this
   // effect drives the PRESENTATION side: bottle rotation target, the ~150ms
@@ -327,6 +344,20 @@ export function SpinBottleRoom({
     useGameRoomStore.getState().respond(choice)
   }
 
+  // ─── KISS POINT HEART FX (bug-fix PRD §44-§47) ───────────────────────────
+  // The authoritative kissPoints arrive via the SSE snapshot (§47 — the
+  // server value IS the reconciliation; no double increment). When it goes
+  // up, animate a heart from the table area toward the top HUD and pulse
+  // the HUD — pure presentation, never gameplay-interfering (§46).
+  const prevKissRef = useRef(economy.kissPoints)
+  const [heartFxKey, setHeartFxKey] = useState(0)
+  useEffect(() => {
+    if (economy.kissPoints > prevKissRef.current) {
+      setHeartFxKey((k) => k + 1)
+    }
+    prevKissRef.current = economy.kissPoints
+  }, [economy.kissPoints])
+
   const sendChat = async (t: string, replyTo?: RoomMessage['replyTo']) => {
     if (sendingChat) return
     setSendingChat(true)
@@ -370,10 +401,22 @@ export function SpinBottleRoom({
     // player; the interaction popup must close first (never linger behind
     // the chat route).
     setInteraction(null)
-    useQuickyStore.getState().openGameChat(
-      { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar },
-      'spin-bottle-room'
-    )
+    if (isDesktop) {
+      // Bug-fix PRD §9: WEB — the sidebar swaps to the personal chat panel;
+      // the room (and its live chat) stays mounted underneath (§12).
+      useGameChatStore.getState().openConversation({
+        peerUserId: p.userId,
+        peerName: p.displayName,
+        peerAvatar: p.avatar,
+      })
+      setRoomChatPanel('personal')
+    } else {
+      // Capacitor/mobile — dedicated chat screen (§17), runtime stays live.
+      useQuickyStore.getState().openGameChat(
+        { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar },
+        'spin-bottle-room'
+      )
+    }
   }
   const handleProfile = (p: InteractionPlayer) => {
     // §45: the app's real profile route
@@ -597,6 +640,27 @@ export function SpinBottleRoom({
   return (
     <MotionConfig reducedMotion="user">
       <div className="sbr-root absolute inset-0">
+        {/* ═══ KISS POINT heart FX (bug-fix PRD §45/§46) — a heart flies from
+            the table toward the top HUD while the HUD pulses once. ═══ */}
+        <AnimatePresence>
+          {heartFxKey > 0 && (
+            <motion.div
+              key={`heart-fly-${heartFxKey}`}
+              className="sbr-heart-fly"
+              initial={{ opacity: 0, scale: 0.4, y: 0 }}
+              animate={{ opacity: [0, 1, 1, 0], scale: [0.4, 1.35, 1, 0.9], y: [-10, -60, -140, -240] }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.72, ease: 'easeOut' }}
+              onAnimationComplete={() => setHeartFxKey(0)}
+              aria-hidden
+            >
+              ❤️
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {heartFxKey > 0 && (
+          <span key={`heart-pulse-${heartFxKey}`} className="sbr-heart-pulse" aria-hidden />
+        )}
         {/* ═══ WEB top bar (hidden <1024px) — Club Royale header (§78) ═══ */}
         <header className="sbr-webtop safe-area-top sbr-d-only">
           <span className="sbr-webtop-emoji" aria-hidden>🍾</span>
@@ -892,7 +956,10 @@ export function SpinBottleRoom({
             </div>
           </div>
 
-          {/* Layer C — chat: bottom sheet on mobile, right sidebar on web */}
+          {/* Layer C — chat: bottom sheet on mobile, right sidebar on web.
+              Bug-fix PRD §12: this panel is NEVER unmounted — when the web
+              sidebar shows contacts/personal they render as overlays above
+              it, so room messages keep arriving in the background (§13/§90). */}
           <RoomChatPanel
             messages={chat}
             players={chatPlayers}
@@ -901,7 +968,18 @@ export function SpinBottleRoom({
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={() => setShowGiftSheet(true)}
+            onOpenGameChats={isDesktop ? () => setRoomChatPanel('contacts') : undefined}
+            gameChatsUnread={gameChatsUnread}
           />
+
+          {/* Web sidebar overlays — contacts (§10 state 2) and personal chat
+              (§10 state 3). Back: personal → contacts → room (§11). */}
+          {isDesktop && roomChatPanel === 'contacts' && <GameContactsPanel />}
+          {isDesktop && roomChatPanel === 'personal' && (
+            <div className="sbr-chat-overlay" data-testid="web-personal-panel">
+              <GameChatScreen onBack={() => setRoomChatPanel('contacts')} />
+            </div>
+          )}
         </div>
 
         {/* ═══ v3 §34-§39 — ROOM OPTIONS (opened by the 🚪 RoomExitControl).

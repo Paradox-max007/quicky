@@ -20,6 +20,9 @@ import { Keyboard } from '@capacitor/keyboard'
 //   - Quick reaction bar (Kiss / Cheers / Wow / Dance) above the composer
 //   - On web (≥1024px) the panel becomes the right sidebar with the
 //     "Table Activity & Chat" header; on mobile it is the bottom sheet.
+//   - Bug-fix PRD §9: on web the header has a Game Chats entry that swaps
+//     the sidebar to the contacts panel — this component itself stays
+//     MOUNTED underneath (§12), so the room chat never loses state.
 
 export type RoomMessage = {
   id: string
@@ -272,6 +275,8 @@ export function RoomChatPanel({
   sending,
   kbOpen = false,
   onOpenGifts,
+  onOpenGameChats,
+  gameChatsUnread = 0,
 }: {
   messages: RoomMessage[]
   players: ChatPlayer[]
@@ -281,6 +286,10 @@ export function RoomChatPanel({
   kbOpen?: boolean
   /** v3: opens the gift sheet (DB-driven catalog) — no more dead button. */
   onOpenGifts?: () => void
+  /** Bug-fix PRD §9: web sidebar → Game Contacts panel state. */
+  onOpenGameChats?: () => void
+  /** Total unread private game chats (badge on the entry button). */
+  gameChatsUnread?: number
 }) {
   const [text, setText] = useState('')
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -295,8 +304,6 @@ export function RoomChatPanel({
   }, [messages])
 
   const playerFor = (userId: string) => players.find((p) => p.userId === userId)
-  const me = playerFor(meId)
-  const myInitial = (me?.displayName ?? 'M').trim().slice(0, 1).toUpperCase()
 
   const send = async () => {
     const t = text.trim()
@@ -338,6 +345,21 @@ export function RoomChatPanel({
           <span className="sbr-chat-online">{players.length} Online</span>
         </h2>
         <div className="sbr-chat-head-actions">
+          {onOpenGameChats && (
+            <button
+              type="button"
+              onClick={onOpenGameChats}
+              className="sbr-chat-gamechats-btn"
+              aria-label="Open game chats"
+              title="Game Chats"
+              data-testid="room-chat-gamechats"
+            >
+              💬 Game Chats
+              {gameChatsUnread > 0 && (
+                <span className="sbr-chat-gamechats-badge">{gameChatsUnread > 9 ? '9+' : gameChatsUnread}</span>
+              )}
+            </button>
+          )}
           <button type="button" title="Sound effects" aria-label="Sound effects">🔊</button>
           <button type="button" title="Table settings" aria-label="Table settings">⚙️</button>
         </div>
@@ -455,9 +477,6 @@ export function RoomChatPanel({
             ))}
           </div>
         )}
-
-        {/* my avatar tag */}
-        <span className="sbr-comp-avatar" aria-hidden>{myInitial}</span>
 
         <div className="sbr-comp-field">
           <input

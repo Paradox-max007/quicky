@@ -15,21 +15,16 @@ const leagues = [
 const seasons = [{ name: 'Summer 2026' }]
 
 const upsertLeague = async (l) => {
+  // §126: seeds never overwrite admin edits — create-if-missing only.
   const existing = await prisma.gameLeague.findFirst({ where: { name: l.name } })
-  if (existing) {
-    await prisma.gameLeague.update({ where: { id: existing.id }, data: l })
-    return existing.id
-  }
+  if (existing) return existing.id
   const created = await prisma.gameLeague.create({ data: l })
   return created.id
 }
 
 const upsertSeason = async (s) => {
   const existing = await prisma.gameSeason.findFirst({ where: { name: s.name } })
-  if (existing) {
-    await prisma.gameSeason.update({ where: { id: existing.id }, data: s })
-    return existing.id
-  }
+  if (existing) return existing.id
   const created = await prisma.gameSeason.create({ data: s })
   return created.id
 }
@@ -60,12 +55,9 @@ for (const s of seasons) seasonIds[s.name] = await upsertSeason(s)
 const existingBundle = await prisma.gameStickerBundle.findFirst({ where: { name: BUNDLE.name } })
 let bundleId
 if (existingBundle) {
-  await prisma.gameStickerBundle.update({
-    where: { id: existingBundle.id },
-    data: { ...BUNDLE, leagueId: null, seasonId: seasonIds['Summer 2026'], sortOrder: 1, isActive: true },
-  })
+  // §126: keep the admin's edits — do NOT rewrite price/name/active.
   bundleId = existingBundle.id
-  console.log('updated bundle', BUNDLE.name)
+  console.log('kept bundle (admin edits preserved)', BUNDLE.name)
 } else {
   const created = await prisma.gameStickerBundle.create({
     data: { ...BUNDLE, leagueId: null, seasonId: seasonIds['Summer 2026'], sortOrder: 1 },
@@ -77,8 +69,7 @@ if (existingBundle) {
 for (const s of STICKERS) {
   const existing = await prisma.gameSticker.findFirst({ where: { bundleId, name: s.name } })
   if (existing) {
-    await prisma.gameSticker.update({ where: { id: existing.id }, data: { ...s, isActive: true } })
-    console.log('updated sticker', s.name)
+    console.log('kept sticker (admin edits preserved)', s.name)
   } else {
     await prisma.gameSticker.create({ data: { ...s, bundleId } })
     console.log('created sticker', s.name)

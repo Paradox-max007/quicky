@@ -65,11 +65,29 @@ export type SerializedMessage = {
   text: string | null
   stickerId: string | null
   sticker: { id: string; name: string; assetUrl: string } | null
+  mediaUrl: string | null
+  mediaDuration: number | null
   replyToMessageId: string | null
   replyTo: { id: string; senderId: string; senderName: string | null; text: string; messageType: string } | null
   clientMessageId: string | null
   createdAt: string
   reactions: { reaction: string; userIds: string[] }[]
+}
+
+/** Compact reply reference per type (bug-fix PRD §83). */
+export function previewForType(messageType: string, text: string | null): string {
+  switch (messageType) {
+    case 'image':
+      return '🖼 Image'
+    case 'voice':
+      return '🎙 Voice message'
+    case 'quicky_image':
+      return '⚡ Quicky Image'
+    case 'sticker':
+      return '🎁 Sticker'
+    default:
+      return text ?? ''
+  }
 }
 
 /** Message → wire shape (with reply preview + grouped reactions, §27/§31). */
@@ -107,10 +125,12 @@ export async function serializeMessages(rows: (GameMessage & { reactions: GameMe
             id: ref.id,
             senderId: ref.senderId,
             senderName: ref.sender?.name ?? null,
-            text: ref.text ?? (ref.messageType === 'sticker' ? '🎁 Sticker' : ''),
+            text: previewForType(ref.messageType, ref.text),
             messageType: ref.messageType,
           }
         : null,
+      mediaUrl: m.mediaUrl,
+      mediaDuration: m.mediaDuration,
       clientMessageId: m.clientMessageId,
       createdAt: m.createdAt.toISOString(),
       reactions: Array.from(grouped.entries()).map(([reaction, userIds]) => ({ reaction, userIds })),
@@ -143,6 +163,63 @@ export async function unreadCount(conversationId: string, meId: string, lastRead
       createdAt: { gt: lastReadAt },
     },
   })
+}
+
+// ─── QUICKY STREAK (bug-fix PRD §75-§79) ─────────────────────────────────
+export const QUICKY_IMAGE_POINTS = 10
+
+/** UTC calendar date (YYYY-MM-DD) for consecutive-day streak math (§76). */
+export function utcDateKey(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Apply ONE qualifying Quicky interaction: +points (existing engine —
+ * User.quickyScore, §71), a QuickyEvent ledger row, and the consecutive-day
+ * streak (§78). Called ONLY on the successful message-insert path so a
+ * duplicate send can never double-award (§73/§79).
+ */
+export async function awardQuickyImage(senderId: string, recipientId: string, messageId: string) {
+  const now = new Date()
+  const today = utcDateKey(now)
+  const user = db.user.update({ where: { id: senderId }, data: { quickyScore: { increment: QUICKY_IMAGE_POINTS } } })
+  const event = db.quickyEvent.create({
+    data: { senderId, recipientId, eventType: 'sent', pointsAwarded: QUICKY_IMAGE_POINTS },
+  })
+  // Streak: same day → unchanged; yesterday → +1; older/gap → reset to 1.
+  const streakPromise = db.gameQuickyStreak
+    .findUnique({ where: { userId: senderId } })
+    .then((row) => {
+      if (!row) {
+        return db.gameQuickyStreak.create({
+          data: {
+            userId: senderId,
+            currentStreak: 1,
+            longestStreak: 1,
+            lastQualifyingDate: today,
+            totalQuickyImages: 1,
+          },
+        })
+      }
+      if (row.lastQualifyingDate === today) {
+        return db.gameQuickyStreak.update({
+          where: { userId: senderId },
+          data: { totalQuickyImages: { increment: 1 } },
+        })
+      }
+      const yesterday = utcDateKey(new Date(now.getTime() - 86_400_000))
+      const next = row.lastQualifyingDate === yesterday ? row.currentStreak + 1 : 1
+      return db.gameQuickyStreak.update({
+        where: { userId: senderId },
+        data: {
+          currentStreak: next,
+          longestStreak: Math.max(next, row.longestStreak),
+          lastQualifyingDate: today,
+          totalQuickyImages: { increment: 1 },
+        },
+      })
+    })
+  await Promise.all([user, event, streakPromise])
 }
 
 /** Cursor-paginated page for a conversation (§24 — latest page first). */

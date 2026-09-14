@@ -1,30 +1,36 @@
 'use client'
 
-// Quicky — OFF-SCREEN GAME DECISION DRAWER (game-chat PRD §34-§53/§82-§86/§104-§106)
+// Quicky — OFF-SCREEN GAME DECISION + RESULT DRAWERS (bug-fix PRD §21-§28,
+// §39-§41, §95-§98, §115)
 //
-// The flagship of this phase: the user is chatting (or browsing a profile /
-// the chat list) while the Spin the Bottle round selects them as TARGET.
-// The server state is authoritative:
+// PLATFORM RULE (§21/§24): the decision/result overlays are CAPACITOR-ONLY.
+// Web never mounts the overlay logic — web users stay on the room/table UI
+// and use the inline duel controls; a web user sitting in the personal chat
+// panel just gets the gentle completion toast (§41), no drawer.
 //
-//   is in active game room  AND  currentSpin.targetId === me
-//   AND  status === 'awaiting'  AND  NOT on the game table screen
-//
-// → a temporary drawer slides down OVER the current game-section screen
-// showing the SPINNER's identity (§37), the server-derived countdown (§42/
-// §85 — never a local 10s tick) and the SAME Kiss / No Thanks action the
-// table uses (§38/§107/§110 — one respond API, one optimistic model).
-//
-// The drawer can be swiped away (§44) — the TIMER KEEPS RUNNING (§43) — and
-// reopened from a compact "Your turn — Ns" pill (§46). It never reopens on
-// unrelated state updates (§105), resets per round (§106), disappears at
-// zero (§47), and NEVER appears outside the game section (§53).
+// CAPACITOR: whenever
+//   user is in an active room AND is the current TARGET
+//   AND round status = awaiting AND user is NOT on the game table screen
+// → the decision drawer slides down over the current game-section screen
+// with the SPINNER's identity (§37), the server-derived countdown (§42/§85 —
+// never a local 10s tick) and the SAME Kiss / No Thanks action the table
+// uses (§38/§107/§110). It re-arms EVERY round (§23), can be swiped away
+// (§27 — timer keeps running) and reopened from the "Your turn • Ns" pill
+// (§28). When the round resolves, the RESULT replaces the decision inside
+// the same popup system (§39/§96) for its own RESULT_VIEW_MS duration (§98 —
+// NOT the decision timer) and NEVER navigates the user (§40).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Capacitor } from '@capacitor/core'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameRoomStore } from '@/store/game-room'
 import { useRoundTimer } from '@/hooks/useRoundTimer'
 import { toast } from 'sonner'
+
+// Result reveal duration (§98): same pacing as the table's duel result —
+// reuse ONE constant instead of inventing a second timer.
+const RESULT_VIEW_MS = 2600
 
 export function GameDecisionDrawer() {
   const view = useQuickyStore((s) => s.view)
@@ -35,11 +41,18 @@ export function GameDecisionDrawer() {
   const getSkew = useGameRoomStore((s) => s.getSkew)
 
   const spin = snapshot?.currentSpin
+  const isNative = Capacitor.isNativePlatform()
+
   // §53/§54: game-section screens only — the table (spin-bottle-room) has
   // its own inline duel UI; Dating Chat / Settings / Community never see it.
   const onGameSectionView =
     view === 'spin-bottle' || view === 'game-chat' || (view === 'profile-view' && profileReturnView === 'spin-bottle-room')
 
+  // ── Off-table participation snapshot (shared by decision + result) ──────
+  const iAmParticipant = !!(snapshot?.iAmTarget || snapshot?.iAmSpinner)
+
+  // §23/§106: arm on the TARGET/STATUS TRANSITION, not on every snapshot
+  // change — a new round re-opens the drawer automatically.
   const decision = useMemo(() => {
     if (!onGameSectionView || !snapshot || !spin || closure) return null
     if (spin.status !== 'awaiting' || !snapshot.iAmTarget) return null
@@ -75,11 +88,59 @@ export function GameDecisionDrawer() {
   const secsLeft = Math.max(0, Math.ceil(remaining / 1000))
   const expired = deadlineMs !== null && remaining <= 0
 
-  const open = !!decision && !expired && dismissedSpinId !== decisionSpinId
-  const showPill = !!decision && !expired && !open
+  // §115: stale-decision guard — every field must still match the live
+  // snapshot before the drawer renders (roundId/target/status/deadline are
+  // all derived from THIS snapshot, so a stale push can never draw).
+  const open = !!decision && !expired && isNative && dismissedSpinId !== decisionSpinId
+  const showPill = !!decision && !expired && isNative && !open
 
-  // Subtle result toast (§49): the chat stays put; the outcome surfaces as a
-  // gentle notification when a round I participated in completes.
+  // ── Result drawer state (§39/§96): awaiting → completed while off-table ─
+  const [resultSpin, setResultSpin] = useState<{
+    id: string
+    result: string | null
+    spinnerId: string
+    targetId: string | null
+    spinnerResponse: string | null
+    targetResponse: string | null
+  } | null>(null)
+  const prevRoundRef = useRef<{ id: string; status: string } | null>(null)
+  useEffect(() => {
+    const cur = spin ? { id: spin.id, status: spin.status } : null
+    const prev = prevRoundRef.current
+    prevRoundRef.current = cur
+    if (!cur || !prev) return
+    // Round I took part in just resolved while I'm OFF the table →
+    // surface the result drawer immediately (§37/§96/§97).
+    if (
+      isNative &&
+      onGameSectionView &&
+      prev.id === cur.id &&
+      prev.status === 'awaiting' &&
+      cur.status === 'completed' &&
+      iAmParticipant
+    ) {
+      const s = spin!
+      setResultSpin({
+        id: s.id,
+        result: s.result,
+        spinnerId: s.spinnerId,
+        targetId: s.targetId,
+        spinnerResponse: s.spinnerResponse,
+        targetResponse: s.targetResponse,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spin?.id, spin?.status, isNative, onGameSectionView, iAmParticipant])
+
+  // §98: the result has its OWN duration — never the decision countdown.
+  useEffect(() => {
+    if (!resultSpin) return
+    const t = setTimeout(() => setResultSpin(null), RESULT_VIEW_MS)
+    return () => clearTimeout(t)
+  }, [resultSpin])
+
+  // Subtle result toast (§49): web's off-table surface (§41) — and mobile
+  // users see it too when the result drawer was already dismissed.
   const prevStatusRef = useRef<string | null>(null)
   useEffect(() => {
     const status = spin?.status ?? null
@@ -115,14 +176,22 @@ export function GameDecisionDrawer() {
     [snapshot, spin?.spinnerId]
   )
 
-  if (!decision || expired) {
-    return showPill ? null : null
-  }
+  // ── WEB (§24): no overlay logic mounts at all — the completion toast
+  // above is the only off-table surface. This keeps the web DOM clean.
+  if (!isNative) return null
+
+  // ── CAPACITOR: decision drawer + hidden pill + result drawer ────────────
+  const resultVisual = (() => {
+    if (resultSpin?.result === 'mutual_kiss') return { emoji: '❤️', title: 'MUTUAL KISS', cls: 'mutual' }
+    if (resultSpin?.result === 'partial_kiss') return { emoji: '💋', title: 'PARTIAL KISS', cls: 'partial' }
+    if (resultSpin?.result === 'full_rejection') return { emoji: '💔', title: 'FULL REJECTION', cls: 'reject' }
+    return { emoji: '⏳', title: "Time's up", cls: 'reject' }
+  })()
 
   return (
     <>
       <AnimatePresence>
-        {open && (
+        {open && decision && (
           <motion.div
             key={decision.spin.id}
             // §83: slide-down 250–350ms; §44/§84: drag down to dismiss with a
@@ -201,7 +270,7 @@ export function GameDecisionDrawer() {
       {/* §46: compact decision pill while the drawer is dismissed — tapping
           reopens; prevents losing the decision by swiping away */}
       <AnimatePresence>
-        {showPill && (
+        {showPill && decision && (
           <motion.button
             key={`pill-${decision.spin.id}`}
             initial={{ opacity: 0, y: -12 }}
@@ -215,6 +284,51 @@ export function GameDecisionDrawer() {
             <span className="animate-pulse" aria-hidden>❤️</span>
             Your turn — {secsLeft}s
           </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* §39/§96: GAME RESULT drawer — same popup system as the decision,
+          shown IMMEDIATELY when the round resolves (both answered or timeout,
+          §97/§139/§140). The user stays exactly where they are (§40). */}
+      <AnimatePresence>
+        {resultSpin && (
+          <motion.div
+            key={`result-${resultSpin.id}`}
+            initial={{ y: '-120%', opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: '-120%', opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="fixed top-[max(env(safe-area-inset-top),0.5rem)] inset-x-0 z-[231] mx-auto w-[min(94vw,26rem)]"
+            role="dialog"
+            aria-label="Round result"
+            data-testid="game-result-drawer"
+          >
+            <div className="bg-[var(--qk-card)]/95 backdrop-blur border border-white/15 rounded-3xl shadow-2xl p-5 flex flex-col items-center text-center gap-2">
+              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 h-1 w-10 rounded-full bg-white/20" aria-hidden />
+              <p className="text-[10px] font-black tracking-[0.18em] text-[var(--qk-accent)] uppercase">Game result</p>
+              <motion.span
+                className={`text-5xl ${resultVisual.cls === 'reject' ? '' : ''}`}
+                initial={{ scale: 0, rotate: -30 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 16 }}
+                aria-hidden
+              >
+                {resultVisual.emoji}
+              </motion.span>
+              <p className="text-white font-black text-lg tracking-wide">{resultVisual.title}</p>
+              {resultSpin.result === 'mutual_kiss' && (
+                <p className="text-white/70 text-xs font-bold">+1 Kiss Point each</p>
+              )}
+              {resultSpin.result === 'partial_kiss' && (
+                <p className="text-white/70 text-xs font-bold">
+                  +1 Kiss Point →{' '}
+                  {resultSpin.spinnerResponse === 'yes'
+                    ? snapshot?.players.find((p) => p.userId === resultSpin.targetId)?.displayName ?? 'them'
+                    : snapshot?.players.find((p) => p.userId === resultSpin.spinnerId)?.displayName ?? 'them'}
+                </p>
+              )}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </>

@@ -1,88 +1,146 @@
-// Quicky v3 seed — gift categories, gift catalog (GameItem rows), admin user.
-// Idempotent: upserts by slug / name. Run: node scripts/seed-gifts.mjs
+// Quicky — seed gifts + sticker bundles (bug-fix PRD §48-§55/§125-§127)
+// Usage: node scripts/seed-gifts.mjs   (or the combined seed below)
+//
+// SEED CONTRACT (§126): idempotent AND non-destructive. Seeds match rows by
+// STABLE SLUG and CREATE-IF-MISSING only — they never overwrite price, name,
+// active flags or sort order that an admin may have edited after seeding.
+// Running the seed twice produces the same number of records (§157) and an
+// admin-edited price survives normal application operation (§158).
 import { PrismaClient } from '@prisma/client'
 
-const db = new PrismaClient()
+const prisma = new PrismaClient()
 
+// ─── Gift categories (§49): Love / Fun / Premium ─────────────────────────────
 const CATEGORIES = [
-  { slug: 'popular',  name: 'Popular',  icon: '⭐', sortOrder: 1 },
-  { slug: 'romantic', name: 'Romantic', icon: '🌹', sortOrder: 2 },
-  { slug: 'cute',     name: 'Cute',     icon: '🧸', sortOrder: 3 },
-  { slug: 'funny',    name: 'Funny',    icon: '😄', sortOrder: 4 },
-  { slug: 'premium',  name: 'Premium',  icon: '💎', sortOrder: 5 },
-  { slug: 'special',  name: 'Special',  icon: '✨', sortOrder: 6 },
+  { name: 'Love', slug: 'giftcat_love', icon: '❤️', sortOrder: 1 },
+  { name: 'Fun', slug: 'giftcat_fun', icon: '🎉', sortOrder: 2 },
+  { name: 'Premium', slug: 'giftcat_premium', icon: '👑', sortOrder: 3 },
 ]
 
-// [slug, name, emoji, priceCoins, sortOrder] — matches the legacy
-// SPIN_BOTTLE_GIFTS ids so historical SpinRoomGift.itemId stays valid.
+// ─── Test gifts (§50): multiple categories, prices, ordering ─────────────────
 const GIFTS = [
-  ['rose',      'Rose',      '🌹', 10,   1, 'popular'],
-  ['heart',     'Heart',     '💖', 25,   2, 'popular'],
-  ['teddy',     'Teddy',     '🧸', 50,   3, 'cute'],
-  ['champagne', 'Champagne', '🥂', 100,  4, 'special'],
-  ['crown',     'Crown',     '👑', 250,  5, 'premium'],
-  ['diamond',   'Diamond',   '💎', 500,  6, 'premium'],
-  ['rocket',    'Rocket',    '🚀', 750,  7, 'funny'],
-  ['kiss',      'Kiss',      '💋', 1000, 8, 'romantic'],
+  { slug: 'gift_rose', name: 'Rose', emoji: '🌹', price: 50, category: 'giftcat_love', sortOrder: 1 },
+  { slug: 'gift_heart', name: 'Heart', emoji: '❤️', price: 100, category: 'giftcat_love', sortOrder: 2 },
+  { slug: 'gift_chocolate', name: 'Chocolate', emoji: '🍫', price: 150, category: 'giftcat_love', sortOrder: 3 },
+  { slug: 'gift_teddy', name: 'Teddy', emoji: '🧸', price: 250, category: 'giftcat_fun', sortOrder: 4 },
+  { slug: 'gift_crown', name: 'Crown', emoji: '👑', price: 500, category: 'giftcat_premium', sortOrder: 5 },
+  { slug: 'gift_diamond', name: 'Diamond', emoji: '💎', price: 1000, category: 'giftcat_premium', sortOrder: 6 },
 ]
 
-for (const c of CATEGORIES) {
-  await db.giftCategory.upsert({
-    where: { slug: c.slug },
-    create: c,
-    update: { name: c.name, icon: c.icon, sortOrder: c.sortOrder, isActive: true },
+async function ensureCategory(c) {
+  const existing = await prisma.giftCategory.findUnique({ where: { slug: c.slug } })
+  if (existing) return existing.id
+  const created = await prisma.giftCategory.create({
+    data: { name: c.name, slug: c.slug, icon: c.icon, sortOrder: c.sortOrder },
   })
+  console.log('created gift category', c.name)
+  return created.id
 }
-console.log('seeded categories:', CATEGORIES.length)
 
-for (const [id, name, emoji, price, sortOrder, catSlug] of GIFTS) {
-  const cat = await db.giftCategory.findUnique({ where: { slug: catSlug } })
-  const data = {
-    category: 'gift',
-    name,
-    emoji,
-    iconType: 'emoji',
-    iconValue: emoji,
-    coinPrice: price,
-    tier: price >= 250 ? 'premium' : 'default',
-    isActive: true,
-    sortOrder,
-    ...(cat ? { categoryId: cat.id } : {}),
-  }
-  const existing = await db.gameItem.findUnique({ where: { id } })
+async function ensureGift(g, categoryId) {
+  const existing = await prisma.gameItem.findUnique({ where: { slug: g.slug } })
   if (existing) {
-    await db.gameItem.update({ where: { id }, data })
-  } else {
-    await db.gameItem.create({ data: { id, ...data } })
+    console.log('kept gift (admin edits preserved)', g.name)
+    return
   }
+  await prisma.gameItem.create({
+    data: {
+      category: 'gift',
+      slug: g.slug,
+      categoryId,
+      name: g.name,
+      emoji: g.emoji,
+      iconType: 'emoji',
+      coinPrice: g.price,
+      tier: g.price >= 500 ? 'premium' : 'default',
+      isActive: true,
+      sortOrder: g.sortOrder,
+    },
+  })
+  console.log('created gift', g.name, `(${g.price} coins)`)
 }
-console.log('seeded gifts:', GIFTS.length)
 
-// Admin user — Leo can open the gift admin panel.
-await db.user.updateMany({ where: { phone: '+15555550109' }, data: { isAdmin: true } })
-console.log('admin flag set for +15555550109 (Alex)')
+// ─── Sticker bundles (§52-§55): 3 bundles, several stickers each ─────────────
+const BUNDLES = [
+  {
+    slug: 'sticker_bundle_love',
+    name: 'Love Pack',
+    description: 'Hearts and kisses for your favorite players.',
+    icon: '❤️',
+    priceCoins: 120,
+    stickers: [
+      { name: 'Heart', assetUrl: '❤️', sortOrder: 1 },
+      { name: 'Kiss', assetUrl: '😘', sortOrder: 2 },
+      { name: 'Heart Eyes', assetUrl: '😍', sortOrder: 3 },
+    ],
+  },
+  {
+    slug: 'sticker_bundle_fun',
+    name: 'Fun Pack',
+    description: 'Laugh it up at the table.',
+    icon: '😂',
+    priceCoins: 100,
+    stickers: [
+      { name: 'Laugh', assetUrl: '😂', sortOrder: 1 },
+      { name: 'Cool', assetUrl: '😎', sortOrder: 2 },
+      { name: 'Party', assetUrl: '🎉', sortOrder: 3 },
+    ],
+  },
+  {
+    slug: 'sticker_bundle_game_night',
+    name: 'Game Night Pack',
+    description: 'Bring the spin to a boil.',
+    icon: '🔥',
+    priceCoins: 150,
+    stickers: [
+      { name: 'Fire', assetUrl: '🔥', sortOrder: 1 },
+      { name: 'Bottle Pop', assetUrl: '🍾', sortOrder: 2 },
+      { name: 'Celebration', assetUrl: '🎉', sortOrder: 3 },
+    ],
+  },
+]
 
-// Photos for dev users so seats/landing show avatars. Maps only to files
-// that actually exist under public/personas/ (idempotent: fixes stale URLs).
-const AVATARS = {
-  '+15555550101': 'luna.png', '+15555550102': 'mia.png', '+15555550103': 'aria.png',
-  '+15555550104': 'sofia.png', '+15555550105': 'zoe.png', '+15555550106': 'emma.png',
-  '+15555550107': 'leo.png', '+15555550108': 'mateo.png', '+15555550109': 'owen.png',
-  '+15555550110': 'rex.png', '+15555550111': 'kai.png', '+15555550112': 'theo.png',
-}
-for (const [phone, file] of Object.entries(AVATARS)) {
-  const u = await db.user.findUnique({ where: { phone } })
-  if (!u) continue
-  const existing = await db.photo.findFirst({ where: { userId: u.id }, orderBy: { position: 'asc' } })
+async function ensureStickerBundle(b) {
+  // Bundles have no slug column — the NAME is the stable identifier here
+  // (matches the admin UI's uniqueness expectations). Create-if-missing only.
+  const existing = await prisma.gameStickerBundle.findFirst({ where: { name: b.name } })
   if (existing) {
-    if (existing.url !== `/personas/${file}`) {
-      await db.photo.update({ where: { id: existing.id }, data: { url: `/personas/${file}` } })
+    console.log('kept sticker bundle (admin edits preserved)', b.name)
+    return
+  }
+  const created = await prisma.gameStickerBundle.create({
+    data: {
+      name: b.name,
+      description: b.description,
+      icon: b.icon,
+      priceCoins: b.priceCoins,
+      purchaseEnabled: true,
+      isActive: true,
+      sortOrder: 0,
+    },
+  })
+  for (const s of b.stickers) {
+    const existingSticker = await prisma.gameSticker.findFirst({
+      where: { bundleId: created.id, name: s.name },
+    })
+    if (!existingSticker) {
+      await prisma.gameSticker.create({ data: { ...s, bundleId: created.id } })
     }
-  } else {
-    await db.photo.create({ data: { userId: u.id, url: `/personas/${file}`, position: 0, isPrimary: true } })
   }
+  console.log('created sticker bundle', b.name, `(+${b.stickers.length} stickers)`)
 }
-console.log('avatar check done')
 
-await db.$disconnect()
-console.log('done')
+async function main() {
+  const catIds = {}
+  for (const c of CATEGORIES) catIds[c.slug] = await ensureCategory(c)
+  for (const g of GIFTS) await ensureGift(g, catIds[g.category])
+  for (const b of BUNDLES) await ensureStickerBundle(b)
+  await prisma.$disconnect()
+  console.log('gifts + sticker bundles seeded ✓ (idempotent, non-destructive)')
+}
+
+main().catch(async (e) => {
+  console.error(e)
+  await prisma.$disconnect()
+  process.exit(1)
+})

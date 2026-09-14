@@ -18,14 +18,18 @@ import { create } from 'zustand'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 
+export type GameChatMessageType = 'text' | 'sticker' | 'image' | 'voice' | 'quicky_image'
+
 export type GameChatMessage = {
   id: string
   conversationId?: string
   senderId: string
-  messageType: 'text' | 'sticker'
+  messageType: GameChatMessageType
   text: string | null
   stickerId?: string | null
   sticker?: { id: string; name: string; assetUrl: string } | null
+  mediaUrl?: string | null
+  mediaDuration?: number | null
   replyToMessageId?: string | null
   replyTo?: { id: string; senderId: string; senderName: string | null; text: string; messageType: string } | null
   clientMessageId?: string | null
@@ -34,6 +38,8 @@ export type GameChatMessage = {
   // client-only states
   pending?: boolean
   failed?: boolean
+  // media still uploading locally (never persisted)
+  localPreview?: string | null
 }
 
 export type GameChatConversationRow = {
@@ -58,6 +64,11 @@ type GameChatState = {
   peerLastReadAt: string | null
   loadingOlder: boolean
   replyTo: GameChatMessage | null
+  // §6/§156: the chat screen NEVER renders a black screen — while the
+  // conversation resolves we show a loading beat; on failure an error state
+  // with Retry. `peerUnavailable` covers §7 (selected user gone).
+  opening: boolean
+  openError: 'network' | 'user_gone' | null
   // connection
   streamOk: boolean
 
@@ -71,6 +82,7 @@ type GameChatState = {
   setReplyTo: (m: GameChatMessage | null) => void
   sendMessage: (text: string) => void
   sendSticker: (sticker: { id: string; name: string; assetUrl: string }) => void
+  sendMedia: (type: 'image' | 'voice' | 'quicky_image', mediaUrl: string, mediaDuration?: number) => void
   retryMessage: (clientMessageId: string) => void
   toggleReaction: (messageId: string, reaction: string) => void
   markActiveRead: () => void
@@ -126,6 +138,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
     peerLastReadAt: null,
     loadingOlder: false,
     replyTo: null,
+    opening: false,
+    openError: null,
     streamOk: false,
 
     connectStream: () => {
@@ -192,6 +206,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
     },
 
     openConversation: (peer) => {
+      // §3/§6/§7: the chat screen must never be blank — while resolving, the
+      // screen shows a loading state; failures land in openError (retryable).
       set({
         activePeer: peer,
         activeConversationId: null,
@@ -200,15 +216,20 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
         oldestCursor: null,
         peerLastReadAt: null,
         replyTo: null,
+        opening: true,
+        openError: null,
       })
       void (async () => {
         try {
           const res = await api.gameChat.messages({ peerUserId: peer.peerUserId })
+          if (useGameChatStore.getState().activePeer?.peerUserId !== peer.peerUserId) return
           set({
             activeConversationId: res.conversationId,
             peerLastReadAt: res.peerLastReadAt,
             hasMore: res.hasMore,
             oldestCursor: res.oldestCursor,
+            opening: false,
+            openError: null,
           })
           mergeMessages(res.messages)
           // §16: the chat screen is now visible → mark read
@@ -217,7 +238,16 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
               useGameChatStore.getState().refreshList(true)
             }).catch(() => {})
           }
-        } catch {}
+        } catch (e: any) {
+          if (useGameChatStore.getState().activePeer?.peerUserId !== peer.peerUserId) return
+          // §7: a user that no longer exists must show "User unavailable",
+          // never a crash or a blank screen.
+          const status = e?.status ?? e?.body?.status
+          set({
+            opening: false,
+            openError: status === 404 || status === 400 ? 'user_gone' : 'network',
+          })
+        }
       })()
     },
 
@@ -230,6 +260,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
         oldestCursor: null,
         peerLastReadAt: null,
         replyTo: null,
+        opening: false,
+        openError: null,
       }),
 
     loadOlder: async () => {
@@ -338,6 +370,59 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
       })()
     },
 
+    sendMedia: (type, mediaUrl, mediaDuration) => {
+      const { activePeer, activeConversationId, replyTo } = get()
+      if (!activePeer) return
+      const meId = useQuickyStore.getState().user?.id ?? ''
+      const clientMessageId = `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const optimistic: GameChatMessage = {
+        id: `tmp_${clientMessageId}`,
+        conversationId: activeConversationId ?? undefined,
+        senderId: meId,
+        messageType: type,
+        text: null,
+        mediaUrl,
+        mediaDuration: mediaDuration ?? null,
+        replyToMessageId: replyTo?.id ?? null,
+        replyTo: replyTo
+          ? { id: replyTo.id, senderId: replyTo.senderId, senderName: null, text: replyTo.text ?? '', messageType: replyTo.messageType }
+          : null,
+        clientMessageId,
+        createdAt: new Date().toISOString(),
+        reactions: [],
+        pending: true,
+        // §121: only THIS message's submission is gated — other sends stay free
+      }
+      mergeMessages([optimistic])
+      set({ replyTo: null })
+      void (async () => {
+        try {
+          const res = await api.gameChat.send({
+            peerUserId: activePeer.peerUserId,
+            conversationId: activeConversationId ?? undefined,
+            messageType: type,
+            mediaUrl,
+            mediaDuration,
+            replyToMessageId: replyTo?.id || undefined,
+            clientMessageId,
+          })
+          mergeMessages([res.message])
+          if (!activeConversationId && res.conversationId) {
+            set({ activeConversationId: res.conversationId })
+          }
+          get().refreshList(true)
+        } catch {
+          // §116: upload/send failure stays visible with a retry — never a
+          // broken message row, never a silent loss.
+          set((prev) => ({
+            messages: prev.messages.map((m) =>
+              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true } : m
+            ),
+          }))
+        }
+      })()
+    },
+
     retryMessage: (clientMessageId) => {
       const { activePeer, activeConversationId, messages } = get()
       const msg = messages.find((m) => m.clientMessageId === clientMessageId)
@@ -355,6 +440,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
             messageType: msg.messageType,
             text: msg.text ?? undefined,
             stickerId: msg.stickerId ?? undefined,
+            mediaUrl: msg.mediaUrl ?? undefined,
+            mediaDuration: msg.mediaDuration ?? undefined,
             replyToMessageId: msg.replyToMessageId ?? undefined,
             clientMessageId, // §92: same id → idempotent on the server
           })
