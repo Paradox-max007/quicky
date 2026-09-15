@@ -340,7 +340,7 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
-function ActionButton({
+export function ActionButton({
   onClick,
   icon,
   color,
@@ -379,7 +379,7 @@ function ActionButton({
 }
 
 // Static card layout (for background stack & non-interactive display)
-function CardLayout({
+export function CardLayout({
   candidate,
   style,
   interactive,
@@ -565,7 +565,7 @@ function CardLayout({
   )
 }
 
-function SwipeCardWrapper({
+export function SwipeCardWrapper({
   candidate,
   onSwipe,
   viewerIsPremium,

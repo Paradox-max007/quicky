@@ -8,6 +8,8 @@ import { AuthScreen } from './AuthScreen'
 import { OnboardingFlow } from './OnboardingFlow'
 import { DiscoveryFeed } from './DiscoveryFeed'
 import { BottomNav } from './BottomNav'
+import { DesktopHome } from './desktop/DesktopHome'
+import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { ChatList } from './ChatList'
 import { ChatView } from './ChatView'
 import { LikesYouView } from './LikesYouView'
@@ -84,6 +86,25 @@ export function AppRoot() {
   const hydrated = useQuickyStore((s) => s.hydrated)
   const user = useQuickyStore((s) => s.user)
   const setView = useQuickyStore((s) => s.setView)
+  const isDeskShell = useIsDesktopShell() === true
+
+  // Desktop command center (Desktop UI concept §3/§30): at ≥1024px web the
+  // five main tab views plug into the three-zone shell; everything else
+  // (chat, game room, settings…) keeps the centered-column layout. Mobile
+  // and Capacitor are never affected (the hook is null/false there).
+  const tabScreen =
+    view === 'discovery' ? (
+      <DiscoveryFeed />
+    ) : view === 'matches' ? (
+      <ChatList />
+    ) : view === 'likes-you' ? (
+      <LikesYouView />
+    ) : view === 'community' ? (
+      <CommunityScreen />
+    ) : view === 'profile-me' ? (
+      <MyProfileView />
+    ) : null
+  const useDesk = isDeskShell && tabScreen !== null
 
   // ─── Capacitor hardware back button (lifecycle PRD §56/§57) ────────────
   // The on-screen back arrows are explicit (Community ↔ Game ↔ Room); the
@@ -286,13 +307,11 @@ export function AppRoot() {
       {/* Main view — centered, bigger column on desktop web */}
       <div className="w-full h-full flex flex-col">
         <div className="flex-1 min-h-0 overflow-hidden">
-          <div className={cn('relative w-full h-full mx-auto', shellFor(view))}>
+          <div className={cn('relative w-full h-full mx-auto', !useDesk && shellFor(view))}>
+            {useDesk && <DesktopHome>{tabScreen}</DesktopHome>}
             {view === 'auth' && <AuthScreen />}
           {view === 'onboarding' && <OnboardingFlow />}
-          {view === 'discovery' && <DiscoveryFeed />}
-          {view === 'matches' && <ChatList />}
-          {view === 'likes-you' && <LikesYouView />}
-          {view === 'profile-me' && <MyProfileView />}
+          {!useDesk && tabScreen}
           {view === 'edit-profile' && <EditProfileScreen />}
           {view === 'settings' && <SettingsScreen />}
           {view === 'settings-phone' && <PhoneNumberScreen />}
@@ -306,7 +325,7 @@ export function AppRoot() {
           {view === 'settings-privacy-policy' && <PrivacyPolicyScreen />}
           {view === 'settings-help' && <HelpSupportScreen />}
           {view === 'premium' && <PremiumView />}
-          {view === 'community' && <CommunityScreen />}
+          
           {view === 'chat' && <ChatView />}
           {view === 'profile-view' && <ProfileView />}
           {view === 'spin-bottle' && (
@@ -352,7 +371,7 @@ export function AppRoot() {
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.
             Centered dock on desktop, full-width on mobile (unchanged). */}
-        {['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && (
+        {!useDesk && ['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && (
           <div className="shrink-0 w-full flex justify-center">
             <div className="w-full md:max-w-2xl">
               <BottomNav />

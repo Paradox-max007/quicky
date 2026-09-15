@@ -1,0 +1,90 @@
+/* Quicky desktop command-center shell (Desktop UI concept §49/§50/§51).
+   Mobile never loads these rules — the shell only mounts at ≥1024px.
+   Visual language: dark base kept, subtle gradients + radial glows,
+   pink accent, gold for progression, green ONLY for live/online (§49). */
+
+.qk-desk-root {
+  background:
+    radial-gradient(1100px 520px at 50% -12%, rgba(255, 45, 85, 0.09), transparent 62%),
+    radial-gradient(900px 500px at 108% 112%, rgba(184, 164, 255, 0.07), transparent 60%),
+    radial-gradient(700px 420px at -8% 108%, rgba(245, 197, 112, 0.05), transparent 60%),
+    var(--qk-bg);
+}
+
+/* Slim, unobtrusive scrollbars for the center column */
+.qk-desk-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+.qk-desk-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.qk-desk-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+.qk-desk-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Sidebar nav item — a social/game rail, not an admin panel (§4) */
+.qk-desk-navitem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 14px;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.qk-desk-navitem:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.qk-desk-navitem:active {
+  transform: scale(0.97);
+}
+.qk-desk-navitem[data-active='true'] {
+  background: color-mix(in srgb, var(--qk-accent) 13%, transparent);
+  color: var(--qk-accent);
+}
+.qk-desk-navitem[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--qk-accent);
+}
+
+/* Stat row hover inside the My Quicky panel */
+.qk-desk-stat {
+  transition: background-color 0.15s ease;
+  border-radius: 12px;
+}
+.qk-desk-stat:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Activity feed entrance */
+@keyframes qk-desk-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.qk-desk-fade {
+  animation: qk-desk-fade-up 0.35s ease both;
+}
+
+/* Notification dropdown */
+.qk-desk-pop {
+  background: color-mix(in srgb, var(--qk-card) 92%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
