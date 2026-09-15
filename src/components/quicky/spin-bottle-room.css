@@ -944,6 +944,26 @@
   color: var(--room-text);
   overflow: hidden;
 }
+/* Layout PRD §2.1/§3/§12: the chat-section overlays (contacts / personal)
+   pin EXACTLY over the chat sheet on narrow windows — same height clamps,
+   same sheet radius — with bottom: var(--sbr-kb) so they ride above the
+   keyboard. Room Chat beneath stays MOUNTED (§65); z-index 12 sits above
+   the sheet's 10. The ≥1024px block re-pins them to the sidebar column. */
+.sbr-chat-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--sbr-kb, 0px);
+  height: clamp(228px, 33dvh, 350px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  background: var(--sbr-surface);
+  border-top: 1px solid var(--sbr-line);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
 .sbr-chat-grabber {
   flex-shrink: 0;
   width: 34px;
@@ -1479,17 +1499,19 @@
     background: #101016;
     box-shadow: none;
   }
-  /* Bug-fix PRD §9/§10: web sidebar chat-section states. The overlays pin to
-     .sbr-body's right column (same clamp width) while the Room Chat beneath
-     stays MOUNTED — its store subscription keeps receiving messages (§90). */
+  /* Layout PRD §3/§5: chat-section overlays pin to .sbr-body's right column
+     (same clamp width) while the Room Chat beneath stays MOUNTED — its store
+     subscription keeps receiving messages (§65). z-index 12 > .sbr-chat's 10:
+     the old value 6 rendered the overlay BEHIND the mounted sidebar. */
   .sbr-chat-overlay {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     width: clamp(340px, 36vw, 470px);
-    z-index: 6;
-    display: block;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
     border-left: 1px solid #232330;
     background: #101016;
   }
@@ -1584,6 +1606,7 @@
    ════════════════════════════════════════════════════════════ */
 @media (max-height: 640px) {
   .sbr-chat { height: clamp(176px, 30dvh, 228px); }
+  .sbr-chat-overlay { height: clamp(176px, 30dvh, 228px); }
 }
 
 /* ════════════════════════════════════════════════════════════

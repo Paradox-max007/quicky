@@ -79,15 +79,30 @@ class GameChatErrorBoundary extends Component<{ children: ReactNode }, { error: 
   }
 }
 
-export function GameChatScreen({ onBack }: { onBack?: () => void }) {
+export function GameChatScreen({
+  onBack,
+  embedded = false,
+}: {
+  onBack?: () => void
+  /** Inside the room chat panel: the host lifts the overlay via the room's
+   * --sbr-kb var, so this screen must NOT run its own visualViewport
+   * keyboard shim — a second shift pushes the composer out of the sheet. */
+  embedded?: boolean
+}) {
   return (
     <GameChatErrorBoundary>
-      <GameChatScreenInner onBack={onBack} />
+      <GameChatScreenInner onBack={onBack} embedded={embedded} />
     </GameChatErrorBoundary>
   )
 }
 
-function GameChatScreenInner({ onBack }: { onBack?: () => void }) {
+function GameChatScreenInner({
+  onBack,
+  embedded,
+}: {
+  onBack?: () => void
+  embedded?: boolean
+}) {
   const me = useQuickyStore((s) => s.user)
   const peer = useGameChatStore((s) => s.activePeer)
   const conversationId = useGameChatStore((s) => s.activeConversationId)
@@ -112,9 +127,14 @@ function GameChatScreenInner({ onBack }: { onBack?: () => void }) {
   const lastMsgId = messages.length ? messages[messages.length - 1].id : null
   const prevLastIdRef = useRef<string | null>(null)
 
-  // ── §6: loading + §7/§156: error / user-gone states — never a black screen
-  if (!peer) return null
-  const peerName = peer.peerName ?? 'Player'
+  // ── RULES OF HOOKS (layout PRD §93): every hook below must run on EVERY
+  // render. The old `if (!peer) return null` HERE sat above the effects, so
+  // the first render (peer still resolving) skipped them and the next render
+  // ran them → "Rendered more hooks than during the previous render" at the
+  // markActiveRead effect (hook #54). The null-peer guard now lives directly
+  // above the JSX return, where it renders a loading beat — never a black
+  // screen — and every render executes the exact same hook sequence.
+  const peerName = peer?.peerName ?? 'Player'
 
   // ── mark read when the screen is visible (§16) ───────────────────────────
   useEffect(() => {
@@ -165,8 +185,12 @@ function GameChatScreenInner({ onBack }: { onBack?: () => void }) {
   }
 
   // ── keyboard overlay (§80): composer rides above the keyboard ────────────
+  // `embedded` (inside the room chat panel) skips this shim: the room lifts
+  // the whole overlay with its own --sbr-kb var — a second shift here would
+  // push the composer out of the sheet.
   const [kb, setKb] = useState(0)
   useEffect(() => {
+    if (embedded) return
     const vv = window.visualViewport
     if (!vv) return
     const onVV = () => {
@@ -179,7 +203,7 @@ function GameChatScreenInner({ onBack }: { onBack?: () => void }) {
       vv.removeEventListener('resize', onVV)
       vv.removeEventListener('scroll', onVV)
     }
-  }, [])
+  }, [embedded])
 
   // ── sticker tray data (§78) ───────────────────────────────────────────────
   const [bundles, setBundles] = useState<any[] | null>(null)
@@ -356,6 +380,22 @@ function GameChatScreenInner({ onBack }: { onBack?: () => void }) {
     } finally {
       setUploading(false)
     }
+  }
+
+  // §6/§156: no peer yet → loading beat. ALL hooks already ran above, so
+  // this render is hook-consistent with every other render (see the note at
+  // the top of the component). Peer resolution failure lands in openError
+  // (rendered below) — a missing peer is never a blank screen.
+  if (!peer) {
+    return (
+      <div
+        className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[var(--qk-bg)] text-white"
+        data-testid="game-chat-loading"
+      >
+        <div className="w-9 h-9 rounded-full border-2 border-[var(--qk-accent)] border-t-transparent animate-spin" />
+        <p className="text-white/60 text-sm">Loading conversation…</p>
+      </div>
+    )
   }
 
   return (

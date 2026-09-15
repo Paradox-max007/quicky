@@ -37,7 +37,6 @@ import { Keyboard } from '@capacitor/keyboard'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameRoomStore } from '@/store/game-room'
-import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import {
   calculateTableGeometry,
   deviceClassFor,
@@ -139,6 +138,10 @@ export function SpinBottleRoom({
   } | null>(null)
   // Web breakpoint (≥1024px) → popover interaction; below → bottom sheet (§82/§83)
   const [isDesktop, setIsDesktop] = useState(false)
+  // Layout PRD §76: ONE platform check drives the chat-navigation split —
+  // Capacitor uses the dedicated full-screen chat screens (§8), web uses the
+  // in-room chat panel at every viewport width.
+  const isNativeCapacitor = Capacitor.isNativePlatform()
   const kbHeightRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
@@ -210,8 +213,9 @@ export function SpinBottleRoom({
     return Math.max(0, Math.round(Math.min(top, stageBox.h - DUEL_PANEL_ESTIMATE - 20)))
   }, [stageBox.h, centerCardSize, geometry.duelPositions.spinner.y])
 
-  // ─── v3 §72-§77: screen stays awake while the room is mounted ──────────
-  useGameWakeLock(true)
+  // ─── Layout PRD §9/§48: the wake lock is owned by AppRoot for the WHOLE
+  // game section — entering Game Chat / the contacts screen must not release
+  // it (§9 forbids exactly that). This call site is intentionally gone. ───
 
   // Desktop breakpoint for the interaction popover (single listener, cheap)
   useEffect(() => {
@@ -397,25 +401,23 @@ export function SpinBottleRoom({
     setInteraction(null)
   }
   const handleMessage = (p: InteractionPlayer) => {
-    // Game-chat PRD §94/§96: Message opens the PRIVATE GAME CHAT with this
-    // player; the interaction popup must close first (never linger behind
-    // the chat route).
+    // Layout PRD §2.1/§57: "Message" opens the GAME CONTACT LIST first — the
+    // user then selects the contact and lands in the Personal Game Chat.
+    // The interaction popup must close first (never linger behind the chat
+    // surface). Platform split (§8):
+    //   · WEB (desktop sidebar AND narrow bottom sheet): the chat panel swaps
+    //     to the contact list with this player pinned on top — Room Chat
+    //     stays mounted underneath and the table keeps its exact size (§74).
+    //   · CAPACITOR: the dedicated GameChatContactsScreen — the room RUNTIME
+    //     stays attached (§9), back returns to the live table.
     setInteraction(null)
-    if (isDesktop) {
-      // Bug-fix PRD §9: WEB — the sidebar swaps to the personal chat panel;
-      // the room (and its live chat) stays mounted underneath (§12).
-      useGameChatStore.getState().openConversation({
-        peerUserId: p.userId,
-        peerName: p.displayName,
-        peerAvatar: p.avatar,
-      })
-      setRoomChatPanel('personal')
+    const qk = useQuickyStore.getState()
+    const peer = { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar }
+    qk.pinGameChatPeer(peer)
+    if (isNativeCapacitor) {
+      qk.openGameChatContacts('spin-bottle-room')
     } else {
-      // Capacitor/mobile — dedicated chat screen (§17), runtime stays live.
-      useQuickyStore.getState().openGameChat(
-        { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar },
-        'spin-bottle-room'
-      )
+      qk.setRoomChatPanel('contacts')
     }
   }
   const handleProfile = (p: InteractionPlayer) => {
@@ -972,12 +974,22 @@ export function SpinBottleRoom({
             gameChatsUnread={gameChatsUnread}
           />
 
-          {/* Web sidebar overlays — contacts (§10 state 2) and personal chat
-              (§10 state 3). Back: personal → contacts → room (§11). */}
-          {isDesktop && roomChatPanel === 'contacts' && <GameContactsPanel />}
-          {isDesktop && roomChatPanel === 'personal' && (
+          {/* Layout PRD §3 chat-section overlays — contacts (state 2) and
+              personal chat (state 3) — rendered INSIDE the chat panel area
+              (right sidebar ≥1024px, chat sheet below) while Room Chat stays
+              MOUNTED underneath (§5/§65) and the table keeps its size (§74).
+              Back: personal → contacts → room (§4). Web only — Capacitor
+              uses the dedicated 'game-chat-contacts' / 'game-chat' views
+              (§8). `embedded` tells the chat screen the room already lifts
+              the overlay above the keyboard. */}
+          {!isNativeCapacitor && roomChatPanel === 'contacts' && (
+            <div className="sbr-chat-overlay" data-testid="web-contacts-panel">
+              <GameContactsPanel />
+            </div>
+          )}
+          {!isNativeCapacitor && roomChatPanel === 'personal' && (
             <div className="sbr-chat-overlay" data-testid="web-personal-panel">
-              <GameChatScreen onBack={() => setRoomChatPanel('contacts')} />
+              <GameChatScreen embedded onBack={() => setRoomChatPanel('contacts')} />
             </div>
           )}
         </div>

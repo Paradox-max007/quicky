@@ -80,7 +80,9 @@ export async function deleteRoomCompletely(roomId: string): Promise<boolean> {
         where: { roomId, leftAt: null, isActive: true },
       })
       if (active > 0) return false // someone (re)joined — the room lives (§7)
-      await tx.spinRoom.delete({ where: { id: roomId } }).catch(() => null)
+      // Layout PRD §41: deleteMany is idempotent — a room already deleted by
+      // a racing pass can never throw P2025 ("No record was found").
+      await tx.spinRoom.deleteMany({ where: { id: roomId } })
       return true
     })
     .catch(() => false)

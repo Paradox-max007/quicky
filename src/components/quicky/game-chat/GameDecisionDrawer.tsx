@@ -46,7 +46,10 @@ export function GameDecisionDrawer() {
   // §53/§54: game-section screens only — the table (spin-bottle-room) has
   // its own inline duel UI; Dating Chat / Settings / Community never see it.
   const onGameSectionView =
-    view === 'spin-bottle' || view === 'game-chat' || (view === 'profile-view' && profileReturnView === 'spin-bottle-room')
+    view === 'spin-bottle' ||
+    view === 'game-chat' ||
+    view === 'game-chat-contacts' || // layout PRD §10: drawer shows over the contact list too
+    (view === 'profile-view' && profileReturnView === 'spin-bottle-room')
 
   // ── Off-table participation snapshot (shared by decision + result) ──────
   const iAmParticipant = !!(snapshot?.iAmTarget || snapshot?.iAmSpinner)

@@ -32,6 +32,8 @@ import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { AdminRulesScreen } from './AdminRulesScreen'
 import { AdminStickersScreen } from './AdminStickersScreen'
 import { GameChatScreen } from './game-chat/GameChatScreen'
+import { GameChatContactsScreen } from './game-chat/GameChatContactsScreen'
+import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import { GameDecisionDrawer } from './game-chat/GameDecisionDrawer'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
@@ -69,6 +71,7 @@ function shellFor(view: AppView): string {
     case 'premium':
       return 'md:max-w-2xl'
     case 'game-chat':
+    case 'game-chat-contacts':
       // §81: phone-style chat column on web
       return 'md:max-w-lg'
     default:
@@ -97,6 +100,12 @@ export function AppRoot() {
         else if (v === 'spin-bottle-room') {
           useQuickyStore.getState().setSpinBottleRoomId(null)
           sv('spin-bottle')
+        } else if (v === 'game-chat-contacts') {
+          // Layout PRD §8: the contacts screen's back → the context that
+          // opened it (the live room) — the runtime never stopped.
+          const qk = useQuickyStore.getState()
+          qk.pinGameChatPeer(null)
+          qk.setView(qk.gameChatReturnView || 'spin-bottle-room')
         } else if (v === 'game-chat') {
           // game-chat PRD §97: back returns to the context that opened it
           useGameChatStore.getState().closeConversation()
@@ -162,11 +171,49 @@ export function AppRoot() {
     view === 'spin-bottle' ||
     view === 'spin-bottle-room' ||
     view === 'game-chat' ||
+    view === 'game-chat-contacts' ||
     (view === 'profile-view' && useQuickyStore.getState().profileReturnView === 'spin-bottle-room')
   useEffect(() => {
     if (gameSectionActive) useGameChatStore.getState().connectStream()
     else useGameChatStore.getState().disconnectStream()
   }, [gameSectionActive])
+
+  // ─── WAKE LOCK (layout PRD §9/§48) ───────────────────────────────────────
+  // Owned HERE for the whole game section while the room runtime is
+  // attached: entering Game Chat / the contacts screen must NOT release the
+  // wake lock (§9 forbids exactly that). Released when the room detaches
+  // (leave / room deleted / session ended, §48) or the user leaves the game
+  // section; visibilitychange inside the hook re-acquires (§78 resume).
+  const roomAttached = useGameRoomStore((s) => !!s.roomId)
+  useGameWakeLock(roomAttached && gameSectionActive)
+
+  // ─── APP RESUME (layout PRD §78) ─────────────────────────────────────────
+  // Capacitor resume → reconcile the authoritative room snapshot + refresh
+  // chat state. The server deadline stays the only authority: a response
+  // that came due while backgrounded can never be sent stale (the respond
+  // route re-checks the server clock), and if both responses were already
+  // submitted the reconciled snapshot carries the result.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let handle: Awaited<ReturnType<typeof import('@capacitor/app').App.addListener>> | null = null
+    let cancelled = false
+    void import('@capacitor/app').then(({ App }) =>
+      App.addListener('resume', () => {
+        const room = useGameRoomStore.getState()
+        if (room.roomId) void room.reconcile()
+        const chat = useGameChatStore.getState()
+        if (chat.activeConversationId) void chat.refreshActive()
+        chat.refreshList(true)
+      })
+    ).then((h) => {
+      if (cancelled) h?.remove?.()
+      else handle = h
+    })
+    return () => {
+      cancelled = true
+      handle?.remove?.()
+    }
+  }, [])
 
   // ─── BLACK SCREEN ROOT FIX (bug-fix PRD §3/§7/§8/§156) ───────────────────
   // "Message" on a player sets `gameChatPeer` and navigates to the
@@ -297,6 +344,7 @@ export function AppRoot() {
           {view === 'admin-gifts' && <AdminGiftsScreen />}
           {view === 'admin-rules' && <AdminRulesScreen />}
           {view === 'admin-stickers' && <AdminStickersScreen />}
+          {view === 'game-chat-contacts' && <GameChatContactsScreen />}
           {view === 'game-chat' && <GameChatScreen />}
           </div>
         </div>

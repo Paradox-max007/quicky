@@ -391,10 +391,13 @@ if (awaiting2) {
   ok('next round opened after timeout resolve', !!awaiting3)
   if (awaiting3) {
     // §35/§141: a response that reaches the server BEFORE the deadline is
-    // ACCEPTED even with a sliver of time left (last-moment tap).
+    // ACCEPTED even with a sliver of time left (last-moment tap). The window
+    // is generous (1200ms) so SLOW dev machines / cold dev-server routes can
+    // still land inside it — the assertion proves before-deadline acceptance,
+    // not a stopwatch.
     await db.spinBottleSpin.update({
       where: { id: awaiting3.id },
-      data: { responseDeadline: new Date(Date.now() + 250) },
+      data: { responseDeadline: new Date(Date.now() + 1200) },
     })
     const tSession = awaiting3.targetId === B.userId ? Bb : Aa
     const lastMoment = await tSession('/api/quicky/games/spin-bottle/respond', {
@@ -409,7 +412,13 @@ if (awaiting2) {
     })
     ok('double tap → ALREADY_RESPONDED code (§102/§142)', again.status === 409 && again.body?.error === 'ALREADY_RESPONDED', JSON.stringify(again.body))
     // §37/§139: the OTHER party answers → the round resolves IMMEDIATELY
-    // (second responder's reply carries outcome 'resolved').
+    // (second responder's reply carries outcome 'resolved'). Re-bump the
+    // deadline: SLOW dev machines need more than the remaining sliver for
+    // the second POST to still land before it (same reasoning as above).
+    await db.spinBottleSpin.update({
+      where: { id: awaiting3.id },
+      data: { responseDeadline: new Date(Date.now() + 1200) },
+    })
     const oSession = awaiting3.spinnerId === A.userId ? Aa : Bb
     const second = await oSession('/api/quicky/games/spin-bottle/respond', {
       method: 'POST',

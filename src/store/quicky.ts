@@ -30,6 +30,7 @@ export type AppView =
   | 'spin-bottle'
   | 'spin-bottle-room'
   | 'game-chat'
+  | 'game-chat-contacts'
   | 'admin-gifts'
   | 'admin-rules'
   | 'admin-stickers'
@@ -164,8 +165,14 @@ type State = {
   // Bug-fix PRD §9/§10: the WEB room sidebar is a 3-state chat section —
   // 'room' (Room Chat, stays mounted underneath), 'contacts' (Game Contact
   // List) and 'personal' (Personal Game Chat). Capacitor ignores this and
-  // uses the dedicated 'game-chat' screen instead (§17).
+  // uses the dedicated 'game-chat-contacts' / 'game-chat' screens instead
+  // (layout PRD §8: Message → Contact List → Personal Chat).
   roomChatPanel: 'room' | 'contacts' | 'personal'
+  // Layout PRD §2.1/§51: "Message" on a player opens the CONTACT LIST with
+  // that player pinned at the top — the conversation may not exist yet and
+  // the list only shows real conversations (§23). The pinned row is
+  // synthesized client-side and cleared when the contacts surface closes.
+  gameChatPinnedPeer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
 
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
@@ -197,6 +204,12 @@ type State = {
     returnView?: AppView
   ) => void
   closeGameChat: () => void
+  // Layout PRD §8: the dedicated Capacitor CONTACT LIST screen (Game Room →
+  // Game Contact List → Personal Game Chat). Back returns to `returnView`.
+  openGameChatContacts: (returnView?: AppView) => void
+  pinGameChatPeer: (
+    peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
+  ) => void
   setRoomChatPanel: (p: 'room' | 'contacts' | 'personal') => void
   logout: () => void
 }
@@ -215,6 +228,7 @@ export const useQuickyStore = create<State>((set) => ({
   gameChatPeer: null,
   gameChatReturnView: 'spin-bottle',
   roomChatPanel: 'room',
+  gameChatPinnedPeer: null,
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -263,6 +277,14 @@ export const useQuickyStore = create<State>((set) => ({
     }),
   closeGameChat: () =>
     set((prev) => ({ view: prev.gameChatReturnView || 'spin-bottle', gameChatPeer: null })),
-  setRoomChatPanel: (p) => set({ roomChatPanel: p }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', communityFocusPostId: null }),
+  openGameChatContacts: (returnView) =>
+    set({ view: 'game-chat-contacts', ...(returnView ? { gameChatReturnView: returnView } : {}) }),
+  pinGameChatPeer: (peer) => set({ gameChatPinnedPeer: peer }),
+  setRoomChatPanel: (p) =>
+    set((prev) => ({
+      roomChatPanel: p,
+      // Leaving the contacts state drops the pinned "Message" row (§2.1).
+      ...(p !== 'contacts' && prev.gameChatPinnedPeer ? { gameChatPinnedPeer: null } : {}),
+    })),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, communityFocusPostId: null }),
 }))

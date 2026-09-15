@@ -526,6 +526,8 @@ model SpinBottleSpin {
 
   @@index([roomId, turnIndex])
   @@index([roomId, status])
+  // §40: the timeout watchdog sweeps overdue rounds by status + deadline.
+  @@index([status, responseDeadline])
 }
 
 // Ledger of every Kiss Point awarded inside a round (PRD §6). A user earns a
@@ -798,6 +800,9 @@ model GameMessage {
   reactions    GameMessageReaction[]
 
   @@index([conversationId, createdAt])
+  // §40: sender-scoped scans (moderation / media cleanup) need a plain
+  // sender index — the clientMessageId unique does not serve them.
+  @@index([senderId])
   @@unique([conversationId, senderId, clientMessageId])
 }
 
