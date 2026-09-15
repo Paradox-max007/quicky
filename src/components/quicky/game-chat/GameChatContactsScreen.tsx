@@ -35,10 +35,14 @@ export function GameChatContactsScreen() {
   const pinnedRow = buildPinnedRow(pinned, list)
 
   const back = () => {
-    // §9: back to the game — the runtime re-presents the exact live state.
+    // Mentions PRD §82: back to the game — the runtime re-presents the exact
+    // live state. Uses the CONTACTS screen's OWN return view: when the
+    // personal chat was opened straight from "Message", gameChatReturnView
+    // points back HERE (personal → contacts), so returning further to the
+    // room must read gameChatContactsReturnView instead.
     const qk = useQuickyStore.getState()
     qk.pinGameChatPeer(null)
-    qk.setView(qk.gameChatReturnView || 'spin-bottle-room')
+    qk.setView(qk.gameChatContactsReturnView || 'spin-bottle-room')
   }
 
   const pick = (row: { peer: { id: string; name: string | null; avatar: string | null } }) => {

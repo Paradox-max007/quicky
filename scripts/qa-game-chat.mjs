@@ -528,6 +528,79 @@ ok('flood beyond the window is throttled (§120)', hit429)
   await db.gameConversationMember.deleteMany({ where: { userId: { in: ids } } })
 }
 
+// ── Test 15 (mentions PRD §40-§45/§41/§62/§63): room chat mentions ─────────
+console.log('\nTest 15 — room chat mentions (server-validated)')
+{
+  const jA = await Aa('/api/quicky/games/spin-bottle/join', { method: 'POST' })
+  const jB = await Bb('/api/quicky/games/spin-bottle/join', { method: 'POST' })
+  ok('mention room: both members', jA.body?.ok && jB.body?.roomId === jA.body?.roomId, JSON.stringify({ a: jA.body?.roomId, b: jB.body?.roomId }))
+  const mRoom = jA.body.roomId
+  const leaveRetry = async (sessionApi) => {
+    for (let i = 0; i < 25; i++) {
+      const r = await sessionApi('/api/quicky/games/spin-bottle/leave', {
+        method: 'POST',
+        body: JSON.stringify({ roomId: mRoom }),
+      })
+      if (r.status !== 409) return r
+      await new Promise((res) => setTimeout(res, 1200))
+    }
+    return { status: 0 }
+  }
+  try {
+    // Wait out the per-user room-chat rate-limit window (1.5s).
+    await new Promise((r) => setTimeout(r, 1700))
+    const send1 = await Aa('/api/quicky/games/spin-bottle/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        roomId: mRoom,
+        text: 'welcome @QA_B!',
+        mentions: [
+          { userId: B.userId, displayName: 'QA_B' },
+          { userId: C.userId, displayName: 'QA_C' }, // not a room member → dropped
+          { userId: A.userId, displayName: 'QA_A' }, // self → dropped (§94)
+        ],
+      }),
+    })
+    ok('mention message accepted (§40)', send1.body?.ok === true, JSON.stringify(send1.body))
+    const gotMentions = send1.body?.message?.mentions ?? []
+    ok('non-member + self mentions dropped server-side (§41/§94)',
+      gotMentions.length === 1 && gotMentions[0]?.userId === B.userId, JSON.stringify(gotMentions))
+    const mRows1 = await db.spinRoomChatMention.findMany({ where: { messageId: send1.body.message.id } })
+    ok('one structured mention row per mentioned member (§42/§44)',
+      mRows1.length === 1 &&
+        mRows1[0].mentionedUserId === B.userId &&
+        mRows1[0].mentionedByUserId === A.userId &&
+        mRows1[0].roomId === mRoom,
+      JSON.stringify(mRows1))
+    // GET /chat + snapshot carry mention metadata for token rendering (§56)
+    const chatGet = await Aa(`/api/quicky/games/spin-bottle/chat?roomId=${mRoom}`)
+    ok('GET /chat carries mention metadata (§56)',
+      (chatGet.body?.messages ?? []).some((m) => m.id === send1.body.message.id && (m.mentions ?? []).some((x) => x.userId === B.userId)))
+    const snapB = await Bb(`/api/quicky/games/spin-bottle/room?roomId=${mRoom}`)
+    ok('snapshot recentMessages carry mentions (§56)',
+      (snapB.body?.snapshot?.recentMessages ?? []).some((m) => m.id === send1.body.message.id && (m.mentions ?? []).some((x) => x.userId === B.userId)))
+    // B leaves → mentioning B is no longer valid (§41/§62/§112)
+    const leftB = await leaveRetry(Bb)
+    ok('B left the room', leftB.body?.ok === true || leftB.body?.roomDeleted === true, JSON.stringify(leftB.body))
+    await new Promise((r) => setTimeout(r, 1700))
+    const send2 = await Aa('/api/quicky/games/spin-bottle/chat', {
+      method: 'POST',
+      body: JSON.stringify({ roomId: mRoom, text: 'bye @QA_B', mentions: [{ userId: B.userId, displayName: 'QA_B' }] }),
+    })
+    ok('message still sends after a member left', send2.body?.ok === true, JSON.stringify(send2.body))
+    const mRows2 = await db.spinRoomChatMention.count({ where: { messageId: send2.body?.message?.id ?? 'none' } })
+    ok('departed member gets NO mention record (§41/§62/§112)', mRows2 === 0)
+    // Historical mention rows persist after the member leaving (§63)
+    const hist = await db.spinRoomChatMention.count({ where: { messageId: send1.body.message.id } })
+    ok('historical mention rows persist (§63)', hist === 1)
+  } finally {
+    await leaveRetry(Aa)
+    // §64: room deletion cascades the room-scoped mention ledger (either the
+    // leave above already deleted the room, or the rows go with it here).
+    await db.spinRoomChatMention.deleteMany({ where: { roomId: mRoom } })
+  }
+}
+
 console.log(`\n═══ RESULT: ${passed} passed, ${failed} failed ═══`)
 await db.$disconnect()
 process.exit(failed > 0 ? 1 : 0)

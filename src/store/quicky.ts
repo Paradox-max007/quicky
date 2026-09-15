@@ -173,6 +173,17 @@ type State = {
   // the list only shows real conversations (§23). The pinned row is
   // synthesized client-side and cleared when the contacts surface closes.
   gameChatPinnedPeer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
+  // Mentions PRD §10/§82: the CONTACTS screen's own back target. The personal
+  // chat opened straight from "Message" returns to the contacts screen
+  // (gameChatReturnView = 'game-chat-contacts'), so the contacts screen can
+  // NOT reuse gameChatReturnView — it would return to itself. This dedicated
+  // field is where the contacts screen's back arrow (and the Android hardware
+  // back) goes: Game Contacts → Game Room.
+  gameChatContactsReturnView: AppView
+  // Mentions PRD §77: Profile → "Mention" sets this draft; RoomChatPanel
+  // consumes it (insert @DisplayName token + focus composer). No message is
+  // ever sent automatically (§29).
+  roomChatMentionDraft: { userId: string; displayName: string } | null
 
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
@@ -211,6 +222,9 @@ type State = {
     peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
   ) => void
   setRoomChatPanel: (p: 'room' | 'contacts' | 'personal') => void
+  /** Mentions PRD §77: profile popup → Mention → composer token + focus. */
+  insertRoomChatMention: (m: { userId: string; displayName: string }) => void
+  clearRoomChatMentionDraft: () => void
   logout: () => void
 }
 
@@ -229,6 +243,8 @@ export const useQuickyStore = create<State>((set) => ({
   gameChatReturnView: 'spin-bottle',
   roomChatPanel: 'room',
   gameChatPinnedPeer: null,
+  gameChatContactsReturnView: 'spin-bottle-room',
+  roomChatMentionDraft: null,
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -278,7 +294,13 @@ export const useQuickyStore = create<State>((set) => ({
   closeGameChat: () =>
     set((prev) => ({ view: prev.gameChatReturnView || 'spin-bottle', gameChatPeer: null })),
   openGameChatContacts: (returnView) =>
-    set({ view: 'game-chat-contacts', ...(returnView ? { gameChatReturnView: returnView } : {}) }),
+    set({
+      view: 'game-chat-contacts',
+      // Mentions PRD §10/§82: the contacts screen keeps its OWN back target —
+      // gameChatReturnView may be pointing at this very screen when the
+      // personal chat was opened straight from "Message".
+      ...(returnView ? { gameChatContactsReturnView: returnView } : {}),
+    }),
   pinGameChatPeer: (peer) => set({ gameChatPinnedPeer: peer }),
   setRoomChatPanel: (p) =>
     set((prev) => ({
@@ -286,5 +308,7 @@ export const useQuickyStore = create<State>((set) => ({
       // Leaving the contacts state drops the pinned "Message" row (§2.1).
       ...(p !== 'contacts' && prev.gameChatPinnedPeer ? { gameChatPinnedPeer: null } : {}),
     })),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, communityFocusPostId: null }),
+  insertRoomChatMention: (m) => set({ roomChatMentionDraft: m, roomChatPanel: 'room' }),
+  clearRoomChatMentionDraft: () => set({ roomChatMentionDraft: null }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null }),
 }))

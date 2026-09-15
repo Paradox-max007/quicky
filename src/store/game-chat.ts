@@ -17,6 +17,7 @@
 import { create } from 'zustand'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
+import { alertMentionOnce } from '@/lib/quicky/mention-alerts'
 
 export type GameChatMessageType = 'text' | 'sticker' | 'image' | 'voice' | 'quicky_image'
 
@@ -168,6 +169,14 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
               }
             } else if (evt?.type === 'reaction') {
               if (evt.conversationId === get().activeConversationId) void get().refreshActive()
+            } else if (evt?.type === 'mention') {
+              // Mentions PRD §50/§52/§53: the user is on ANY Quicky screen
+              // (game chat, contacts, community…) — the per-user stream is
+              // connected across the whole Spin the Bottle section, so the
+              // in-app notification + haptic reach them without the Game
+              // Room UI being mounted. Deduped by mention.id (§55).
+              const m = evt.mention as { id: string; actorName: string; textPreview: string }
+              alertMentionOnce({ id: m.id, actorName: m.actorName, textPreview: m.textPreview, inRoom: false })
             }
           } catch {}
         })

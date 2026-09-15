@@ -115,6 +115,8 @@ export function SpinBottleRoom({
   // Bug-fix PRD §9: web sidebar chat-section state (room | contacts | personal)
   const roomChatPanel = useQuickyStore((s) => s.roomChatPanel)
   const setRoomChatPanel = useQuickyStore((s) => s.setRoomChatPanel)
+  // Mentions §48: the bubble that mentions ME flashes briefly.
+  const mentionFlashId = useGameRoomStore((s) => s.mentionFlashId)
   const gameChatsUnread = useGameChatStore((s) =>
     s.list.reduce((sum, c) => sum + c.unread, 0)
   )
@@ -362,11 +364,15 @@ export function SpinBottleRoom({
     prevKissRef.current = economy.kissPoints
   }, [economy.kissPoints])
 
-  const sendChat = async (t: string, replyTo?: RoomMessage['replyTo']) => {
+  const sendChat = async (
+    t: string,
+    replyTo?: RoomMessage['replyTo'],
+    mentions?: { userId: string; displayName: string }[]
+  ) => {
     if (sendingChat) return
     setSendingChat(true)
     try {
-      await useGameRoomStore.getState().sendChat(t, replyTo)
+      await useGameRoomStore.getState().sendChat(t, replyTo, mentions)
     } finally {
       setSendingChat(false)
     }
@@ -394,6 +400,16 @@ export function SpinBottleRoom({
   // duelPhase in a ref so the seat click handler never goes stale
   const duelPhaseRef = useRef<'table' | 'duel' | 'result'>('table')
 
+  // ── Mentions PRD §68/§72: a departed player can never keep a ghost popup.
+  // The players array IS the authoritative membership (§19/§66) — the moment
+  // a leaving player disappears from the snapshot, close the profile popup,
+  // and they vanish from the @ picker too (same source, §87).
+  useEffect(() => {
+    if (!interaction) return
+    const stillHere = (snapshot?.players ?? []).some((pl) => pl.userId === interaction.player.userId)
+    if (!stillHere) setInteraction(null)
+  }, [snapshot?.players, interaction])
+
   const handleTag = (p: InteractionPlayer) => {
     // §43: the tag action/state layer exists; the tagging feature itself is
     // intentionally not invented here.
@@ -401,24 +417,34 @@ export function SpinBottleRoom({
     setInteraction(null)
   }
   const handleMessage = (p: InteractionPlayer) => {
-    // Layout PRD §2.1/§57: "Message" opens the GAME CONTACT LIST first — the
-    // user then selects the contact and lands in the Personal Game Chat.
-    // The interaction popup must close first (never linger behind the chat
-    // surface). Platform split (§8):
-    //   · WEB (desktop sidebar AND narrow bottom sheet): the chat panel swaps
-    //     to the contact list with this player pinned on top — Room Chat
-    //     stays mounted underneath and the table keeps its exact size (§74).
-    //   · CAPACITOR: the dedicated GameChatContactsScreen — the room RUNTIME
-    //     stays attached (§9), back returns to the live table.
+    // Mentions PRD §6/§7/§8/§76/§104: "Message" opens THAT PLAYER'S personal
+    // chat DIRECTLY — there is NO contact-list step. The interaction popup
+    // closes first (never lingers behind the chat surface). Platform split
+    // (§10): the room RUNTIME is untouched either way (§11).
+    //   · WEB: get-or-create the conversation + load messages (openGamePerso-
+    //     nalChat steps §8) and swap the right-side panel to 'personal' — a
+    //     normal child of the ONE chat shell; the table never moves (§5).
+    //   · CAPACITOR: the dedicated full-screen personal chat. The logical
+    //     back stack stays personal → contacts → room (§10/§82): returnView
+    //     is the contacts screen, and the pinned peer sits on top of it.
     setInteraction(null)
     const qk = useQuickyStore.getState()
     const peer = { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar }
     qk.pinGameChatPeer(peer)
     if (isNativeCapacitor) {
-      qk.openGameChatContacts('spin-bottle-room')
+      qk.openGameChat(peer, 'game-chat-contacts')
     } else {
-      qk.setRoomChatPanel('contacts')
+      useGameChatStore.getState().openConversation(peer)
+      qk.setRoomChatPanel('personal')
     }
+  }
+  const handleMention = (p: InteractionPlayer) => {
+    // Mentions PRD §28/§29/§77: Mention → Room Chat opens/activates, the
+    // composer receives the structured "@DisplayName" token and focus. The
+    // user still types and sends the message THEMSELVES (§29) — nothing is
+    // auto-sent.
+    setInteraction(null)
+    useQuickyStore.getState().insertRoomChatMention({ userId: p.userId, displayName: p.displayName })
   }
   const handleProfile = (p: InteractionPlayer) => {
     // §45: the app's real profile route
@@ -958,10 +984,15 @@ export function SpinBottleRoom({
             </div>
           </div>
 
-          {/* Layer C — chat: bottom sheet on mobile, right sidebar on web.
-              Bug-fix PRD §12: this panel is NEVER unmounted — when the web
-              sidebar shows contacts/personal they render as overlays above
-              it, so room messages keep arriving in the background (§13/§90). */}
+          {/* Layer C — THE chat shell (mentions PRD §4/§74/§99/§100/§118).
+              One panel, three states: Room Chat | Game Contacts | Personal
+              Game Chat. contacts/personal render as NORMAL CHILDREN of the
+              panel — no absolute overlay, no z-index tricks, and the game
+              table is completely outside this state machine (§118). Room
+              Chat stays MOUNTED inside the shell (display:none) so its
+              scroll survives the personal → contacts → room round-trip
+              (§15/§16/§17); messages keep arriving via the shared runtime
+              either way (§13/§65). */}
           <RoomChatPanel
             messages={chat}
             players={chatPlayers}
@@ -970,28 +1001,23 @@ export function SpinBottleRoom({
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={() => setShowGiftSheet(true)}
-            onOpenGameChats={isDesktop ? () => setRoomChatPanel('contacts') : undefined}
+            onOpenGameChats={
+              isNativeCapacitor
+                ? () => useQuickyStore.getState().openGameChatContacts('spin-bottle-room')
+                : () => setRoomChatPanel('contacts')
+            }
             gameChatsUnread={gameChatsUnread}
+            panel={roomChatPanel}
+            panelContent={
+              !isNativeCapacitor && roomChatPanel === 'contacts' ? (
+                <GameContactsPanel />
+              ) : !isNativeCapacitor && roomChatPanel === 'personal' ? (
+                <GameChatScreen embedded onBack={() => setRoomChatPanel('contacts')} />
+              ) : null
+            }
+            mentionFlashId={mentionFlashId}
+            onMentionFlashDone={() => useGameRoomStore.getState().setMentionFlash(null)}
           />
-
-          {/* Layout PRD §3 chat-section overlays — contacts (state 2) and
-              personal chat (state 3) — rendered INSIDE the chat panel area
-              (right sidebar ≥1024px, chat sheet below) while Room Chat stays
-              MOUNTED underneath (§5/§65) and the table keeps its size (§74).
-              Back: personal → contacts → room (§4). Web only — Capacitor
-              uses the dedicated 'game-chat-contacts' / 'game-chat' views
-              (§8). `embedded` tells the chat screen the room already lifts
-              the overlay above the keyboard. */}
-          {!isNativeCapacitor && roomChatPanel === 'contacts' && (
-            <div className="sbr-chat-overlay" data-testid="web-contacts-panel">
-              <GameContactsPanel />
-            </div>
-          )}
-          {!isNativeCapacitor && roomChatPanel === 'personal' && (
-            <div className="sbr-chat-overlay" data-testid="web-personal-panel">
-              <GameChatScreen embedded onBack={() => setRoomChatPanel('contacts')} />
-            </div>
-          )}
         </div>
 
         {/* ═══ v3 §34-§39 — ROOM OPTIONS (opened by the 🚪 RoomExitControl).
@@ -1117,6 +1143,7 @@ export function SpinBottleRoom({
           onClose={() => setInteraction(null)}
           onTag={handleTag}
           onMessage={handleMessage}
+          onMention={handleMention}
           onProfile={handleProfile}
           onBuyCoins={() => {
             setInteraction(null)

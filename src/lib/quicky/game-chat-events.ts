@@ -17,6 +17,22 @@ export type GameChatPushEvent =
   | { type: 'conversation'; conversationId: string } // list-level nudge (order/unread)
   | { type: 'read'; conversationId: string; userId: string; lastReadAt: string }
   | { type: 'reaction'; conversationId: string; messageId: string }
+  // Mentions PRD §53/§54: room-chat mention alerts ride the SAME per-user
+  // stream, so they reach the user in Game Chat, Contacts, or any other
+  // Quicky screen — independent of the Game Room UI. Dedup happens on the
+  // client by mention.id (§55), so reconnects never double-alert.
+  | {
+      type: 'mention'
+      mention: {
+        id: string
+        roomId: string
+        messageId: string
+        actorUserId: string
+        actorName: string
+        textPreview: string
+        createdAt: string
+      }
+    }
   | { type: 'hello' }
 
 type ChatListener = (event: GameChatPushEvent) => void

@@ -101,11 +101,13 @@ export function AppRoot() {
           useQuickyStore.getState().setSpinBottleRoomId(null)
           sv('spin-bottle')
         } else if (v === 'game-chat-contacts') {
-          // Layout PRD §8: the contacts screen's back → the context that
-          // opened it (the live room) — the runtime never stopped.
+          // Mentions PRD §82: the contacts screen's back → its OWN return
+          // view (the live room) — the runtime never stopped. Distinct from
+          // gameChatReturnView, which points at THIS screen when the
+          // personal chat was opened straight from "Message".
           const qk = useQuickyStore.getState()
           qk.pinGameChatPeer(null)
-          qk.setView(qk.gameChatReturnView || 'spin-bottle-room')
+          sv(qk.gameChatContactsReturnView || 'spin-bottle-room')
         } else if (v === 'game-chat') {
           // game-chat PRD §97: back returns to the context that opened it
           useGameChatStore.getState().closeConversation()

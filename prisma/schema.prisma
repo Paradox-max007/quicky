@@ -75,6 +75,8 @@ model User {
   rollLikes        RollLike[]      @relation("RollLikes")
   rollComments     RollComment[]   @relation("RollComments")
   spinRoomMemberships SpinRoomPlayer[]
+  roomMentions     SpinRoomChatMention[] @relation("roomMentions")
+  roomMentionsByMe SpinRoomChatMention[] @relation("roomMentionsByMe")
   spinRoomMessages    SpinRoomMessage[]
   // In-game economy
   coinBalance         Int              @default(500) // start with 500 coins
@@ -464,6 +466,7 @@ model SpinRoom {
   spins           SpinBottleSpin[]
   messages        SpinRoomMessage[]
   gifts           SpinRoomGift[]
+  chatMentions    SpinRoomChatMention[]
 
   @@index([status, lastActivityAt])
 }
@@ -576,8 +579,36 @@ model SpinRoomMessage {
   createdAt DateTime @default(now())
   room      SpinRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentions  SpinRoomChatMention[]
 
   @@index([roomId, createdAt])
+}
+
+// ── Room-chat mention ledger (mentions PRD §42-§45) ─────────────────────────
+// One row PER mentioned user per room-chat message. The message text carries
+// the human-readable "@DisplayName" token; THIS table is the structured truth
+// used for server-side validation (§41), per-mention read state (§44),
+// notification fan-out (§45/§88) and reconnect-safe dedup (§55 — clients
+// dedupe alerts by id). Room-scoped: cascades away with the temporary room
+// (§64) while persistent Game Chat data is never touched.
+model SpinRoomChatMention {
+  id                String    @id @default(cuid())
+  messageId         String
+  mentionedUserId   String
+  mentionedByUserId String
+  roomId            String
+  // Individual read state per mentioned user (§42/§44)
+  readAt            DateTime?
+  createdAt         DateTime  @default(now())
+  message           SpinRoomMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  mentioned         User      @relation("roomMentions", fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  mentionedBy       User      @relation("roomMentionsByMe", fields: [mentionedByUserId], references: [id], onDelete: Cascade)
+  room              SpinRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  // §42/§96 indexes
+  @@index([mentionedUserId, readAt])
+  @@index([roomId, createdAt])
+  @@index([messageId])
 }
 
 // ── In-game economy ───────────────────────────────────────────────────────────

@@ -243,10 +243,10 @@ export const api = {
       }),
     chat: (roomId: string) =>
       jsonFetch<{ messages: any[] }>(`/api/quicky/games/spin-bottle/chat?roomId=${roomId}`),
-    sendChat: (roomId: string, text: string) =>
+    sendChat: (roomId: string, text: string, mentions?: { userId: string; displayName: string }[]) =>
       jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
         method: 'POST',
-        body: JSON.stringify({ roomId, text }),
+        body: JSON.stringify({ roomId, text, mentions: mentions ?? [] }),
       }),
     close: (roomId: string) =>
       jsonFetch('/api/quicky/games/spin-bottle/close', {

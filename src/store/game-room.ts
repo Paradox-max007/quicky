@@ -29,6 +29,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { joinRoomChannel, type RoomChannel } from '@/lib/quicky/realtime'
 import { useQuickyStore } from '@/store/quicky'
+import { alertMentionOnce } from '@/lib/quicky/mention-alerts'
 import type { RoomMessage } from '@/components/quicky/RoomChatPanel'
 
 export type RoomSnapshot = {
@@ -69,7 +70,14 @@ export type RoomSnapshot = {
   iAmSpinner: boolean
   serverNow: number
   viewer: { coinBalance: number; kissPoints: number; giftsReceived: number }
-  recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
+  recentMessages: {
+    id: string
+    userId: string
+    text: string
+    kind: string
+    createdAt: string
+    mentions?: { userId: string; displayName: string }[]
+  }[]
 }
 
 export type OptimisticResponse = { spinId: string; choice: 'yes' | 'no' } | null
@@ -85,12 +93,18 @@ type GameRoomState = {
   economy: Economy
   /** THIS client's optimistic answer for the current spin (v2.1 §6). */
   optimistic: OptimisticResponse
+  /** Mentions §48: id of a message that mentions ME — the bubble flashes. */
+  mentionFlashId: string | null
 
   attach: (roomId: string) => void
   /** End the runtime — leave / room deleted. Never called on navigation. */
   detach: () => void
   respond: (choice: 'yes' | 'no') => void
-  sendChat: (text: string, replyTo?: RoomMessage['replyTo']) => Promise<void>
+  sendChat: (
+    text: string,
+    replyTo?: RoomMessage['replyTo'],
+    mentions?: { userId: string; displayName: string }[]
+  ) => Promise<void>
   reconcile: () => Promise<void>
   bumpEconomy: (delta: Partial<Economy>) => void
   setCoinBalance: (n: number) => void
@@ -98,6 +112,8 @@ type GameRoomState = {
   broadcastGift: (payload: Parameters<RoomChannel['sendGift']>[0]) => void
   /** Clear the closure dialog AND the runtime (BACK TO GAME path). */
   dismissClosure: () => void
+  /** Mentions §48: the bubble highlight clears itself after the flash. */
+  setMentionFlash: (id: string | null) => void
   getSkew: () => number
 }
 
@@ -160,7 +176,11 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
     set((prev) => {
       // merge room chat — snapshot messages + optimistic/realtime items
       const prevMap = new Map(prev.chat.map((m) => [m.id, m]))
-      const merged = s.recentMessages.map((m) => ({ ...m, replyTo: prevMap.get(m.id)?.replyTo ?? null }))
+      const merged = s.recentMessages.map((m) => ({
+        ...m,
+        mentions: m.mentions ?? [],
+        replyTo: prevMap.get(m.id)?.replyTo ?? null,
+      }))
       const pending = prev.chat.filter((m) => m.id.startsWith('tmp_'))
       return { snapshot: s, chat: [...merged, ...pending] }
     })
@@ -185,6 +205,7 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
     closure: null,
     economy: { coinBalance: 0, kissPoints: 0, giftsReceived: 0 },
     optimistic: null,
+    mentionFlashId: null,
 
     attach: (roomId) => {
       // Idempotent: remounts / re-navigation never restart the stream.
@@ -249,6 +270,9 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
           if (!p?.userId || (!p?.id && !p?.messageId)) return
           const kind = p.kind || 'user'
           if (kind !== 'user' && kind !== 'join' && kind !== 'leave') return
+          const mentions: { userId: string; displayName: string }[] = Array.isArray(p.mentions)
+            ? p.mentions
+            : []
           const msg: RoomMessage = {
             id: p.id || p.messageId || `rt_${Date.now()}`,
             userId: p.userId,
@@ -256,6 +280,7 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
             kind,
             createdAt: p.createdAt || new Date().toISOString(),
             replyTo: p.replyTo ?? null,
+            mentions,
           }
           set((prev) => {
             const withoutTmp = prev.chat.filter(
@@ -264,6 +289,19 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
             if (withoutTmp.some((m) => m.id === msg.id)) return prev
             return { chat: [...withoutTmp, msg] }
           })
+          // ── Mentions §46/§47/§48: an in-room mention → lightweight visual
+          // alert + haptic + a brief bubble highlight. The per-user stream
+          // fires the SAME mention with the SAME id — alertMentionOnce makes
+          // exactly one of the two paths alert (§55/§113).
+          const meId = useQuickyStore.getState().user?.id ?? ''
+          const mine = mentions.find((m) => m.userId === meId)
+          if (mine) {
+            const actorName =
+              get().snapshot?.players.find((pl) => pl.userId === msg.userId)?.displayName ?? 'Someone'
+            if (alertMentionOnce({ id: msg.id, actorName, textPreview: msg.text.slice(0, 80), inRoom: true })) {
+              set({ mentionFlashId: msg.id })
+            }
+          }
         },
         onGift: (payload) => {
           const p = payload as any
@@ -296,12 +334,15 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
         closure: null,
         optimistic: null,
         economy: { coinBalance: 0, kissPoints: 0, giftsReceived: 0 },
+        mentionFlashId: null,
       })
     },
 
     dismissClosure: () => {
       get().detach()
     },
+
+    setMentionFlash: (id) => set({ mentionFlashId: id }),
 
     respond: (choice) => {
       const { snapshot, roomId } = get()
@@ -334,19 +375,19 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
       })()
     },
 
-    sendChat: async (text, replyTo) => {
+    sendChat: async (text, replyTo, mentions) => {
       const body = text.trim()
       const { roomId, chat } = get()
       if (!body || !roomId) return
       const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const meId = useQuickyStore.getState().user?.id ?? ''
       set({
-        chat: [...chat, { id: tmpId, userId: meId, text: body, kind: 'user', createdAt: new Date().toISOString(), replyTo: replyTo ?? null }],
+        chat: [...chat, { id: tmpId, userId: meId, text: body, kind: 'user', createdAt: new Date().toISOString(), replyTo: replyTo ?? null, mentions: mentions ?? [] }],
       })
       try {
-        const res = await api.spinBottle.sendChat(roomId, body)
+        const res = await api.spinBottle.sendChat(roomId, body, mentions)
         if (res?.message) {
-          const confirmed: RoomMessage = { ...res.message, replyTo: replyTo ?? null }
+          const confirmed: RoomMessage = { ...res.message, mentions: res.message.mentions ?? mentions ?? [], replyTo: replyTo ?? null }
           ctl.channel?.sendChat({
             id: confirmed.id,
             messageId: confirmed.id,
@@ -355,6 +396,7 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
             kind: confirmed.kind,
             createdAt: confirmed.createdAt,
             replyTo: confirmed.replyTo,
+            mentions: confirmed.mentions,
           })
           set((prev) => {
             const without = prev.chat.filter((m) => m.id !== tmpId)

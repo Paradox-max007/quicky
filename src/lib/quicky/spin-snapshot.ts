@@ -66,7 +66,14 @@ export type RoomSnapshot = {
    * reconciled against this on the next push.
    */
   viewer: { coinBalance: number; kissPoints: number; giftsReceived: number }
-  recentMessages: { id: string; userId: string; text: string; kind: string; createdAt: string }[]
+  recentMessages: {
+    id: string
+    userId: string
+    text: string
+    kind: string
+    createdAt: string
+    mentions?: { userId: string; displayName: string }[]
+  }[]
 }
 
 export async function buildRoomSnapshot(roomId: string, viewerId: string): Promise<RoomSnapshot | null> {
@@ -148,9 +155,35 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
     orderBy: { createdAt: 'desc' },
     take: 80,
   })
+  // §56: mention metadata rides with every snapshot so a fresh client (or a
+  // stream reconnect) still renders "@Name" tokens correctly.
+  const mentionRows = await db.spinRoomChatMention.findMany({
+    where: { messageId: { in: msgs.map((m) => m.id) } },
+    select: { messageId: true, mentionedUserId: true },
+  })
+  const mentionNames = mentionRows.length
+    ? await db.user.findMany({
+        where: { id: { in: [...new Set(mentionRows.map((r) => r.mentionedUserId))] } },
+        select: { id: true, name: true },
+      })
+    : []
+  const mentionNameById = new Map(mentionNames.map((u) => [u.id, u.name]))
+  const mentionsByMsgId = new Map<string, { userId: string; displayName: string }[]>()
+  for (const r of mentionRows) {
+    const list = mentionsByMsgId.get(r.messageId) ?? []
+    list.push({ userId: r.mentionedUserId, displayName: mentionNameById.get(r.mentionedUserId) ?? 'Player' })
+    mentionsByMsgId.set(r.messageId, list)
+  }
   const recentMessages = msgs
     .reverse()
-    .map((m) => ({ id: m.id, userId: m.userId, text: m.text, kind: m.kind, createdAt: m.createdAt.toISOString() }))
+    .map((m) => ({
+      id: m.id,
+      userId: m.userId,
+      text: m.text,
+      kind: m.kind,
+      createdAt: m.createdAt.toISOString(),
+      mentions: mentionsByMsgId.get(m.id) ?? [],
+    }))
 
   // myTurnIs / iAmTarget / iAmSpinner
   const me = players.find((p) => p.userId === viewerId)

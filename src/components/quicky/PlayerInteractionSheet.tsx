@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Tag, MessageCircle, User, Send, ShoppingBag } from 'lucide-react'
+import { X, Tag, MessageCircle, AtSign, User, Send, ShoppingBag } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 
@@ -51,6 +51,7 @@ type Props = {
   onClose: () => void
   onTag?: (p: InteractionPlayer) => void
   onMessage?: (p: InteractionPlayer) => void
+  onMention?: (p: InteractionPlayer) => void
   onProfile?: (p: InteractionPlayer) => void
   onBuyCoins: () => void
   /** Parent performs the optimistic coin move + API call; resolves false on failure. */
@@ -68,6 +69,7 @@ export function PlayerInteractionSheet({
   onClose,
   onTag,
   onMessage,
+  onMention,
   onProfile,
   onBuyCoins,
   onSendGift,
@@ -175,8 +177,10 @@ export function PlayerInteractionSheet({
         </button>
       </div>
 
-      {/* Top actions (§42) — icon + label rows */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* Top actions (mentions PRD §75: Tag / Message / Mention / Profile /
+          Gifts) — independent rows; Mention prefills the Room Chat composer
+          with @DisplayName and NEVER auto-sends (§29). */}
+      <div className="grid grid-cols-4 gap-2">
         <button className="sbr-ix-action" onClick={() => onTag?.(player)}>
           <Tag className="w-4 h-4" />
           <span>Tag</span>
@@ -184,6 +188,10 @@ export function PlayerInteractionSheet({
         <button className="sbr-ix-action" onClick={() => onMessage?.(player)}>
           <MessageCircle className="w-4 h-4" />
           <span>Message</span>
+        </button>
+        <button className="sbr-ix-action" onClick={() => onMention?.(player)} data-testid="ix-mention">
+          <AtSign className="w-4 h-4" />
+          <span>Mention</span>
         </button>
         <button className="sbr-ix-action" onClick={() => onProfile?.(player)}>
           <User className="w-4 h-4" />
