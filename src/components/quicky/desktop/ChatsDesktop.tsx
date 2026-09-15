@@ -328,7 +328,7 @@ export function ChatsDesktop() {
       </aside>
 
       {/* ── Conversation pane (§11: header / viewport / composer) ────────── */}
-      <section className="flex-1 min-w-0 h-full flex flex-col relative">
+      <section className="flex-1 min-w-0 h-full flex flex-col relative overflow-hidden">
         {/* §17/§84: back into the live room in one click — the runtime was
             never destroyed (§18) */}
         {roomId && (

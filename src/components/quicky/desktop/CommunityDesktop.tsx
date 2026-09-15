@@ -264,7 +264,13 @@ export function CommunityDesktop() {
               >
                 <div className={cn('grid md:grid-cols-[1.1fr_1fr] items-stretch', !mediaLeft && 'md:grid-cols-[1fr_1.1fr]')}>
                   {/* Media */}
-                  <div className={cn('relative min-h-[300px]', !mediaLeft && 'md:order-2')}>
+                  <div
+                    className={cn(
+                      'relative flex items-center justify-center bg-black',
+                      post.gameType && 'min-h-[300px]',
+                      !mediaLeft && 'md:order-2'
+                    )}
+                  >
                     {post.gameType ? (
                       <div
                         className={cn(
@@ -487,13 +493,16 @@ function groupRolls(rolls: any[]): RollGroup[] {
 
 function PostMedia({ post, onDoubleTapLike, burst }: { post: Post; onDoubleTapLike: () => void; burst: number }) {
   const dbl = useDoubleTap(onDoubleTapLike)
+  // Natural media dimensions: the image/video keeps its intrinsic aspect ratio
+  // (w-full, height follows) and is NEVER cropped to the editorial cell — the
+  // whole picture is always visible, exactly as uploaded.
   return (
-    <div className="absolute inset-0 bg-black select-none" onPointerUp={dbl.onPointerUp}>
+    <div className="relative w-full select-none bg-black" onPointerUp={dbl.onPointerUp}>
       {post.mediaType === 'video' ? (
         <video
           src={post.mediaUrl ?? ''}
           style={{ filter: filterCss(post.filter) }}
-          className="w-full h-full object-cover"
+          className="w-full h-auto object-contain"
           controls
           playsInline
           loop
@@ -505,7 +514,7 @@ function PostMedia({ post, onDoubleTapLike, burst }: { post: Post; onDoubleTapLi
           alt={post.caption ?? 'Community post'}
           loading="lazy"
           style={{ filter: filterCss(post.filter) }}
-          className="w-full h-full object-cover"
+          className="w-full h-auto object-contain"
           draggable={false}
         />
       )}

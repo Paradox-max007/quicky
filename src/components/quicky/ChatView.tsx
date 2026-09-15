@@ -374,18 +374,27 @@ export function ChatView({ embedded = false }: { embedded?: boolean } = {}) {
     return watchOnline((ids) => setPartnerOnline(ids.has(match.partner.id)))
   }, [match?.partner?.id])
 
-  // Auto-scroll to latest when near the bottom
+  // Auto-scroll to latest when near the bottom.
+  // Scoped to the messages viewport on purpose: scrollIntoView() would bubble
+  // to every scrollable ancestor (including the app root's overflow-hidden
+  // shell) and slide the whole screen up — header included — when a chat opens.
   useEffect(() => {
     if (nearBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: messages.length > 1 ? 'smooth' : 'auto' })
+      const el = listRef.current
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: messages.length > 1 ? 'smooth' : 'auto' })
     }
   }, [messages.length, partnerTyping])
 
-  // Jump to a quoted message
+  // Jump to a quoted message — scrolled INSIDE the messages viewport only
+  // (same reason as the auto-scroll: no ancestor / app-shell shifting).
   const jumpToMessage = (id: string) => {
     const el = document.getElementById(`msg-${id}`)
-    if (!el) return
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const list = listRef.current
+    if (!el || !list) return
+    const listRect = list.getBoundingClientRect()
+    const elRect = el.getBoundingClientRect()
+    const target = list.scrollTop + (elRect.top - listRect.top) - list.clientHeight / 2 + elRect.height / 2
+    list.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
     setHighlightId(id)
     setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 1500)
   }
