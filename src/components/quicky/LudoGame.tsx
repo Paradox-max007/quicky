@@ -114,7 +114,7 @@ export function LudoGame({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [matchId])
 
   // Live board sync from the opponent's broadcasts

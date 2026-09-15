@@ -88,7 +88,7 @@ export function NeverHaveIEver({
     // Safety-net poll only — live updates arrive via the 'game' broadcast
     const interval = setInterval(load, 10000)
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [matchId])
 
   // Opponent locked in / advanced a round → refresh instantly
@@ -103,7 +103,7 @@ export function NeverHaveIEver({
       ch?.unsubscribe()
       channelRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [matchId])
 
   const pick = async (choice: 'yes' | 'no') => {

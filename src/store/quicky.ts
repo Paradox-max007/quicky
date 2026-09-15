@@ -24,6 +24,7 @@ export type AppView =
   | 'settings-help'
   | 'premium'
   | 'games'
+  | 'chats'
   | 'community'
   | 'chat'
   | 'profile-view'
@@ -185,6 +186,12 @@ type State = {
   // ever sent automatically (§29).
   roomChatMentionDraft: { userId: string; displayName: string } | null
 
+  // Web Premium PRD §8-§9/§67: the desktop Chats page is ONE shell —
+  // GameChatShell (contacts pane | conversation pane) with a Dating tab.
+  // Which list the contacts pane shows is app-level state so the top nav,
+  // the room's "Message" action and the page itself share one selection.
+  chatsSection: 'game' | 'dating'
+
   // Per-chat unread counts — source of truth for the nav Chats badge and the
   // per-row badges. Patched instantly on read events; reconciled from the
   // server aggregate whenever the matches list refreshes.
@@ -222,6 +229,11 @@ type State = {
     peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
   ) => void
   setRoomChatPanel: (p: 'room' | 'contacts' | 'personal') => void
+  /** Web Premium PRD §9/§67: open the desktop Chats page (GameChatShell). */
+  openChats: (section?: 'game' | 'dating') => void
+  setChatsSection: (s: 'game' | 'dating') => void
+  /** Desktop chats page: select a dating conversation without navigating. */
+  setActiveMatchId: (id: string | null) => void
   /** Mentions PRD §77: profile popup → Mention → composer token + focus. */
   insertRoomChatMention: (m: { userId: string; displayName: string }) => void
   clearRoomChatMentionDraft: () => void
@@ -245,6 +257,7 @@ export const useQuickyStore = create<State>((set) => ({
   gameChatPinnedPeer: null,
   gameChatContactsReturnView: 'spin-bottle-room',
   roomChatMentionDraft: null,
+  chatsSection: 'game',
   unreadByMatch: {},
   unviewedLikes: 0,
   totalUnread: 0,
@@ -310,5 +323,9 @@ export const useQuickyStore = create<State>((set) => ({
     })),
   insertRoomChatMention: (m) => set({ roomChatMentionDraft: m, roomChatPanel: 'room' }),
   clearRoomChatMentionDraft: () => set({ roomChatMentionDraft: null }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null }),
+  openChats: (section) =>
+    set((prev) => ({ view: 'chats', ...(section ? { chatsSection: section } : {}) })),
+  setChatsSection: (s) => set({ chatsSection: s }),
+  setActiveMatchId: (id) => set({ activeMatchId: id }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
 }))

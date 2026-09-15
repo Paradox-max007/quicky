@@ -76,7 +76,7 @@ export function GameChatContactRow({
     >
       <span className="relative shrink-0">
         {row.peer.avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img src={row.peer.avatar} alt="" className="w-10 h-10 rounded-full object-cover" />
         ) : (
           <span className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>

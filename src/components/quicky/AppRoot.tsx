@@ -29,6 +29,7 @@ import { PremiumView } from './PremiumView'
 import { CommunityScreen } from './CommunityScreen'
 import { ProfileView } from './ProfileView'
 import { SpinBottleLanding } from './SpinBottleLanding'
+import { GamesScreen } from './GamesScreen'
 import { SpinBottleRoom } from './SpinBottleRoom'
 import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { AdminRulesScreen } from './AdminRulesScreen'
@@ -104,7 +105,11 @@ export function AppRoot() {
     ) : view === 'profile-me' ? (
       <MyProfileView />
     ) : null
-  const useDesk = isDeskShell && tabScreen !== null
+  // Web Premium PRD §3/§9/§39: the desktop shell now also hosts the Games
+  // hub and the Chats page as first-class pages (top-nav destinations).
+  const useDesk =
+    isDeskShell &&
+    ['discovery', 'matches', 'likes-you', 'community', 'profile-me', 'games', 'chats', 'settings'].includes(view)
 
   // ─── Capacitor hardware back button (lifecycle PRD §56/§57) ────────────
   // The on-screen back arrows are explicit (Community ↔ Game ↔ Room); the
@@ -195,6 +200,7 @@ export function AppRoot() {
     view === 'spin-bottle-room' ||
     view === 'game-chat' ||
     view === 'game-chat-contacts' ||
+    view === 'chats' ||
     (view === 'profile-view' && useQuickyStore.getState().profileReturnView === 'spin-bottle-room')
   useEffect(() => {
     if (gameSectionActive) useGameChatStore.getState().connectStream()
@@ -262,6 +268,14 @@ export function AppRoot() {
     }
   }, [view])
 
+  // Web Premium PRD §57: "Chats" is a desktop (≥1024px) experience — the
+  // two-pane GameChatShell. If the viewport drops below 1024px (or the app
+  // runs inside Capacitor), fall back to the mobile dating chat list instead
+  // of stranding the user on a page without its navigation.
+  useEffect(() => {
+    if (isDeskShell === false && view === 'chats') setView('matches')
+  }, [isDeskShell, view, setView])
+
   // Keep the unread-messages badge fresh across all tabs
   useEffect(() => {
     if (!user) return
@@ -302,6 +316,7 @@ export function AppRoot() {
     // on desktop and inside the safe-area on mobile.
     <div
       className="w-full h-full relative bg-[var(--qk-bg)] text-white overflow-hidden"
+      data-qk-root="true"
       style={{ transform: 'translateZ(0)' }}
     >
       {/* Main view — centered, bigger column on desktop web */}
@@ -313,7 +328,7 @@ export function AppRoot() {
           {view === 'onboarding' && <OnboardingFlow />}
           {!useDesk && tabScreen}
           {view === 'edit-profile' && <EditProfileScreen />}
-          {view === 'settings' && <SettingsScreen />}
+          {view === 'settings' && !useDesk && <SettingsScreen />}
           {view === 'settings-phone' && <PhoneNumberScreen />}
           {view === 'settings-email' && <EmailScreen />}
           {view === 'settings-discovery' && <DiscoveryPreferencesScreen />}
@@ -367,6 +382,10 @@ export function AppRoot() {
           {view === 'admin-stickers' && <AdminStickersScreen />}
           {view === 'game-chat-contacts' && <GameChatContactsScreen />}
           {view === 'game-chat' && <GameChatScreen />}
+          {/* Web Premium §39/§9: mobile fallbacks — on the desktop shell the
+              pages render inside DesktopHome (Games hub / Chats shell). */}
+          {view === 'games' && !useDesk && <GamesScreen />}
+          {view === 'chats' && !useDesk && <ChatList />}
           </div>
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.

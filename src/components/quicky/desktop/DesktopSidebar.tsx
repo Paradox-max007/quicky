@@ -1,106 +1,197 @@
 'use client'
 
-import { useQuickyStore, AppView } from '@/store/quicky'
-import { Heart, Sparkles, UsersRound, MessageCircle, Gamepad2, User, Settings } from 'lucide-react'
+import { Dices } from 'lucide-react'
+import { useQuickyStore } from '@/store/quicky'
+import { useDashboard, DashboardData } from './useDashboard'
+import { getScoreTier } from '@/lib/quicky/constants'
+import { SkeletonBlock } from './web-ui'
 import { cn } from '@/lib/utils'
 
 /**
- * Desktop sidebar — a game/social navigation rail, NOT an enterprise admin
- * panel (concept doc §4/§5). Icon-only between 1024–1279px, icon + label
- * from 1280px. Every destination is a real view; badges are the same live
- * counters the mobile bottom nav uses.
+ * CONTEXTUAL SIDEBAR — a personal live status panel, NOT navigation
+ * (Web Premium PRD §5-§7/§75/§83). Zero duplicated primary navigation
+ * links: the top bar owns navigation; this rail owns the user's identity,
+ * Quicky progression, dating stats, game stats and quick status — every
+ * value a real dashboard read (§59: never fabricated).
+ *
+ * §7 responsiveness: profile + Quicky progress always visible on desktop;
+ * the Dating/Games/Status groups collapse away on medium desktop (<1280px);
+ * below 1024px this architecture does not exist at all (mobile keeps its
+ * dedicated navigation).
  */
 
-const MAIN_NAV: { id: AppView; label: string; icon: typeof Heart }[] = [
-  { id: 'discovery', label: 'Discover', icon: Heart },
-  { id: 'likes-you', label: 'Likes', icon: Sparkles },
-  { id: 'community', label: 'Community', icon: UsersRound },
-  { id: 'matches', label: 'Chats', icon: MessageCircle },
-  { id: 'spin-bottle', label: 'Games', icon: Gamepad2 },
-]
-
-const SECONDARY_NAV: { id: AppView; label: string; icon: typeof Heart }[] = [
-  { id: 'profile-me', label: 'My Profile', icon: User },
-  { id: 'settings', label: 'Settings', icon: Settings },
-]
-
-function NavItem({
-  item,
-  active,
-  badge,
-  onNavigate,
-}: {
-  item: { id: AppView; label: string; icon: typeof Heart }
-  active: boolean
-  badge: number
-  onNavigate: (v: AppView) => void
-}) {
-  const Icon = item.icon
+function StatRow({ icon, label, value, accent }: { icon: string; label: string; value: string; accent?: boolean }) {
   return (
-    <button
-      data-active={active}
-      aria-label={item.label}
-      aria-current={active ? 'page' : undefined}
-      onClick={() => onNavigate(item.id)}
-      className="qk-desk-navitem h-11 w-full px-3.5 text-white/60 data-[active=true]:text-[var(--qk-accent)]"
-    >
-      <span className="relative flex shrink-0 items-center justify-center">
-        <Icon className="w-5 h-5" strokeWidth={active ? 2.5 : 2} />
-        {badge > 0 && (
-          <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[var(--qk-accent)] flex items-center justify-center text-[9px] font-bold text-white border border-[var(--qk-bg)]">
-            {badge > 99 ? '99+' : badge}
-          </span>
-        )}
+    <div className="flex items-center gap-2.5 px-1 py-1" data-accent={accent ? 'true' : undefined}>
+      <span className="w-5 text-center text-[13px] leading-none" aria-hidden>
+        {icon}
       </span>
-      <span className="hidden min-[1280px]:inline ml-3 text-sm font-medium tracking-tight truncate">{item.label}</span>
-    </button>
+      <span className="flex-1 text-xs text-white/55">{label}</span>
+      <span className={cn('text-xs font-bold tabular-nums', accent ? 'text-[var(--qk-accent)]' : 'text-white/85')}>
+        {value}
+      </span>
+    </div>
   )
 }
 
-export function DesktopSidebar() {
-  const view = useQuickyStore((s) => s.view)
+function Group({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+  return (
+    <section className={cn('px-1', className)}>
+      <p className="text-[10px] font-bold tracking-[0.18em] text-white/35 uppercase mb-2">{title}</p>
+      <div className="flex flex-col gap-0.5">{children}</div>
+    </section>
+  )
+}
+
+export function DesktopSidebar({ data, loaded }: { data: DashboardData | null; loaded: boolean }) {
+  const user = useQuickyStore((s) => s.user)
+  const roomId = useQuickyStore((s) => s.spinBottleRoomId)
   const setView = useQuickyStore((s) => s.setView)
-  const totalUnread = useQuickyStore((s) => s.totalUnread)
-  const unviewedLikes = useQuickyStore((s) => s.unviewedLikes)
+
+  const stats = data?.stats ?? null
+  const live = data?.live ?? null
+  const avatar = user?.photos?.find((ph) => ph.isPrimary)?.url ?? user?.photos?.[0]?.url ?? null
+  const tier = stats ? getScoreTier(stats.points) : null
+
+  // §59: league progress is only drawn from REAL tiers
+  const leaguePct = (() => {
+    if (!stats?.league) return null
+    const { minimumPoints, nextMinimumPoints } = stats.league
+    if (!nextMinimumPoints || nextMinimumPoints <= minimumPoints) return null
+    const pct = Math.round(((stats.points - minimumPoints) / (nextMinimumPoints - minimumPoints)) * 100)
+    return Math.max(4, Math.min(100, pct))
+  })()
 
   return (
     <aside
-      className={cn(
-        'shrink-0 h-full flex flex-col border-r border-white/5 bg-black/20 backdrop-blur-sm',
-        'w-[68px] min-[1280px]:w-[212px] px-3 py-5'
-      )}
+      className="shrink-0 h-full hidden lg:flex flex-col border-r border-white/5 bg-black/20 backdrop-blur-sm w-[248px] min-[1280px]:w-[276px] px-4 py-5 gap-5 overflow-y-auto qk-desk-scroll"
       data-testid="desktop-sidebar"
     >
-      <nav className="flex flex-col gap-1.5">
-        {MAIN_NAV.map((item) => (
-          <NavItem
-            key={item.id}
-            item={item}
-            active={view === item.id || (item.id === 'matches' && view === 'chat')}
-            badge={item.id === 'matches' ? totalUnread : item.id === 'likes-you' ? unviewedLikes : 0}
-            onNavigate={setView}
-          />
-        ))}
-      </nav>
+      {/* ── Profile summary (§6) ─────────────────────────────────────────── */}
+      <section className="flex flex-col items-center text-center gap-2.5 pt-1">
+        {avatar ? (
+          <img src={avatar} alt="" className="w-16 h-16 rounded-2xl object-cover border border-white/10" />
+        ) : (
+          <span className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-xl font-bold" aria-hidden>
+            {(user?.name ?? 'Q').slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div>
+          <p className="text-sm font-bold text-white/95 leading-tight">
+            {user?.name ?? 'You'}
+            {user?.age != null && <span className="text-white/50 font-medium">, {user.age}</span>}
+          </p>
+          <div className="flex items-center justify-center gap-1.5 mt-1">
+            {user?.isVerified && (
+              <span className="text-[10px] font-bold text-[var(--qk-accent)] bg-[var(--qk-accent)]/10 rounded-full px-2 py-0.5">
+                Verified
+              </span>
+            )}
+            {tier && (
+              <span
+                className="text-[10px] font-bold rounded-full px-2 py-0.5"
+                style={{ color: tier.current.color, backgroundColor: tier.current.color + '1f' }}
+              >
+                {tier.current.name}
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
 
-      <div className="my-4 h-px bg-white/8 mx-1" />
+      {/* ── Quicky Progress (§6) ─────────────────────────────────────────── */}
+      <Group title="Quicky Progress">
+        {loaded && !stats ? (
+          <p className="text-[11px] text-white/35 px-1 py-1">Stats unavailable right now.</p>
+        ) : !stats ? (
+          <div className="flex flex-col gap-2 py-1">
+            <SkeletonBlock className="h-4 w-4/5" />
+            <SkeletonBlock className="h-4 w-3/5" />
+            <SkeletonBlock className="h-1.5 w-full" />
+          </div>
+        ) : (
+          <>
+            <StatRow icon="🔥" label={stats.streak ? 'Day streak' : 'No streak yet'} value={stats.streak ? `${stats.streak.current}` : '—'} accent={!!stats.streak && stats.streak.current > 0} />
+            <StatRow icon="✨" label="Quicky Points" value={stats.points.toLocaleString()} />
+            {stats.league && (
+              <div className="px-1 pt-1.5">
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span className="text-white/55">{stats.league.name} League</span>
+                  {stats.league.nextName && (
+                    <span className="text-white/35">{stats.league.nextName} @ {stats.league.nextMinimumPoints?.toLocaleString()}</span>
+                  )}
+                </div>
+                {leaguePct !== null && (
+                  <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
+                    <div className="h-full rounded-full bg-gold-gradient" style={{ width: `${leaguePct}%` }} />
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </Group>
 
-      <nav className="flex flex-col gap-1.5">
-        {SECONDARY_NAV.map((item) => (
-          <NavItem key={item.id} item={item} active={view === item.id} badge={0} onNavigate={setView} />
-        ))}
-      </nav>
+      {/* ── Dating / Games / Status — full desktop only (§7) ─────────────── */}
+      <div className="hidden min-[1280px]:flex flex-col gap-5">
+        <Group title="Dating">
+          {!stats ? (
+            <SkeletonBlock className="h-4 w-4/5" />
+          ) : (
+            <>
+              <StatRow icon="❤️" label="Likes received" value={stats.likesReceived.toLocaleString()} />
+              <StatRow icon="💗" label="Matches" value={stats.matches.toLocaleString()} />
+            </>
+          )}
+        </Group>
+
+        <Group title="Games">
+          {!stats ? (
+            <SkeletonBlock className="h-4 w-4/5" />
+          ) : (
+            <>
+              <StatRow icon="🎮" label="Games played" value={stats.gamesPlayed.toLocaleString()} />
+              <StatRow icon="💋" label="Kiss Points" value={stats.kisses.toLocaleString()} />
+              <StatRow icon="🎁" label="Gifts received" value={stats.giftsReceived.toLocaleString()} />
+            </>
+          )}
+        </Group>
+
+        <Group title="Status">
+          <div className="flex items-center gap-2 px-1 py-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#30D158] shrink-0" aria-hidden />
+            <span className="text-xs text-white/70">Available</span>
+          </div>
+          {user?.lookingFor && (
+            <p className="text-[11px] text-white/45 px-1 leading-relaxed">
+              Looking for: <span className="text-white/70">{user.lookingFor.replace(/-/g, ' ')}</span>
+            </p>
+          )}
+          {live && live.online > 0 && (
+            <p className="text-[11px] text-white/40 px-1">
+              <span className="text-[#30D158] font-semibold">{live.online}</span> members online now
+            </p>
+          )}
+        </Group>
+      </div>
 
       <div className="flex-1" />
 
-      {/* Streak flourish — the rail should feel like a game, not a filing cabinet (§4) */}
-      <div className="hidden min-[1280px]:flex items-center gap-2.5 rounded-2xl border border-[var(--qk-accent)]/20 bg-[var(--qk-accent)]/5 px-3 py-3 mx-1">
-        <span className="text-xl leading-none">🔥</span>
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold text-white/90 leading-tight">Keep the spark</p>
-          <p className="text-[10px] text-white/50 leading-tight mt-0.5">Play daily to grow your streak</p>
-        </div>
-      </div>
+      {/* §17/§84: one click back into the live table — the runtime never
+          stopped while the user browses other pages. */}
+      {roomId && (
+        <button
+          onClick={() => setView('spin-bottle-room')}
+          className="flex items-center gap-2.5 rounded-2xl border border-[var(--qk-accent)]/25 bg-[var(--qk-accent)]/8 px-3 py-3 mx-1 hover:bg-[var(--qk-accent)]/15 transition-colors"
+          data-testid="sidebar-return-to-table"
+        >
+          <Dices className="w-4.5 h-4.5 text-[var(--qk-accent)]" size={18} />
+          <span className="min-w-0 text-left">
+            <span className="block text-[11px] font-bold text-white/90 leading-tight">Game in progress</span>
+            <span className="block text-[10px] text-white/50 leading-tight mt-0.5">Return to the table</span>
+          </span>
+        </button>
+      )}
     </aside>
   )
 }

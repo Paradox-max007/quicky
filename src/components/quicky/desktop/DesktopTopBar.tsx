@@ -2,23 +2,25 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuickyStore, AppView } from '@/store/quicky'
-import { Bell, Coins, Crown, Heart, Sparkles, Gift, MessageCircle, Trophy } from 'lucide-react'
+import { Bell, Coins, Crown, Heart, Sparkles, Gift, MessageCircle, Trophy, Settings as SettingsIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDashboard, timeAgo, DashboardActivity } from './useDashboard'
 
 /**
- * Global desktop header (concept doc §6/§41): logo + primary nav links on
- * the left/center, global utilities on the right — coins, notification
- * center, profile. The nav links duplicate the sidebar only in the
- * icon-only band (1024–1279px); from 1280px the sidebar carries labels.
+ * TOP NAVIGATION — the ONLY primary navigation on web (Web Premium PRD §2-§4,
+ * §76, §83). Primary links: Discover / Likes / Community / Games / Chats.
+ * Utility: coins, notifications, settings, profile. Active state is the
+ * Quicky accent underline (§4) — never a heavy box. Keyboard reachable,
+ * aria-current marked, sticky, and it never renders inside the game room
+ * (§58: DesktopHome is not mounted there).
  */
 
-const LINKS: { id: AppView; label: string }[] = [
-  { id: 'discovery', label: 'Discover' },
-  { id: 'likes-you', label: 'Likes' },
-  { id: 'community', label: 'Community' },
-  { id: 'matches', label: 'Chats' },
-  { id: 'spin-bottle', label: 'Games' },
+const NAV: { id: AppView; label: string; active: AppView[]; testId: string }[] = [
+  { id: 'discovery', label: 'Discover', active: ['discovery'], testId: 'topnav-discover' },
+  { id: 'likes-you', label: 'Likes', active: ['likes-you'], testId: 'topnav-likes' },
+  { id: 'community', label: 'Community', active: ['community'], testId: 'topnav-community' },
+  { id: 'games', label: 'Games', active: ['games', 'spin-bottle'], testId: 'topnav-games' },
+  { id: 'chats', label: 'Chats', active: ['chats', 'matches', 'chat'], testId: 'topnav-chats' },
 ]
 
 const KIND_ICON: Record<DashboardActivity['kind'], typeof Heart> = {
@@ -35,65 +37,72 @@ const KIND_COLOR: Record<DashboardActivity['kind'], string> = {
   gift: 'text-[var(--qk-gold)]',
   message: 'text-white/70',
 }
-function activityTarget(kind: DashboardActivity['kind']): AppView {
-  switch (kind) {
-    case 'like':
-      return 'likes-you'
-    case 'match':
-    case 'message':
-      return 'matches'
-    case 'gift':
-    case 'kiss':
-      return 'community'
-  }
-}
 
 export function DesktopTopBar() {
   const view = useQuickyStore((s) => s.view)
   const setView = useQuickyStore((s) => s.setView)
+  const openChats = useQuickyStore((s) => s.openChats)
   const user = useQuickyStore((s) => s.user)
   const { data } = useDashboard(true)
 
   const [notifOpen, setNotifOpen] = useState(false)
   const popRef = useRef<HTMLDivElement | null>(null)
 
-  // Close the notification center on outside click (§41 dropdown)
+  // Close the notification center on outside click or Escape (§41/§64)
   useEffect(() => {
     if (!notifOpen) return
     const onDown = (e: MouseEvent) => {
       if (popRef.current && !popRef.current.contains(e.target as Node)) setNotifOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNotifOpen(false)
+    }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [notifOpen])
 
   const activity = data?.activity ?? []
   const avatar = user?.photos?.find((p) => p.isPrimary)?.url ?? user?.photos?.[0]?.url ?? null
 
+  const goChats = () => openChats()
+
   return (
-    <header className="shrink-0 h-14 border-b border-white/5 bg-black/20 backdrop-blur-sm flex items-center gap-4 px-4 min-[1280px]:px-6 relative z-30">
+    <header
+      className="shrink-0 h-14 border-b border-white/5 bg-black/25 backdrop-blur-md flex items-center gap-3 px-4 min-[1280px]:px-6 relative z-30"
+      data-testid="desktop-topnav"
+    >
       {/* Wordmark */}
       <button className="flex items-center gap-2 shrink-0" onClick={() => setView('discovery')} aria-label="Quicky home">
-        { }
         <img src="/quicky-logo.png" alt="" className="w-7 h-7 rounded-lg object-cover" />
         <span className="text-lg font-bold tracking-tight">quicky</span>
         <span className="w-1.5 h-1.5 rounded-full bg-[var(--qk-accent)]" />
       </button>
 
-      {/* Primary links — only while the sidebar is icon-only */}
-      <nav className="hidden min-[1280px]:hidden lg:flex items-center gap-1 ml-4">
-        {LINKS.map((l) => (
-          <button
-            key={l.id}
-            onClick={() => setView(l.id)}
-            className={cn(
-              'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-              view === l.id ? 'text-white bg-white/10' : 'text-white/55 hover:text-white/90'
-            )}
-          >
-            {l.label}
-          </button>
-        ))}
+      {/* Primary navigation — every desktop width (§3.1). No duplication in
+          the sidebar (§5/§75): this bar is the ONLY primary navigation. */}
+      <nav className="flex items-center gap-1 ml-4" aria-label="Primary" data-testid="topnav-links">
+        {NAV.map((l) => {
+          const isActive = l.active.includes(view)
+          return (
+            <button
+              key={l.id}
+              data-testid={l.testId}
+              onClick={l.id === 'chats' ? goChats : () => setView(l.id)}
+              aria-current={isActive ? 'page' : undefined}
+              className={cn(
+                'qk-topnav-item relative px-3.5 py-2 rounded-lg text-sm font-medium transition-colors',
+                isActive ? 'text-[var(--qk-accent)]' : 'text-white/60 hover:text-white/90'
+              )}
+            >
+              {l.label}
+              {isActive && <span className="qk-topnav-underline" aria-hidden />}
+            </button>
+          )
+        })}
       </nav>
 
       <div className="flex-1" />
@@ -108,7 +117,7 @@ export function DesktopTopBar() {
         {(user?.coinBalance ?? 0).toLocaleString()}
       </button>
 
-      {/* Notification center (§41/§42) */}
+      {/* Notification center (§41/§64 — keyboard dismissible) */}
       <div className="relative" ref={popRef}>
         <button
           onClick={() => setNotifOpen((o) => !o)}
@@ -117,6 +126,7 @@ export function DesktopTopBar() {
             notifOpen ? 'bg-white/10 text-white' : 'text-white/70 hover:text-white hover:bg-white/5'
           )}
           aria-label="Notifications"
+          aria-expanded={notifOpen}
           data-testid="desktop-bell"
         >
           <Bell className="w-[18px] h-[18px]" />
@@ -145,12 +155,14 @@ export function DesktopTopBar() {
                     key={a.id}
                     onClick={() => {
                       setNotifOpen(false)
-                      setView(activityTarget(a.kind))
+                      // §83: chats land on the unified Chats page
+                      if (a.kind === 'match' || a.kind === 'message') goChats()
+                      else if (a.kind === 'like') setView('likes-you')
+                      else setView('community')
                     }}
                     className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left"
                   >
                     {a.actorPhoto ? (
-                       
                       <img src={a.actorPhoto} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
                     ) : (
                       <span className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center shrink-0">
@@ -169,6 +181,16 @@ export function DesktopTopBar() {
         )}
       </div>
 
+      {/* Settings (§76 utility access without duplicating it in the sidebar) */}
+      <button
+        onClick={() => setView('settings')}
+        className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+        aria-label="Settings"
+        data-testid="topnav-settings"
+      >
+        <SettingsIcon className="w-[18px] h-[18px]" />
+      </button>
+
       {/* Avatar → my profile */}
       <button
         onClick={() => setView('profile-me')}
@@ -176,7 +198,6 @@ export function DesktopTopBar() {
         aria-label="My profile"
       >
         {avatar ? (
-           
           <img src={avatar} alt="" className="w-7 h-7 rounded-full object-cover" />
         ) : (
           <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold">

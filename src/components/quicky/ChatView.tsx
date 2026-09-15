@@ -136,9 +136,13 @@ function loadChatCache(matchId: string): { partner: any; messages: Msg[] } | nul
   }
 }
 
-export function ChatView() {
+export function ChatView({ embedded = false }: { embedded?: boolean } = {}) {
   const matchId = useQuickyStore((s) => s.activeMatchId)
   const setView = useQuickyStore((s) => s.setView)
+  const setActiveMatchId = useQuickyStore((s) => s.setActiveMatchId)
+  // Web Premium §9/§66: inside the desktop Chats shell the conversation is a
+  // pane — "back" clears the selection instead of navigating away.
+  const chatBack = () => (embedded ? setActiveMatchId(null) : setView('matches'))
   const meUser = useQuickyStore((s) => s.user)
   const clearUnreadForMatch = useQuickyStore((s) => s.clearUnreadForMatch)
   const [match, setMatch] = useState<{ id: string; partner: any; me: { id: string; isPremium: boolean } } | null>(null)
@@ -452,7 +456,7 @@ export function ChatView() {
   }, [])
 
   if (!matchId) {
-    setView('matches')
+    if (!embedded) setView('matches')
     return null
   }
 
@@ -850,7 +854,7 @@ export function ChatView() {
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative">
       {/* Header */}
       <header className="shrink-0 px-3 pt-2 pb-2.5 flex items-center gap-2 border-b border-white/5 bg-[var(--qk-bg)]/95 backdrop-blur z-10">
-        <button onClick={() => setView('matches')} className="p-2 hover:bg-white/5 rounded-full" aria-label="Back">
+        <button onClick={chatBack} className="p-2 hover:bg-white/5 rounded-full" aria-label="Back">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 flex-1 min-w-0">
@@ -1331,7 +1335,8 @@ export function ChatView() {
                     try {
                       await api.unmatch(matchId)
                       toast.success('Unmatched')
-                      setView('matches')
+                      if (embedded) setActiveMatchId(null)
+                      else setView('matches')
                     } catch (e: any) {
                       toast.error(e.message ?? 'Failed')
                     }

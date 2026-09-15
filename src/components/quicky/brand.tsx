@@ -18,7 +18,7 @@ export function QuickyBrand({
   const s = sizes[size]
   return (
     <div className={`inline-flex items-center select-none ${s.gap} ${className}`}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      { }
       <img
         src="/logo.png"
         alt="Q"

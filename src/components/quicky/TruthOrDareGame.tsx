@@ -73,7 +73,7 @@ export function TruthOrDareGame({
     // Safety-net poll only — live updates arrive via the 'game' broadcast
     const interval = setInterval(refresh, 10000)
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [matchId])
 
   // Opponent actions ping this side to refresh instantly
@@ -88,7 +88,7 @@ export function TruthOrDareGame({
       ch?.unsubscribe()
       channelRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [matchId])
 
   const pingPartner = () => channelRef.current?.sendGame({ ping: 'truth_or_dare' })

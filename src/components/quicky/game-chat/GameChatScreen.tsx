@@ -43,7 +43,7 @@ function isImageAsset(url: string) {
 
 function StickerAsset({ sticker }: { sticker: { name: string; assetUrl: string } }) {
   if (isImageAsset(sticker.assetUrl)) {
-    // eslint-disable-next-line @next/next/no-img-element
+     
     return <img src={sticker.assetUrl} alt={sticker.name} className="w-20 h-20 object-contain" draggable={false} />
   }
   return <span className="text-5xl leading-none" role="img" aria-label={sticker.name}>{sticker.assetUrl}</span>
@@ -421,7 +421,7 @@ function GameChatScreenInner({
           <ArrowLeft className="h-5 w-5" />
         </button>
         {peer.peerAvatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img src={peer.peerAvatar} alt="" className="w-9 h-9 rounded-full object-cover" />
         ) : (
           <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>🎲</span>
@@ -467,6 +467,11 @@ function GameChatScreenInner({
                 )}
               </div>
             )}
+
+            {/* §13: with only a few messages they anchor naturally toward the
+                composer instead of sticking to the top — the viewport still
+                fills the pane; once content overflows the spacer is 0. */}
+            <div aria-hidden className="mt-auto shrink-0" />
 
             {messages.length === 0 && (
               // §95: no existing conversation — invite to say hello
@@ -595,7 +600,7 @@ function GameChatScreenInner({
                   {preview.kind === 'voice' ? (
                     <audio src={preview.objectUrl} controls className="w-full m-3" data-testid="voice-preview" />
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={preview.objectUrl} alt="Preview" className="max-h-56 w-auto object-contain" />
                   )}
                 </div>
@@ -958,7 +963,7 @@ function ImageMessageBody({
         </div>
       )}
       {m.mediaUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img src={m.mediaUrl} alt={m.messageType === 'quicky_image' ? 'Quicky image' : 'Photo'} className="max-w-[220px] max-h-[260px] w-auto object-cover" draggable={false} />
       ) : (
         <span className="flex items-center justify-center w-[180px] h-[120px] text-3xl" aria-hidden>🖼</span>

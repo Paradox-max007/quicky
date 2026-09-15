@@ -33,6 +33,7 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion'
 import { X, Heart, DoorOpen, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
+import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { Keyboard } from '@capacitor/keyboard'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
@@ -144,6 +145,10 @@ export function SpinBottleRoom({
   // Capacitor uses the dedicated full-screen chat screens (§8), web uses the
   // in-room chat panel at every viewport width.
   const isNativeCapacitor = Capacitor.isNativePlatform()
+  // Web Premium PRD §15/§17: on the desktop web shell, "Message" navigates
+  // to the Chats experience (contacts stay visible on the left); below
+  // 1024px web the in-room chat panel remains the chat surface.
+  const isDeskShell = useIsDesktopShell() === true
   const kbHeightRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
@@ -276,7 +281,7 @@ export function SpinBottleRoom({
       setDisplayedRotation({ start: 0, end: 0 })
       setSettleDone(true)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [roomId, spinId])
 
   // ─── Keyboard OVERLAY mode (unchanged from v2.1) ─────────────────────────
@@ -433,6 +438,11 @@ export function SpinBottleRoom({
     qk.pinGameChatPeer(peer)
     if (isNativeCapacitor) {
       qk.openGameChat(peer, 'game-chat-contacts')
+    } else if (isDeskShell) {
+      // §15/§16: Chats page, that player's conversation already open, the
+      // contact list stays visible on the left. Room runtime untouched (§18).
+      useGameChatStore.getState().openConversation(peer)
+      qk.openChats('game')
     } else {
       useGameChatStore.getState().openConversation(peer)
       qk.setRoomChatPanel('personal')
@@ -1004,7 +1014,9 @@ export function SpinBottleRoom({
             onOpenGameChats={
               isNativeCapacitor
                 ? () => useQuickyStore.getState().openGameChatContacts('spin-bottle-room')
-                : () => setRoomChatPanel('contacts')
+                : isDeskShell
+                  ? () => useQuickyStore.getState().openChats('game')
+                  : () => setRoomChatPanel('contacts')
             }
             gameChatsUnread={gameChatsUnread}
             panel={roomChatPanel}

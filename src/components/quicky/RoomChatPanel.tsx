@@ -369,10 +369,14 @@ export function RoomChatPanel({
 
   // §34/§36: trailing "@query" before the caret → picker with local filter.
   const mentionQuery = useMemo(() => {
+    // react-hooks/refs: the caret ref read here is intentional — the picker
+    // query derives from the LIVE caret position; the ref updates in the
+    // same onChange that sets `text`, so it is fresh on every recompute.
+    // eslint-disable-next-line react-hooks/refs
     const before = text.slice(0, caretRef.current || text.length)
     const m = before.match(/(^|\s)@([A-Za-z0-9_]*)$/)
     return m ? m[2] : null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [text, caretRef.current])
 
   // §35/§62/§87: picker candidates come from the AUTHORITATIVE room players
@@ -430,7 +434,7 @@ export function RoomChatPanel({
     if (!mentionDraft) return
     useQuickyStore.getState().clearRoomChatMentionDraft()
     insertMentionToken(mentionDraft.userId, mentionDraft.displayName)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [mentionDraft])
 
   // §48: brief highlight of the message that mentioned me, then clear.
@@ -465,7 +469,7 @@ export function RoomChatPanel({
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = savedScrollTop.current > 0 ? savedScrollTop.current : el.scrollHeight
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [panel])
 
   const onScrollSave = () => {
@@ -717,7 +721,7 @@ export function RoomChatPanel({
                   data-testid={`mention-item-${p.userId}`}
                 >
                   {p.avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={p.avatar} alt="" className="sbr-mention-avatar" />
                   ) : (
                     <span className="sbr-mention-avatar">{p.displayName.slice(0, 1).toUpperCase()}</span>

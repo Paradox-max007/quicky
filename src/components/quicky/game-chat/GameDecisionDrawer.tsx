@@ -56,6 +56,10 @@ export function GameDecisionDrawer() {
 
   // §23/§106: arm on the TARGET/STATUS TRANSITION, not on every snapshot
   // change — a new round re-opens the drawer automatically.
+  // react-hooks/preserve-manual-memoization: deps intentionally include
+  // spin?.id/status (not the whole spin object) — arming happens ONLY on the
+  // target/status transition (§23/§106), never on every snapshot change.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const decision = useMemo(() => {
     if (!onGameSectionView || !snapshot || !spin || closure) return null
     if (spin.status !== 'awaiting' || !snapshot.iAmTarget) return null
@@ -65,7 +69,7 @@ export function GameDecisionDrawer() {
       return { spin, selected: optimistic.choice as string }
     }
     return { spin, selected: null }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [onGameSectionView, snapshot, closure, optimistic, spin?.id, spin?.status, snapshot?.iAmTarget])
 
   const decisionSpinId = decision?.spin.id ?? null
@@ -123,6 +127,10 @@ export function GameDecisionDrawer() {
       iAmParticipant
     ) {
       const s = spin!
+      // react-hooks/set-state-in-effect: intentional one-shot result-modal
+      // arming on the awaiting→completed transition (§110) — derived from
+      // the transition itself, not cascaded from render state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResultSpin({
         id: s.id,
         result: s.result,
@@ -132,7 +140,7 @@ export function GameDecisionDrawer() {
         targetResponse: s.targetResponse,
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [spin?.id, spin?.status, isNative, onGameSectionView, iAmParticipant])
 
   // §98: the result has its OWN duration — never the decision countdown.
@@ -221,7 +229,7 @@ export function GameDecisionDrawer() {
               {/* §36/§37: the SPINNER's image + name — never my own profile */}
               <div className="relative shrink-0">
                 {spinner?.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img src={spinner.avatar} alt="" className="w-16 h-16 rounded-2xl object-cover" />
                 ) : (
                   <span className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-2xl" aria-hidden>

@@ -67,7 +67,7 @@ export function GameChatList() {
             >
               <span className="relative shrink-0">
                 {c.peer.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img src={c.peer.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
                 ) : (
                   <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>

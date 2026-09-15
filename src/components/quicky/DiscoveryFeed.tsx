@@ -181,7 +181,7 @@ export function DiscoveryFeed() {
       <header className="shrink-0 px-5 pt-3 pb-3 flex items-center justify-between">
         <div className="flex items-center gap-1">
           {/* Logo mark doubles as the "Q" of the wordmark */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src="/quicky-logo.png" alt="" className="w-7 h-7 rounded-lg object-cover" />
           <span className="text-xl font-bold tracking-tight">uicky</span>
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--qk-accent)]" />

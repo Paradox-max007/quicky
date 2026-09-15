@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuickyStore } from '@/store/quicky'
+import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Crown, Heart, Camera, Sparkles, Zap, Filter, Lock } from 'lucide-react'
 import { QUICKY } from '@/lib/quicky/constants'
@@ -76,6 +77,47 @@ export function PaywallModal() {
   const setUser = useQuickyStore((s) => s.setUser)
   const [selectedPlan, setSelectedPlan] = useState('monthly')
   const [subscribing, setSubscribing] = useState(false)
+  const isDesk = useIsDesktopShell() === true
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+
+  // §31: ESC closes on desktop, focus is trapped inside the dialog, and the
+  // page behind the dark blurred backdrop cannot scroll.
+  useEffect(() => {
+    if (!paywall || !isDesk) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        clearPaywall()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const root = dialogRef.current
+      if (!root) return
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey && (active === first || !root.contains(active))) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    const root = document.querySelector('[data-qk-root]') as HTMLElement | null
+    const prevOverflow = root?.style.overflow ?? ''
+    if (root) root.style.overflow = 'hidden'
+    const t = setTimeout(() => dialogRef.current?.focus(), 30)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      if (root) root.style.overflow = prevOverflow
+      clearTimeout(t)
+    }
+  }, [paywall, isDesk, clearPaywall])
 
   if (!paywall) return null
 
@@ -106,15 +148,30 @@ export function PaywallModal() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 z-[180] flex items-end sm:items-center sm:justify-center bg-black/70 backdrop-blur-sm"
+        className={
+          // §30/§71: CENTERED popup over a dark translucent blurred backdrop —
+          // never top/bottom anchored on desktop. Mobile keeps its sheet.
+          isDesk
+            ? 'fixed inset-0 z-[180] flex items-center justify-center bg-black/75 backdrop-blur-md p-6'
+            : 'absolute inset-0 z-[180] flex items-end sm:items-center sm:justify-center bg-black/70 backdrop-blur-sm'
+        }
         onClick={clearPaywall}
       >
         <motion.div
-          initial={{ y: '100%' }}
-          animate={{ y: 0 }}
-          exit={{ y: '100%' }}
-          transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-          className="bg-[var(--qk-bg)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90%] overflow-y-auto no-scrollbar border-t border-[var(--qk-gold)]/30"
+          initial={isDesk ? { opacity: 0, scale: 0.92, y: 0 } : { y: '100%' }}
+          animate={isDesk ? { opacity: 1, scale: 1, y: 0 } : { y: 0 }}
+          exit={isDesk ? { opacity: 0, scale: 0.94, y: 0 } : { y: '100%' }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          ref={dialogRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          className={
+            isDesk
+              ? 'bg-[var(--qk-bg)] rounded-3xl w-full max-w-sm max-h-[88%] overflow-y-auto qk-desk-scroll border border-[var(--qk-gold)]/30 shadow-2xl outline-none'
+              : 'bg-[var(--qk-bg)] rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm max-h-[90%] overflow-y-auto no-scrollbar border-t border-[var(--qk-gold)]/30'
+          }
+          data-testid={isDesk ? 'paywall-modal-desktop' : 'paywall-modal-mobile'}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative p-5">

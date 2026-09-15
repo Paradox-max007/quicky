@@ -298,7 +298,7 @@ export function AdminStickersScreen() {
                     title={`${s.name} · order ${s.sortOrder}${s.isActive ? '' : ' · inactive'}`}
                   >
                     {s.assetUrl.startsWith('https://') ? (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img src={s.assetUrl} alt={s.name} className="w-7 h-7 object-contain" />
                     ) : (
                       <span className="text-xl" aria-hidden>{s.assetUrl}</span>
