@@ -6,9 +6,9 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
 import { Toggle } from './Toggle'
-import { Lock, Crown, Users, MapPin, Shield, Clock } from 'lucide-react'
+import { Lock, Crown, Users, MapPin, Shield, Clock, Ruler, GraduationCap, Wine } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { INTEREST_TAGS } from '@/lib/quicky/constants'
+import { INTEREST_TAGS, EDUCATION_OPTIONS, LIFESTYLE_OPTIONS } from '@/lib/quicky/constants'
 
 export function DiscoveryPreferencesScreen() {
   const user = useQuickyStore((s) => s.user)
@@ -22,6 +22,10 @@ export function DiscoveryPreferencesScreen() {
   const [interests, setInterests] = useState<string[]>(user?.interests ?? [])
   const [verifiedOnly, setVerifiedOnly] = useState(user?.discoveryShowVerifiedOnly ?? false)
   const [recentlyActive, setRecentlyActive] = useState(user?.discoveryRecentlyActive ?? false)
+  const [minHt, setMinHt] = useState<number>(user?.discoveryHeightMin ?? 150)
+  const [maxHt, setMaxHt] = useState<number>(user?.discoveryHeightMax ?? 200)
+  const [educations, setEducations] = useState<string[]>(user?.discoveryEducations ?? [])
+  const [lifestyles, setLifestyles] = useState<string[]>(user?.discoveryLifestyles ?? [])
   const [saving, setSaving] = useState(false)
 
   const isPremium = user?.isPremium ?? false
@@ -43,6 +47,14 @@ export function DiscoveryPreferencesScreen() {
         discoveryDistanceKm: distance,
         discoveryShowVerifiedOnly: verifiedOnly,
         discoveryRecentlyActive: recentlyActive,
+        ...(isPremium
+          ? {
+              discoveryHeightMin: minHt,
+              discoveryHeightMax: maxHt,
+              discoveryEducations: educations,
+              discoveryLifestyles: lifestyles,
+            }
+          : {}),
       })
       const me = await api.auth.me()
       if (me.user) setUser(me.user)
@@ -214,6 +226,86 @@ export function DiscoveryPreferencesScreen() {
           </div>
         </div>
 
+        {/* Height range */}
+        <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
+          <div className="flex items-center gap-2 mb-3">
+            <Ruler className="w-4 h-4 text-[var(--qk-accent-light)]" />
+            <h3 className="text-sm font-semibold">Height Range</h3>
+            {!isPremium && <span className="ml-auto text-[10px] text-white/40">Premium filter</span>}
+          </div>
+          <div className="flex items-center gap-3 mb-2">
+            <label className="text-xs text-white/60 w-12">Min</label>
+            <input type="range" min={140} max={210} value={minHt} onChange={(e) => setMinHt(Math.min(Number(e.target.value), maxHt - 5))} className="flex-1 accent-[var(--qk-accent)]" />
+            <span className="text-sm font-bold w-16 text-right">{minHt} cm</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-white/60 w-12">Max</label>
+            <input type="range" min={140} max={210} value={maxHt} onChange={(e) => setMaxHt(Math.max(Number(e.target.value), minHt + 5))} className="flex-1 accent-[var(--qk-accent)]" />
+            <span className="text-sm font-bold w-16 text-right">{maxHt} cm</span>
+          </div>
+          {!isPremium && <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} label="Filter by height with Premium" />}
+        </div>
+
+        {/* Education filter */}
+        <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
+          <div className="flex items-center gap-2 mb-3">
+            <GraduationCap className="w-4 h-4 text-[var(--qk-accent-light)]" />
+            <h3 className="text-sm font-semibold">Education</h3>
+            {!isPremium && <span className="ml-auto text-[10px] text-white/40">Premium filter</span>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {EDUCATION_OPTIONS.map((opt) => {
+              const selected = educations.includes(opt)
+              return (
+                <button
+                  key={opt}
+                  onClick={() => (isPremium ? setEducations((prev) => (selected ? prev.filter((x) => x !== opt) : [...prev, opt])) : showPaywall({ kind: 'advanced_filters' }))}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-xs font-medium transition-all',
+                    selected
+                      ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white'
+                      : 'border-white/10 bg-white/5 text-white/70',
+                    !isPremium && 'opacity-60'
+                  )}
+                >
+                  {opt}
+                </button>
+              )
+            })}
+          </div>
+          {!isPremium && <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} label="Filter by education with Premium" />}
+        </div>
+
+        {/* Lifestyle filter */}
+        <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
+          <div className="flex items-center gap-2 mb-3">
+            <Wine className="w-4 h-4 text-[var(--qk-accent-light)]" />
+            <h3 className="text-sm font-semibold">Lifestyle</h3>
+            {!isPremium && <span className="ml-auto text-[10px] text-white/40">Premium filter</span>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {LIFESTYLE_OPTIONS.map((opt) => {
+              const selected = lifestyles.includes(opt)
+              return (
+                <button
+                  key={opt}
+                  onClick={() => (isPremium ? setLifestyles((prev) => (selected ? prev.filter((x) => x !== opt) : [...prev, opt])) : showPaywall({ kind: 'advanced_filters' }))}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-xs font-medium transition-all',
+                    selected
+                      ? 'border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white'
+                      : 'border-white/10 bg-white/5 text-white/70',
+                    !isPremium && 'opacity-60'
+                  )}
+                >
+                  {opt}
+                </button>
+              )
+            })}
+          </div>
+          {!isPremium && <PremiumHint onClick={() => showPaywall({ kind: 'advanced_filters' })} label="Filter by lifestyle with Premium" />}
+        </div>
+
         {/* Toggles — verified-only & recently-active are premium filters */}
         <div className="bg-white/5 rounded-2xl border border-white/8 overflow-hidden">
           <ToggleRow
@@ -240,7 +332,7 @@ export function DiscoveryPreferencesScreen() {
         <button
           onClick={save}
           disabled={saving}
-          className="w-full bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+          className="w-full md:w-auto md:px-12 md:self-center bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
         >
           {saving ? 'Saving...' : 'Save preferences'}
         </button>

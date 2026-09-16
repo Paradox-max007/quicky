@@ -237,3 +237,27 @@ export const PROFILE_FRAMES = [
 
 export type FrameId = (typeof PROFILE_FRAMES)[number]['id']
 
+// Discovery / profile detail option sets (shared by Edit Profile,
+// Discovery Preferences and the discovery detail cards)
+export const EDUCATION_OPTIONS = [
+  'High school',
+  "Bachelor's degree",
+  "Master's degree",
+  'PhD / Doctorate',
+  'Trade / vocational',
+]
+
+export const LIFESTYLE_OPTIONS = [
+  'Non-smoker',
+  'Smoker',
+  'Social drinker',
+  'Non-drinker',
+  'Gym & fitness',
+  'Foodie',
+  'Night owl',
+  'Early bird',
+  'Pet lover',
+  'Traveler',
+]
+
+

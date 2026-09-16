@@ -68,6 +68,15 @@ export async function GET() {
       discoveryDistanceKm: full.discoveryDistanceKm,
       discoveryShowVerifiedOnly: full.discoveryShowVerifiedOnly,
       discoveryRecentlyActive: full.discoveryRecentlyActive,
+      discoveryHeightMin: full.discoveryHeightMin,
+      discoveryHeightMax: full.discoveryHeightMax,
+      discoveryEducations: full.discoveryEducations ? JSON.parse(full.discoveryEducations) : [],
+      discoveryLifestyles: full.discoveryLifestyles ? JSON.parse(full.discoveryLifestyles) : [],
+      // Profile details
+      heightCm: full.heightCm,
+      education: full.education,
+      lifestyle: full.lifestyle,
+      lastActiveAt: full.lastActiveAt,
       // Settings
       settings: settings,
     },
@@ -126,6 +135,19 @@ export async function PATCH(req: NextRequest) {
       data.city = city || null
     }
 
+    if (body.heightCm !== undefined) {
+      const h = Number(body.heightCm)
+      if (!Number.isFinite(h) || h < 120 || h > 230) {
+        return NextResponse.json({ error: 'Height must be 120–230 cm' }, { status: 400 })
+      }
+      data.heightCm = Math.round(h)
+    }
+    if (body.education !== undefined) {
+      data.education = body.education ? String(body.education).slice(0, 60) : null
+    }
+    if (body.lifestyle !== undefined) {
+      data.lifestyle = body.lifestyle ? String(body.lifestyle).slice(0, 60) : null
+    }
     if (body.interests !== undefined) {
       if (!Array.isArray(body.interests)) {
         return NextResponse.json({ error: 'interests must be an array' }, { status: 400 })
@@ -181,6 +203,38 @@ export async function PATCH(req: NextRequest) {
       }
       data.discoveryRecentlyActive = Boolean(body.discoveryRecentlyActive)
     }
+    if (body.discoveryHeightMin !== undefined) {
+      if (!me.isPremium) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      const v = Number(body.discoveryHeightMin)
+      data.discoveryHeightMin = Number.isFinite(v) ? Math.round(v) : null
+    }
+    if (body.discoveryHeightMax !== undefined) {
+      if (!me.isPremium) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      const v = Number(body.discoveryHeightMax)
+      data.discoveryHeightMax = Number.isFinite(v) ? Math.round(v) : null
+    }
+    if (body.discoveryEducations !== undefined) {
+      if (!me.isPremium) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      if (!Array.isArray(body.discoveryEducations)) {
+        return NextResponse.json({ error: 'discoveryEducations must be an array' }, { status: 400 })
+      }
+      data.discoveryEducations = JSON.stringify(body.discoveryEducations.slice(0, 6))
+    }
+    if (body.discoveryLifestyles !== undefined) {
+      if (!me.isPremium) {
+        return NextResponse.json({ error: 'premium_required', paywall: 'discovery_filters' }, { status: 402 })
+      }
+      if (!Array.isArray(body.discoveryLifestyles)) {
+        return NextResponse.json({ error: 'discoveryLifestyles must be an array' }, { status: 400 })
+      }
+      data.discoveryLifestyles = JSON.stringify(body.discoveryLifestyles.slice(0, 6))
+    }
 
     const updated = await db.user.update({
       where: { id: me.id },
@@ -205,6 +259,13 @@ export async function PATCH(req: NextRequest) {
         discoveryDistanceKm: updated.discoveryDistanceKm,
         discoveryShowVerifiedOnly: updated.discoveryShowVerifiedOnly,
         discoveryRecentlyActive: updated.discoveryRecentlyActive,
+        discoveryHeightMin: updated.discoveryHeightMin,
+        discoveryHeightMax: updated.discoveryHeightMax,
+        discoveryEducations: updated.discoveryEducations ? JSON.parse(updated.discoveryEducations) : [],
+        discoveryLifestyles: updated.discoveryLifestyles ? JSON.parse(updated.discoveryLifestyles) : [],
+        heightCm: updated.heightCm,
+        education: updated.education,
+        lifestyle: updated.lifestyle,
       },
     })
   } catch (e: any) {

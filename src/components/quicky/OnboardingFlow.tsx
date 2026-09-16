@@ -338,7 +338,7 @@ export function OnboardingFlow() {
         <button
           onClick={next}
           disabled={saving || (step === 'photos' && photoUrls.length < 2) || (step === 'dob' && !dob)}
-          className="flex-1 bg-coral-gradient glow-coral rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+          className="flex-1 md:flex-none md:px-10 bg-coral-gradient glow-coral rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
         >
           {step === 'finish' ? (saving ? 'Saving...' : 'Start discovering') : 'Continue'}
           {step !== 'finish' && <ArrowRight className="w-4 h-4" />}

@@ -162,7 +162,7 @@ export function PremiumView() {
           <button
             onClick={subscribe}
             disabled={subscribing}
-            className="w-full bg-gold-gradient glow-gold text-black rounded-2xl py-3.5 font-bold text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+            className="w-full md:w-auto md:px-12 bg-gold-gradient glow-gold text-black rounded-2xl py-3.5 font-bold text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
           >
             <Crown className="w-5 h-5" fill="currentColor" stroke="none" />
             {subscribing ? 'Processing...' : 'Upgrade now'}
@@ -189,7 +189,7 @@ export function PremiumView() {
           </div>
           <button
             onClick={cancel}
-            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 font-medium text-sm text-white/60 hover:bg-white/10"
+            className="w-full md:w-auto md:px-8 bg-white/5 border border-white/10 rounded-2xl py-3 font-medium text-sm text-white/60 hover:bg-white/10"
           >
             Cancel Premium
           </button>

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { useQuickyStore, DiscoveryCandidate } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Sparkles, Check } from 'lucide-react'
+import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Sparkles, Check, Ruler, GraduationCap, Wine, ShieldCheck, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getScoreTier } from '@/lib/quicky/constants'
 // The mobile feed's card pieces are REUSED here (Desktop UI concept §7/§29):
@@ -236,9 +236,10 @@ export function DiscoverStage() {
           )}
         </div>
 
-        {/* ABOUT THEM — desktop-native context panel (§29), ≥1280px only */}
+        {/* ABOUT THEM + THE DETAILS — desktop-native context column (§29), ≥1280px only */}
         {top && (
-          <aside className="hidden min-[1280px]:block w-[300px] shrink-0 rounded-3xl border border-white/8 bg-[var(--qk-card)]/60 p-5" data-testid="desktop-about-them">
+          <div className="hidden min-[1280px]:flex flex-col gap-5 w-[300px] shrink-0">
+          <aside className="rounded-3xl border border-white/8 bg-[var(--qk-card)]/60 p-5" data-testid="desktop-about-them">
             <p className="text-[11px] font-bold tracking-widest text-white/40 uppercase">About them</p>
 
             <div className="flex items-center gap-2 mt-3">
@@ -315,8 +316,49 @@ export function DiscoverStage() {
               </div>
             )}
           </aside>
+
+          {/* THE DETAILS — profile facts card, straight under About them */}
+          <aside className="rounded-3xl border border-white/8 bg-[var(--qk-card)]/60 p-5" data-testid="desktop-their-details">
+            <p className="text-[11px] font-bold tracking-widest text-white/40 uppercase">The details</p>
+            <div className="mt-3 flex flex-col gap-2.5 text-sm">
+              <DetailRow icon={<Ruler className="w-4 h-4" />} label="Height" value={top.heightCm ? top.heightCm + ' cm' : null} />
+              <DetailRow icon={<GraduationCap className="w-4 h-4" />} label="Education" value={top.education} />
+              <DetailRow icon={<Wine className="w-4 h-4" />} label="Lifestyle" value={top.lifestyle} />
+              <DetailRow icon={<ShieldCheck className="w-4 h-4" />} label="Verification" value={top.isVerified ? 'Verified profile' : null} />
+              <DetailRow icon={<Clock className="w-4 h-4" />} label="Last active" value={lastActiveLabel(top.lastActiveAt)} />
+            </div>
+          </aside>
+          </div>
         )}
       </div>
     </section>
   )
+}
+
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | null }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-white/45 shrink-0">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] uppercase tracking-widest text-white/35 leading-none">{label}</p>
+        <p className={value ? 'text-[13px] font-semibold text-white/85 mt-0.5 truncate' : 'text-[13px] text-white/30 mt-0.5 italic'}>
+          {value ?? 'Not shared yet'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function lastActiveLabel(iso: string | null): string {
+  if (!iso) return null as unknown as string
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return null as unknown as string
+  const mins = Math.floor((Date.now() - t) / 60000)
+  if (mins < 5) return 'Active now'
+  if (mins < 60) return 'Active ' + mins + ' min ago'
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return 'Active ' + hours + 'h ago'
+  const days = Math.floor(hours / 24)
+  if (days < 7) return 'Active ' + days + 'd ago'
+  return 'Last seen ' + days + 'd ago'
 }

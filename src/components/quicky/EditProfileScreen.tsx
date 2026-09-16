@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
-import { INTEREST_TAGS, PROFILE_PROMPTS } from '@/lib/quicky/constants'
+import { INTEREST_TAGS, PROFILE_PROMPTS, EDUCATION_OPTIONS, LIFESTYLE_OPTIONS } from '@/lib/quicky/constants'
 import { toast } from 'sonner'
 import { ArrowLeft, Check, Plus, X, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -36,6 +36,9 @@ export function EditProfileScreen() {
   const [bio, setBio] = useState('')
   const [city, setCity] = useState('')
   const [interests, setInterests] = useState<string[]>([])
+  const [htCm, setHtCm] = useState<number | null>(null)
+  const [education, setEducation] = useState('')
+  const [lifestyle, setLifestyle] = useState('')
   const [promptTexts, setPromptTexts] = useState<Record<string, string>>({})
 
   // Hydrate from store / API
@@ -56,6 +59,9 @@ export function EditProfileScreen() {
           setBio(u.bio ?? '')
           setCity(u.city ?? '')
           setInterests(u.interests ?? [])
+          setHtCm(u.heightCm ?? null)
+          setEducation(u.education ?? '')
+          setLifestyle(u.lifestyle ?? '')
           const promptMap: Record<string, string> = {}
           for (const p of u.prompts ?? []) {
             promptMap[p.prompt] = p.answer
@@ -89,6 +95,9 @@ export function EditProfileScreen() {
         city,
         interests,
         prompts,
+        htCm: htCm ?? undefined,
+        education: education || undefined,
+        lifestyle: lifestyle || undefined,
       }
       const res = await api.auth.update(payload)
       if (res.ok) {
@@ -233,6 +242,65 @@ export function EditProfileScreen() {
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]"
               />
             </Field>
+            <Field label="Height">
+              <div className="flex items-center gap-3">
+                <select
+                  value={htCm ?? ""}
+                  onChange={(e) => setHtCm(e.target.value ? Number(e.target.value) : null)}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base focus:outline-none focus:border-[var(--qk-accent)] [color-scheme:dark]"
+                >
+                  <option value="">Prefer not to say</option>
+                  {Array.from({ length: 71 }, (_, i) => 140 + i).map((cm) => (
+                    <option key={cm} value={cm}>{cm} cm</option>
+                  ))}
+                </select>
+                {htCm ? (
+                  <span className="text-xs text-white/50 whitespace-nowrap">
+                    {Math.floor(htCm / 30.48)}′{Math.round((htCm / 2.54) % 12)}″
+                  </span>
+                ) : null}
+              </div>
+            </Field>
+
+            <Field label="Education">
+              <div className="flex flex-wrap gap-2">
+                {EDUCATION_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setEducation(education === opt ? "" : opt)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                      education === opt
+                        ? "border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white"
+                        : "border-white/10 bg-white/5 text-white/70"
+                    )}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            <Field label="Lifestyle">
+              <div className="flex flex-wrap gap-2">
+                {LIFESTYLE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setLifestyle(lifestyle === opt ? "" : opt)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                      lifestyle === opt
+                        ? "border-[var(--qk-accent)] bg-[var(--qk-accent)] text-white"
+                        : "border-white/10 bg-white/5 text-white/70"
+                    )}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </Field>
           </Section>
         )}
 
@@ -356,7 +424,7 @@ export function EditProfileScreen() {
         <button
           onClick={next}
           disabled={saving}
-          className="flex-1 bg-coral-gradient glow-coral rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+          className="flex-1 md:flex-none md:px-10 bg-coral-gradient glow-coral rounded-2xl py-3 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
         >
           {stepIdx === STEP_ORDER.length - 1 ? (
             <>

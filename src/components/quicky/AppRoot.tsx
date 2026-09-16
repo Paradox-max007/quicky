@@ -71,6 +71,9 @@ function shellFor(view: AppView): string {
     case 'onboarding':
       return 'md:max-w-lg'
     case 'spin-bottle':
+      // Web: the Spin the Bottle landing is a full-width immersive page
+      // (hero + rules + game chats across the whole stage, like the room).
+      return ''
     case 'premium':
       return 'md:max-w-2xl'
     case 'game-chat':

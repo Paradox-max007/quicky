@@ -13,6 +13,11 @@ export type DiscoveryCandidate = {
   isVerified: boolean
   isPremium: boolean
   quickyScore: number
+  // profile details (discovery cards show these)
+  heightCm: number | null
+  education: string | null
+  lifestyle: string | null
+  lastActiveAt: string | null
   // visibility score (higher = shown first)
   visibility: number
   // computed for display
@@ -73,8 +78,38 @@ export async function buildDiscoveryQueue(opts: {
 
   const myInterests = me.interests ? JSON.parse(me.interests) : []
 
+  // The user's saved discovery preferences are enforced HERE (server side):
+  // age range, height range, education, lifestyle, verified-only, recently
+  // active. Candidates missing a filtered field are excluded — the viewer
+  // asked for it explicitly.
+  const prefEducation = me.discoveryEducations ? JSON.parse(me.discoveryEducations) : []
+  const prefLifestyle = me.discoveryLifestyles ? JSON.parse(me.discoveryLifestyles) : []
+  const recentWindowMs = 24 * 3600 * 1000
+
   const scored = candidates
-    .filter((u) => !swipedIds.has(u.id) && !blockedIds.has(u.id))
+    .filter((u) => {
+      if (swipedIds.has(u.id) || blockedIds.has(u.id)) return false
+      // age range
+      if (me.discoveryAgeMin !== null && me.discoveryAgeMin !== undefined && u.age !== null && u.age < me.discoveryAgeMin) return false
+      if (me.discoveryAgeMax !== null && me.discoveryAgeMax !== undefined && u.age !== null && u.age > me.discoveryAgeMax) return false
+      // height range
+      if (me.discoveryHeightMin !== null && me.discoveryHeightMin !== undefined) {
+        if (u.heightCm === null || u.heightCm < me.discoveryHeightMin) return false
+      }
+      if (me.discoveryHeightMax !== null && me.discoveryHeightMax !== undefined) {
+        if (u.heightCm === null || u.heightCm > me.discoveryHeightMax) return false
+      }
+      // education / lifestyle (multi-select filters)
+      if (prefEducation.length > 0 && (!u.education || !prefEducation.includes(u.education))) return false
+      if (prefLifestyle.length > 0 && (!u.lifestyle || !prefLifestyle.includes(u.lifestyle))) return false
+      // verified-only
+      if (me.discoveryShowVerifiedOnly && !u.isVerified) return false
+      // recently active = seen in the last 24h
+      if (me.discoveryRecentlyActive) {
+        if (!u.lastActiveAt || Date.now() - u.lastActiveAt.getTime() > recentWindowMs) return false
+      }
+      return true
+    })
     .map((u) => {
       const photoCount = u.photos.length
       const theirInterests: string[] = u.interests ? JSON.parse(u.interests) : []
@@ -117,6 +152,10 @@ export async function buildDiscoveryQueue(opts: {
         isVerified: u.isVerified,
         isPremium: u.isPremium,
         quickyScore: u.quickyScore,
+        heightCm: u.heightCm,
+        education: u.education,
+        lifestyle: u.lifestyle,
+        lastActiveAt: u.lastActiveAt ? u.lastActiveAt.toISOString() : null,
         visibility: score,
         distanceKm: Math.round(distance),
       } as DiscoveryCandidate

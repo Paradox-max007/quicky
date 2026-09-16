@@ -63,6 +63,15 @@ export type QuickyUser = {
   discoveryDistanceKm?: number | null
   discoveryShowVerifiedOnly?: boolean
   discoveryRecentlyActive?: boolean
+  discoveryHeightMin?: number | null
+  discoveryHeightMax?: number | null
+  discoveryEducations?: string[]
+  discoveryLifestyles?: string[]
+  // profile details
+  heightCm?: number | null
+  education?: string | null
+  lifestyle?: string | null
+  lastActiveAt?: string | null
   settings?: UserSettings
 }
 
@@ -91,6 +100,10 @@ export type DiscoveryCandidate = {
   isVerified: boolean
   isPremium: boolean
   quickyScore: number
+  heightCm: number | null
+  education: string | null
+  lifestyle: string | null
+  lastActiveAt: string | null
   visibility: number
   distanceKm: number | null
 }

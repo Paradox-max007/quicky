@@ -5,7 +5,7 @@ import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from '
 import { useQuickyStore, DiscoveryCandidate } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock } from 'lucide-react'
+import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock, Ruler, GraduationCap, Wine, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getScoreTier } from '@/lib/quicky/constants'
 
@@ -393,6 +393,7 @@ export function CardLayout({
   showPaywall: () => void
 }) {
   const [photoIdx, setPhotoIdx] = useState(0)
+  const [infoTab, setInfoTab] = useState<'about' | 'details'>('about')
   const tier = getScoreTier(candidate.quickyScore)
   const total = candidate.photos.length
   const visibleLimit = viewerIsPremium ? total : Math.min(total, FREE_PHOTO_LIMIT)
@@ -509,8 +510,24 @@ export function CardLayout({
         </>
       )}
 
-      {/* Info */}
+      {/* Info — two switchable tabs: About | Details */}
       <div className="absolute bottom-0 left-0 right-0 p-4">
+        <div className="flex gap-1 mb-2 bg-black/40 rounded-full p-0.5 w-max">
+          <button
+            onClick={(e) => { e.stopPropagation(); setInfoTab('about') }}
+            className={cn('rounded-full px-3 py-1 text-[10px] font-bold transition-all', infoTab === 'about' ? 'bg-white text-black' : 'text-white/70')}
+            data-testid="card-tab-about"
+          >
+            About
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setInfoTab('details') }}
+            className={cn('rounded-full px-3 py-1 text-[10px] font-bold transition-all', infoTab === 'details' ? 'bg-white text-black' : 'text-white/70')}
+            data-testid="card-tab-details"
+          >
+            Details
+          </button>
+        </div>
         <div className="flex items-end justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-1">
@@ -532,10 +549,10 @@ export function CardLayout({
                 {candidate.distanceKm ? `${candidate.distanceKm} km away` : candidate.city}
               </div>
             )}
-            {candidate.bio && (
+            {infoTab === 'about' && candidate.bio && (
               <p className="text-xs text-white/70 mt-1 line-clamp-2">{candidate.bio}</p>
             )}
-            {candidate.interests.length > 0 && (
+            {infoTab === 'about' && candidate.interests.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {candidate.interests.slice(0, 3).map((t) => (
                   <span key={t} className="text-[10px] font-medium bg-white/10 rounded-full px-2 py-0.5 capitalize">
@@ -545,6 +562,15 @@ export function CardLayout({
                 {candidate.interests.length > 3 && (
                   <span className="text-[10px] text-white/60">+{candidate.interests.length - 3}</span>
                 )}
+              </div>
+            )}
+            {infoTab === 'details' && (
+              <div className="flex flex-col gap-1 mt-1.5" data-testid="card-details-panel">
+                <MiniRow label="Height" value={candidate.heightCm ? candidate.heightCm + ' cm' : 'Not shared'} />
+                <MiniRow label="Education" value={candidate.education ?? 'Not shared'} />
+                <MiniRow label="Lifestyle" value={candidate.lifestyle ?? 'Not shared'} />
+                <MiniRow label="Verification" value={candidate.isVerified ? 'Verified' : 'Not verified'} />
+                <MiniRow label="Last active" value={cardLastActive(candidate.lastActiveAt)} />
               </div>
             )}
           </div>
@@ -563,6 +589,28 @@ export function CardLayout({
       </div>
     </div>
   )
+}
+
+function MiniRow({ label, value }: { label: string; value: string }) {
+  const empty = value === 'Not shared'
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-12 shrink-0 text-[10px] uppercase tracking-wider text-white/40">{label}</span>
+      <span className={empty ? 'text-white/35 italic' : 'text-white/85 font-medium'}>{value}</span>
+    </div>
+  )
+}
+
+function cardLastActive(iso: string | null): string {
+  if (!iso) return 'Unknown'
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return 'Unknown'
+  const mins = Math.floor((Date.now() - t) / 60000)
+  if (mins < 5) return 'Active now'
+  if (mins < 60) return mins + ' min ago'
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return hours + 'h ago'
+  return Math.floor(hours / 24) + 'd ago'
 }
 
 export function SwipeCardWrapper({
