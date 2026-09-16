@@ -78,13 +78,18 @@ export async function GET(req: NextRequest) {
   const peerMember = conversation ? await amIMember(conversation.id, peerId!) : null
 
   const rows = conversation ? await loadPage(conversation.id, before) : []
-  const messages = await serializeMessages(rows)
+  // Refactor PRD §56 — per-user Clear Chat marker on game conversations too.
+  const myCleared = conversation
+    ? await db.conversationState.findFirst({ where: { userId: me.id, gameConversationId: conversation.id } })
+    : null
+  const visibleRows = myCleared ? rows.filter((r) => r.createdAt > myCleared.clearedAt) : rows
+  const messages = await serializeMessages(visibleRows)
 
   return NextResponse.json({
     conversationId: conversation?.id ?? null,
     peer,
-    hasMore: conversation ? rows.length === MESSAGE_PAGE_SIZE : false,
-    oldestCursor: rows.length > 0 ? rows[0].createdAt.toISOString() : null,
+    hasMore: conversation ? visibleRows.length === MESSAGE_PAGE_SIZE : false,
+    oldestCursor: visibleRows.length > 0 ? visibleRows[0].createdAt.toISOString() : null,
     messages,
     myLastReadAt: myMember?.lastReadAt.toISOString() ?? null,
     peerLastReadAt: peerMember?.lastReadAt.toISOString() ?? null,
@@ -128,6 +133,19 @@ export async function POST(req: NextRequest) {
 
   const convRow = await db.gameConversation.findUniqueOrThrow({ where: { id: conversationId! } })
   const { userAId, userBId } = canonicalPair(convRow.userAId, convRow.userBId)
+
+  // Refactor PRD §55 — block is server-side: a blocked pair can never DM,
+  // no matter which surface (or stale client) fires the request.
+  const dmPeer = userAId === me.id ? userBId : userAId
+  const blockRow = await db.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: me.id, blockedId: dmPeer },
+        { blockerId: dmPeer, blockedId: me.id },
+      ],
+    },
+  })
+  if (blockRow) return NextResponse.json({ error: 'Not available' }, { status: 403 })
 
   // ── Validate payload (§75 — never trust the client) ─────────────────────
   let text: string | null = null
@@ -246,4 +264,29 @@ export async function POST(req: NextRequest) {
   emitGameChatPair(userAId, userBId, { type: 'conversation', conversationId: conversationId! })
 
   return NextResponse.json({ ok: true, conversationId, message: serialized })
+}
+
+// Refactor PRD §56 — Clear Chat for game personal conversations: per-user
+// marker only; the peer's history is untouched.
+export async function DELETE(req: NextRequest) {
+  const me = await getCurrentUser()
+  if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const conversationId = req.nextUrl.searchParams.get('conversationId') ?? ''
+  if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
+
+  const row = await db.gameConversation.findUnique({ where: { id: conversationId } })
+  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (row.userAId !== me.id && row.userBId !== me.id)
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const existing = await db.conversationState.findFirst({
+    where: { userId: me.id, gameConversationId: conversationId },
+  })
+  if (existing) {
+    await db.conversationState.update({ where: { id: existing.id }, data: { clearedAt: new Date() } })
+  } else {
+    await db.conversationState.create({ data: { userId: me.id, gameConversationId: conversationId, clearedAt: new Date() } })
+  }
+  return NextResponse.json({ ok: true })
 }

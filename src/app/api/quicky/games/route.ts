@@ -10,6 +10,13 @@ export async function GET() {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Refactor PRD §16/§17: live active-player count per game. The rooms
+  // table is the server-authoritative presence store; a player row still
+  // attached to a non-closed room counts as active right now.
+  const activeSpinPlayers = await db.spinRoomPlayer.count({
+    where: { room: { status: { in: ['WAITING', 'STARTING', 'PLAYING'] } }, leftAt: null },
+  })
+
   const games = await db.gameDefinition.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -30,5 +37,10 @@ export async function GET() {
     },
   })
 
-  return NextResponse.json({ games })
+  return NextResponse.json({
+    games: games.map((g) => ({
+      ...g,
+      activePlayers: g.slug === 'spin-the-bottle' ? activeSpinPlayers : 0,
+    })),
+  })
 }

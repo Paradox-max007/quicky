@@ -167,7 +167,7 @@ export async function GET() {
     activity.push({
       id: `kiss-${k.id}`,
       kind: 'kiss',
-      text: actor ? `${actor.name ?? 'Someone'} gave you a Kiss Point` : `You received ${k.points} Kiss Point${k.points === 1 ? '' : 's'}`,
+      text: actor ? `${actor.name ?? 'Someone'} gave you a Game Point` : `You received ${k.points} Kiss Point${k.points === 1 ? '' : 's'}`,
       actorName: actor?.name ?? null,
       actorPhoto: actor?.photos[0]?.url ?? null,
       createdAt: k.createdAt.toISOString(),
@@ -190,8 +190,15 @@ export async function GET() {
   // 0-100 score from dating + game signals (30-day window). Never fabricated
   // client-side (§20).
   let chemistryOverall = 0
+  let chemistryBreakdown: {
+    dating: { score: number; activityCount: number }
+    games: { score: number; activityCount: number }
+    social: { score: number; activityCount: number }
+  } | null = null
   try {
-    chemistryOverall = (await computeOverallChemistry(uid)).overall
+    const chem = await computeOverallChemistry(uid)
+    chemistryOverall = chem.overall
+    chemistryBreakdown = { dating: chem.dating, games: chem.games, social: chem.social }
   } catch {
     chemistryOverall = 0
   }
@@ -226,6 +233,7 @@ export async function GET() {
       streak: streak ? { current: streak.currentStreak, longest: streak.longestStreak } : null,
       league,
       chemistry: chemistryOverall,
+      chemistryBreakdown,
     },
     activity: recentActivity,
     live: {

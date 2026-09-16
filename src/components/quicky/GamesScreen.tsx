@@ -6,11 +6,13 @@
 // card tappable (§69), honest LIVE / SOON statuses (§59), real empty state
 // (§70). Tap a card → that game's landing page.
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles, ArrowLeft } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { useGames } from './game-hub/useGames'
 import { GameCard } from './game-hub/GameCard'
+import { GamesFilterBar } from './game-hub/GamesFilterBar'
 
 export function GamesScreen() {
   const setView = useQuickyStore((s) => s.setView)
@@ -18,6 +20,16 @@ export function GamesScreen() {
   const gamesReturnView = useQuickyStore((s) => s.gamesReturnView)
   const setGamesReturnView = useQuickyStore((s) => s.setGamesReturnView)
   const { games, loaded, failed, retry } = useGames()
+
+  // Refactor PRD §89 — hub filters: All / Party / 2 Player / Coming Soon.
+  const [gamesFilter, setGamesFilter] = useState<'all' | 'party' | 'two' | 'soon'>('all')
+  const filtered = (() => {
+    if (!games) return games
+    if (gamesFilter === 'party') return games.filter((g) => g.supportedModes === 'GROUP' || g.supportedModes === 'BOTH')
+    if (gamesFilter === 'two') return games.filter((g) => g.supportedModes === 'TWO_PLAYER' || g.supportedModes === 'BOTH')
+    if (gamesFilter === 'soon') return games.filter((g) => !g.isPlayable)
+    return games
+  })()
 
   const open = (slug: string) => openGameLanding(slug)
 
@@ -60,6 +72,9 @@ export function GamesScreen() {
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 pb-6 relative z-10">
+        {/* §89 filter chips */}
+        <GamesFilterBar value={gamesFilter} onChange={setGamesFilter} />
+
         {/* Loading skeleton (§79) */}
         {!loaded && !failed && (
           <div className="grid grid-cols-2 gap-3" data-testid="games-skeleton">
@@ -91,9 +106,9 @@ export function GamesScreen() {
         )}
 
         {/* Grid — exactly 2 per row on mobile (§9) */}
-        {loaded && games && games.length > 0 && (
+        {loaded && filtered && filtered.length > 0 && (
           <div className="grid grid-cols-2 gap-3" data-testid="games-grid">
-            {games.map((g, i) => (
+            {filtered.map((g, i) => (
               <GameCard key={g.id} game={g} onOpen={open} index={i} testId={`game-card-${g.slug}`} />
             ))}
           </div>

@@ -36,6 +36,7 @@ import { SpinBottleRoom } from './SpinBottleRoom'
 import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { AdminRulesScreen } from './AdminRulesScreen'
 import { AdminStickersScreen } from './AdminStickersScreen'
+import { AdminGamesScreen } from './AdminGamesScreen'
 import { GameChatScreen } from './game-chat/GameChatScreen'
 import { GameChatContactsScreen } from './game-chat/GameChatContactsScreen'
 import { useGameWakeLock } from '@/hooks/useGameWakeLock'
@@ -146,7 +147,7 @@ export function AppRoot() {
           // game-chat PRD §97: back returns to the context that opened it
           useGameChatStore.getState().closeConversation()
           useQuickyStore.getState().closeGameChat()
-        } else if (v === 'admin-gifts' || v === 'admin-rules' || v === 'admin-stickers') {
+        } else if (v === 'admin-gifts' || v === 'admin-rules' || v === 'admin-stickers' || v === 'admin-games') {
           sv('settings')
         }
         // anything else → default Android behavior (navigate back / minimize)
@@ -385,6 +386,7 @@ export function AppRoot() {
           {view === 'admin-gifts' && <AdminGiftsScreen />}
           {view === 'admin-rules' && <AdminRulesScreen />}
           {view === 'admin-stickers' && <AdminStickersScreen />}
+          {view === 'admin-games' && <AdminGamesScreen />}
           {view === 'game-chat-contacts' && <GameChatContactsScreen />}
           {view === 'game-chat' && <GameChatScreen />}
           {/* Web Premium §39/§9: mobile fallbacks — on the desktop shell the

@@ -24,6 +24,12 @@ export type DashboardStats = {
   league: { name: string; minimumPoints: number; nextName: string | null; nextMinimumPoints: number | null } | null
   // Central chemistry score 0-100 (dating + game signals, server-computed)
   chemistry: number
+  // Refactor PRD §4 — per-layer breakdown from the central engine
+  chemistryBreakdown?: {
+    dating: { score: number; activityCount: number }
+    games: { score: number; activityCount: number }
+    social: { score: number; activityCount: number }
+  }
 }
 
 export type DashboardActivity = {

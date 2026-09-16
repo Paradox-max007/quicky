@@ -27,7 +27,7 @@ type ChipsProps = {
 export function RoomHudChips({ hearts, trophies, crowns, gifts, coins, onAddCoins }: ChipsProps) {
   return (
     <>
-      <div className="sbr-tile sbr-tile-heart" title="Kiss Points">
+      <div className="sbr-tile sbr-tile-heart" title="Game Points">
         <span className="sbr-tile-icon">❤️</span>
         <span className="tabular-nums">{hearts}</span>
       </div>

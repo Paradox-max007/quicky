@@ -50,7 +50,7 @@ ok('seed covers 8 party games incl. Truth or Dare/Ludo (§91)', (() => {
 
 // ── Game landing (§12-§27/§59-§62) ──────────────────────────────────────────
 ok('GameLanding exists + spin-bottle dispatch to rich landing (§12)', has('src/components/quicky/game-hub/GameLanding.tsx', 'SpinBottleLanding', 'Your records', 'Your progress', 'Game information'))
-ok('landing shows records/progress/chemistry (§59/§60/§74)', has('src/components/quicky/game-hub/GameLanding.tsx', 'Kiss Points', 'Streak', 'Quicky Points', 'League', 'ChemistryIndicator'))
+ok('landing shows records/progress/chemistry (§59/§60/§74)', has('src/components/quicky/game-hub/GameLanding.tsx', 'Game Points', 'Streak', 'Quicky Points', 'League', 'ChemistryIndicator'))
 ok('landing: honest coming-soon state (§70)', src('src/components/quicky/game-hub/GameLanding.tsx').includes('COMING SOON'))
 ok('mode selector UI for supported modes (§25)', src('src/components/quicky/game-hub/GameLanding.tsx').includes('How do you want to play?'))
 ok('spin landing: Play Now + mode chip + progress block (§91)', has('src/components/quicky/SpinBottleLanding.tsx', 'spin-play-now', 'Group · 2–12 players', 'spin-landing-progress'))

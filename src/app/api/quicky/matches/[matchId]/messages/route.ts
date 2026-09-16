@@ -41,8 +41,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
 
   void sweepExpiredQuickies(matchId) // fire-and-forget: cleanup doesn't block the response
 
+  // Refactor PRD §56 — per-user Clear Chat: MY view starts after my marker;
+  // the partner's history is never destroyed.
+  const convState = await db.conversationState.findFirst({ where: { userId: me.id, matchId } })
+  const clearedAt = convState?.clearedAt ?? null
+
   const messages = await db.message.findMany({
-    where: { matchId },
+    where: { matchId, ...(clearedAt ? { createdAt: { gt: clearedAt } } : {}) },
     orderBy: { createdAt: 'asc' },
     take: 200,
     include: {
@@ -199,4 +204,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
       createdAt: msg.createdAt,
     },
   })
+}
+
+// Refactor PRD §56 — Clear Chat: confirm-on-client, per-user marker on
+// server. The other participant keeps their history (§56 retention rule).
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ matchId: string }> }) {
+  const me = await getCurrentUser()
+  if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { matchId } = await ctx.params
+
+  const match = await db.match.findUnique({ where: { id: matchId } })
+  if (!match || (match.userAId !== me.id && match.userBId !== me.id)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const existing = await db.conversationState.findFirst({ where: { userId: me.id, matchId } })
+  if (existing) {
+    await db.conversationState.update({ where: { id: existing.id }, data: { clearedAt: new Date() } })
+  } else {
+    await db.conversationState.create({ data: { userId: me.id, matchId, clearedAt: new Date() } })
+  }
+  return NextResponse.json({ ok: true })
 }

@@ -14,11 +14,13 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Trophy, Flame, Sparkles, Gift, Heart, Gamepad2, Users, HeartHandshake, Lock } from 'lucide-react'
+import { ArrowLeft, Trophy, Flame, Sparkles, Gift, Heart, Gamepad2, Users, HeartHandshake, Lock, Plus } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { SpinBottleLanding } from '../SpinBottleLanding'
+import { CoinStoreSheet } from '../CoinStoreSheet'
 import { ChemistryIndicator } from './ChemistryIndicator'
+import { GameFriendsSection } from './GameFriendsSection'
 import { artworkGradient, modeLabel, type GameDef } from './types'
 
 type LandingStats = {
@@ -43,6 +45,10 @@ export function GameLanding() {
   const [game, setGame] = useState<GameDef | null>(null)
   const [stats, setStats] = useState<LandingStats | null>(null)
   const [failed, setFailed] = useState(false)
+  // Refactor PRD §24 — coin chip with "+" opens the Coin Purchase modal
+  // (the same CoinStoreSheet architecture used in the room).
+  const [coinStoreOpen, setCoinStoreOpen] = useState(false)
+  const [coinBalance, setCoinBalance] = useState(0)
   const [mode, setMode] = useState<'group' | 'two'>('group')
 
   useEffect(() => {
@@ -53,6 +59,7 @@ export function GameLanding() {
         const [cat, s] = await Promise.all([api.games.list(), api.spinBottle.landing()])
         if (cancelled) return
         setGame(cat.games?.find((g: GameDef) => g.slug === slug) ?? null)
+        setCoinBalance(s?.coins ?? 0)
         setStats(s as LandingStats)
       } catch {
         if (!cancelled) setFailed(true)
@@ -135,11 +142,26 @@ export function GameLanding() {
             </div>
           </motion.div>
 
+          {/* ── Coin chip (§24: existing box + "+" → purchase modal) ──── */}
+          <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-[var(--qk-card)]/70 px-4 py-3">
+            <span className="flex items-center gap-2 text-sm font-bold tabular-nums">
+              🪙 {coinBalance.toLocaleString('en-US')}
+            </span>
+            <button
+              onClick={() => setCoinStoreOpen(true)}
+              className="w-8 h-8 rounded-full bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 flex items-center justify-center active:scale-95 transition-transform"
+              aria-label="Buy coins"
+              data-testid="landing-coin-add"
+            >
+              <Plus className="w-4 h-4 text-[var(--qk-accent-light)]" />
+            </button>
+          </div>
+
           {/* ── Your records (§59: icon + value + label, real user data) ── */}
           <section>
             <p className="text-[11px] font-black tracking-[0.18em] text-white/40 uppercase mb-2.5">Your records</p>
             <div className="grid grid-cols-2 gap-3">
-              <RecordBox icon={<Heart className="w-4 h-4" />} value={stats?.kissesReceived ?? 0} label="Kiss Points" tint="var(--qk-accent)" />
+              <RecordBox icon={<Heart className="w-4 h-4" />} value={stats?.kissesReceived ?? 0} label="Game Points" tint="var(--qk-accent)" />
               <RecordBox icon={<Gamepad2 className="w-4 h-4" />} value={stats?.gamesPlayed ?? 0} label="Games" tint="var(--qk-purple)" />
               <RecordBox icon={<Flame className="w-4 h-4" />} value={stats?.streak.current ?? 0} label="Streak" tint="#FF9120" />
               <RecordBox icon={<Sparkles className="w-4 h-4" />} value={stats?.quickyPoints ?? 0} label="Quicky Points" tint="var(--qk-gold)" />
@@ -197,6 +219,9 @@ export function GameLanding() {
             </div>
           </section>
 
+          {/* ── My Friends (§26: real friendships, Chat + Profile per friend) */}
+          <GameFriendsSection returnView="game-landing" />
+
           {/* ── Game information (§13: GAME INFORMATION section) ─────────── */}
           <section>
             <p className="text-[11px] font-black tracking-[0.18em] text-white/40 uppercase mb-2.5">Game information</p>
@@ -246,6 +271,12 @@ export function GameLanding() {
           )}
         </div>
       </div>
+      <CoinStoreSheet
+        open={coinStoreOpen}
+        onClose={() => setCoinStoreOpen(false)}
+        coinBalance={coinBalance}
+        onPurchased={(nb) => setCoinBalance(nb)}
+      />
     </div>
   )
 }

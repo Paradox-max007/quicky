@@ -18,6 +18,8 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { HowItWorksRules } from './HowItWorksRules'
+import { GameFriendsSection } from './game-hub/GameFriendsSection'
+import { CoinStoreSheet } from './CoinStoreSheet'
 import { ChemistryIndicator } from './game-hub/ChemistryIndicator'
 import { GameChatList } from './game-chat/GameChatList'
 
@@ -35,6 +37,8 @@ type Stats = {
   league?: { name: string; minimumPoints: number; nextName: string | null; nextMinimumPoints: number | null } | null
   chemistry?: { overall: number; datingContribution: number; gameContribution: number }
   dating?: { likesReceived: number; matches: number }
+  /** Refactor PRD §20 — admin-managed rotating description texts. */
+  rotatingTexts?: string[]
 }
 
 // v3 §10 — bigger pool, sequentially cycled.
@@ -53,6 +57,16 @@ const FINDING_MESSAGES = [
 // v3 §9 — one message every ~1.7s with a ~0.5s fade (AnimatePresence "wait").
 const MSG_VISIBLE_MS = 1700
 
+// Refactor PRD §20 — the landing rotates ADMIN-managed description texts
+// (GameDescriptionItem) when present; this pool is only the fallback.
+const DEFAULT_TAGLINES = [
+  'Meet someone new',
+  'Take your chance',
+  'Choose Kiss or No Thanks',
+  'Play with friends',
+  'Make unexpected connections',
+]
+
 export function SpinBottleLanding({
   onClose,
   onJoined,
@@ -65,6 +79,15 @@ export function SpinBottleLanding({
 }) {
   const user = useQuickyStore((s) => s.user)
   const [stats, setStats] = useState<Stats | null>(null)
+  // Refactor PRD §24 — the landing coin chip opens the same CoinStoreSheet
+  // used inside the room; purchases reconcile the landing balance.
+  const [coinStoreOpen, setCoinStoreOpen] = useState(false)
+  const [coinBalance, setCoinBalance] = useState(0)
+  // §20 rotating texts: admin list wins, built-in defaults otherwise.
+  const taglines = (stats?.rotatingTexts && stats.rotatingTexts.length > 0
+    ? stats.rotatingTexts
+    : DEFAULT_TAGLINES) as string[]
+  const [taglineIdx, setTaglineIdx] = useState(0)
   const [finding, setFinding] = useState(false)
   const [messageIdx, setMessageIdx] = useState(0)
   const cancelledRef = useRef(false)
@@ -74,7 +97,10 @@ export function SpinBottleLanding({
     ;(async () => {
       try {
         const res = await api.spinBottle.landing()
-        if (!cancelled) setStats(res)
+        if (!cancelled) {
+          setStats(res)
+          setCoinBalance(res?.coins ?? 0)
+        }
       } catch (e: any) {
         if (!cancelled) toast.error(e.message ?? 'Failed to load stats')
       }
@@ -90,6 +116,15 @@ export function SpinBottleLanding({
     const t = setInterval(() => setMessageIdx((i) => (i + 1) % FINDING_MESSAGES.length), MSG_VISIBLE_MS)
     return () => clearInterval(t)
   }, [finding])
+
+  // Refactor PRD §20 — idle lobby rotates the (admin-managed) taglines
+  // slowly in place; paused while the matchmaking modal is up (§74: subtle,
+  // never distracting).
+  useEffect(() => {
+    if (finding || taglines.length === 0) return
+    const t = setInterval(() => setTaglineIdx((i) => (i + 1) % taglines.length), 3200)
+    return () => clearInterval(t)
+  }, [finding, taglines.length])
 
   const play = () => {
     if (finding) return
@@ -179,7 +214,18 @@ export function SpinBottleLanding({
                 <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mt-5 w-full">
                   <StatPill icon={<Heart className="w-4 h-4" />} label="Kisses" value={stats?.kissesReceived ?? 0} color="var(--qk-accent)" />
                   <StatPill icon={<Gamepad2 className="w-4 h-4" />} label="Games" value={stats?.gamesPlayed ?? 0} color="var(--qk-purple)" />
-                  <StatPill icon={<Coins className="w-4 h-4" />} label="Coins" value={stats?.coins ?? 0} color="var(--qk-accent-light)" />
+                  <button
+                    onClick={() => setCoinStoreOpen(true)}
+                    className="bg-white/5 border border-white/10 rounded-2xl p-3 flex flex-col items-center active:scale-95 transition-transform"
+                    aria-label="Buy coins"
+                    data-testid="landing-coin-add"
+                  >
+                    <Coins className="w-4 h-4" style={{ color: 'var(--qk-accent-light)' }} />
+                    <p className="text-lg font-black mt-1 tabular-nums">{(stats?.coins ?? 0).toLocaleString('en-US')}</p>
+                    <p className="text-[10px] text-white/50 uppercase tracking-wide">
+                      Coins <span className="text-[var(--qk-accent-light)] font-black">+</span>
+                    </p>
+                  </button>
                   <StatPill icon={<Sparkles className="w-4 h-4" />} label="Given" value={stats?.kissesGiven ?? 0} color="var(--qk-gold)" />
                   <StatPill icon={<Gift className="w-4 h-4" />} label="Gifts Sent" value={stats?.giftsSent ?? 0} color="#f472b6" />
                   <StatPill icon={<Gift className="w-4 h-4" />} label="Gifts Got" value={stats?.giftsReceived ?? 0} color="#38bdf8" />
@@ -199,6 +245,23 @@ export function SpinBottleLanding({
             <p className="text-[11px] font-semibold text-white/50 -mt-1">
               👥 Group · 2–12 players
             </p>
+
+            {/* Refactor PRD §20 — admin-managed rotating description texts,
+                cycled slowly in place (3.2s), faded via AnimatePresence. */}
+            <div className="h-6 flex items-center justify-center" data-testid="landing-tagline">
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={taglineIdx}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.45, ease: 'easeInOut' }}
+                  className="text-sm text-white/70 font-medium"
+                >
+                  {taglines[taglineIdx]}
+                </motion.p>
+              </AnimatePresence>
+            </div>
 
             {/* §60/§74 — YOUR PROGRESS: League / Streak / Chemistry / Points.
                 Real Quicky progression data, never placeholder numbers. */}
@@ -227,6 +290,9 @@ export function SpinBottleLanding({
 
             {/* Lifecycle PRD §38-§53: ONE admin-managed rule at a time */}
             <HowItWorksRules />
+
+            {/* Refactor PRD §26 — My Friends on the game landing */}
+            <GameFriendsSection returnView="spin-bottle" />
           </div>
 
           {/* Right column on web / below on mobile: game chats (§8) */}
@@ -281,9 +347,14 @@ export function SpinBottleLanding({
                 <span className="bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
                   🎮 <b className="tabular-nums">{stats?.gamesPlayed ?? 0}</b>
                 </span>
-                <span className="bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
+                <button
+                  onClick={() => setCoinStoreOpen(true)}
+                  className="bg-white/5 border border-white/10 rounded-full px-2.5 py-1 active:scale-95 transition-transform"
+                  aria-label="Buy coins"
+                >
                   🪙 <b className="tabular-nums">{(stats?.coins ?? 0).toLocaleString('en-US')}</b>
-                </span>
+                  <span className="ml-1 text-[var(--qk-accent-light)] font-black">+</span>
+                </button>
               </div>
 
               {/* One message at a time (§11), ~1.7s visible + ~0.5s fade (§9) */}
@@ -323,6 +394,14 @@ export function SpinBottleLanding({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Refactor PRD §24 — Coin Purchase modal (same sheet as in-room). */}
+      <CoinStoreSheet
+        open={coinStoreOpen}
+        onClose={() => setCoinStoreOpen(false)}
+        coinBalance={coinBalance}
+        onPurchased={(nb) => setCoinBalance(nb)}
+      />
     </div>
   )
 }

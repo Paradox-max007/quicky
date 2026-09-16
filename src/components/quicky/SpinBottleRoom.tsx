@@ -469,6 +469,57 @@ export function SpinBottleRoom({
     useQuickyStore.getState().openProfile(p.userId, 'spin-bottle-room')
   }
 
+  // ─── Friends (refactor PRD §25/§96) ─────────────────────────────────────
+  // The toolbox's Add/Remove Friend is generated from the real relationship
+  // table; the server validates not-self / not-blocked / not-duplicate (§25).
+  const [friendIds, setFriendIds] = useState<Set<string>>(() => new Set())
+  const [friendBusy, setFriendBusy] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.friends
+      .list()
+      .then((res) => {
+        if (cancelled) return
+        setFriendIds(new Set((res.friends ?? []).map((f: { id: string }) => f.id)))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleToggleFriend = async (p: InteractionPlayer) => {
+    if (friendBusy) return
+    setFriendBusy(p.userId)
+    const wasFriend = friendIds.has(p.userId)
+    try {
+      if (wasFriend) {
+        await api.friends.remove(p.userId)
+        setFriendIds((prev) => {
+          const next = new Set(prev)
+          next.delete(p.userId)
+          return next
+        })
+        toast.success(`${p.displayName} removed from friends`)
+      } else {
+        await api.friends.add(p.userId)
+        setFriendIds((prev) => new Set(prev).add(p.userId))
+        toast.success(`${p.displayName} is now your friend`)
+      }
+    } catch (e: any) {
+      const msg =
+        e?.status === 409
+          ? 'Already friends'
+          : e?.status === 403
+            ? 'Not available'
+            : (e?.message ?? 'Failed')
+      toast.error(msg)
+    } finally {
+      setFriendBusy(null)
+    }
+  }
+
   // ─── Gift send (v3 §53-§59) ─────────────────────────────────────────────
   // Optimistic coin move at the HUD (§59), server transaction is the truth,
   // the returned balance reconciles instantly.
@@ -1005,7 +1056,7 @@ export function SpinBottleRoom({
                         {resultKind === 'mutual_kiss' && (
                           <>
                             <p className="sbr-duel-sub">{spinnerName} ❤️ {targetName}</p>
-                            <p className="sbr-duel-points">+1 Kiss Point each</p>
+                            <p className="sbr-duel-points">+1 Game Point each</p>
                           </>
                         )}
                         {resultKind === 'partial_kiss' && (
@@ -1013,7 +1064,7 @@ export function SpinBottleRoom({
                             <p className="sbr-duel-sub">
                               {actorWord(spinnerName, sResp)} · {actorWord(targetName, tResp)}
                             </p>
-                            <p className="sbr-duel-points">+1 Kiss Point → {kissedOne}</p>
+                            <p className="sbr-duel-points">+1 Game Point → {kissedOne}</p>
                           </>
                         )}
                         {resultKind === 'full_rejection' && (
@@ -1213,6 +1264,9 @@ export function SpinBottleRoom({
           onMessage={handleMessage}
           onMention={handleMention}
           onProfile={handleProfile}
+          isFriend={interaction ? friendIds.has(interaction.player.userId) : false}
+          friendBusy={!!interaction && friendBusy === interaction.player.userId}
+          onToggleFriend={handleToggleFriend}
           onBuyCoins={() => {
             setInteraction(null)
             setShowCoinStore(true)

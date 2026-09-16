@@ -1,16 +1,22 @@
-// Quicky — CENTRAL CHEMISTRY SERVICE (Game Hub PRD §16-§23/§73)
+// Quicky — CENTRAL CHEMISTRY SERVICE (Game Hub PRD §16-§23 + Refactor PRD §3-§5)
 //
 // Chemistry is calculated ONLY here — never in the frontend (§20 forbids
-// frontend-only fake calculations). It combines DATING activity and GAME
-// activity (§16: "must not be based only on dating interactions"):
+// frontend-only fake calculations). It combines DATING activity, GAME
+// activity and SOCIAL interaction (refactor PRD §3.1:
+// "Dating Activity + Game Activity + Social Interaction → Overall Chemistry"):
 //
-//   Dating Activity  +  Game Activity
+//   Dating Activity  +  Game Activity  +  Social Interaction
 //          ↓
 //   Activity Signals  →  Chemistry Engine  →  Chemistry Score (0-100)
 //
-// The weights live in ONE config object so they can be tuned later without
-// touching call sites (§20). The frontend only ever receives the resulting
-// score (+ optional contribution breakdown, §73).
+// The weights live in ONE central config ("chemistry_rules", refactor PRD
+// §5) so they can be tuned/administered later without touching call sites.
+// The frontend only ever receives the resulting score (+ §4 breakdown with
+// per-layer score and activity counts).
+//
+// Duplicate-safety (§78): the engine derives every signal from COUNTS of
+// real events inside a fixed 30-day window — the same event can never be
+// inserted twice, so the score cannot be inflated by replays.
 import { db } from '@/lib/db'
 
 export const chemistryConfig = {
@@ -22,10 +28,12 @@ export const chemistryConfig = {
     datingMessages: { weight: 9, cap: 60 },
   },
   game: {
-    gamesPlayed: { weight: 16, cap: 25 },
+    gamesPlayed: { weight: 18, cap: 25 },
     gameMessages: { weight: 8, cap: 80 },
-    gifts: { weight: 10, cap: 15 },
     kissPoints: { weight: 10, cap: 100 },
+  },
+  social: {
+    gifts: { weight: 10, cap: 15 },
     quickyImages: { weight: 6, cap: 10 },
     streak: { weight: 6, cap: 7 },
   },
@@ -39,8 +47,17 @@ function contribute(sig: Signal, value: number): number {
   return sig.weight * ratio
 }
 
+export type ChemistryLayer = { score: number; activityCount: number }
+
 export type ChemistryResult = {
+  /** Overall 0-100 chemistry score (refactor PRD §4 `total`). */
   overall: number
+  /** Alias of overall — the §4 response shape name. */
+  total: number
+  dating: ChemistryLayer
+  games: ChemistryLayer
+  social: ChemistryLayer
+  // Legacy flat contributions kept for existing consumers (Game Hub §73).
   datingContribution: number
   gameContribution: number
 }
@@ -53,7 +70,7 @@ export async function computeOverallChemistry(userId: string): Promise<Chemistry
     likesSent,
     matches,
     datingMessages,
-    gamesPlayed,
+    userRow,
     gameMessages,
     giftsSent,
     giftsReceived,
@@ -76,27 +93,35 @@ export async function computeOverallChemistry(userId: string): Promise<Chemistry
 
   const d = chemistryConfig.dating
   const g = chemistryConfig.game
-  const datingContribution =
+  const s = chemistryConfig.social
+
+  const datingScore =
     contribute(d.likesReceived, likesReceived) +
     contribute(d.likesSent, likesSent) +
     contribute(d.matches, matches) +
     contribute(d.datingMessages, datingMessages)
-  const gameContribution =
-    contribute(g.gamesPlayed, gamesPlayed?.gamesPlayed ?? 0) +
+  const gamesScore =
+    contribute(g.gamesPlayed, userRow?.gamesPlayed ?? 0) +
     contribute(g.gameMessages, gameMessages) +
-    contribute(g.gifts, giftsSent + giftsReceived) +
-    contribute(g.kissPoints, gamesPlayed?.kissPoints ?? 0) +
-    contribute(g.quickyImages, lifetimeImages) +
-    contribute(g.streak, streak?.currentStreak ?? 0)
+    contribute(g.kissPoints, userRow?.kissPoints ?? 0)
+  const socialScore =
+    contribute(s.gifts, giftsSent + giftsReceived) +
+    contribute(s.quickyImages, lifetimeImages) +
+    contribute(s.streak, streak?.currentStreak ?? 0)
 
   const overall = Math.min(
     chemistryConfig.maximumScore,
-    Math.round(datingContribution + gameContribution),
+    Math.round(datingScore + gamesScore + socialScore),
   )
+
   return {
     overall,
-    datingContribution: Math.round(datingContribution),
-    gameContribution: Math.round(gameContribution),
+    total: overall,
+    dating: { score: Math.round(datingScore), activityCount: likesReceived + likesSent + matches + datingMessages },
+    games: { score: Math.round(gamesScore), activityCount: (userRow?.gamesPlayed ?? 0) + gameMessages },
+    social: { score: Math.round(socialScore), activityCount: giftsSent + giftsReceived + lifetimeImages },
+    datingContribution: Math.round(datingScore),
+    gameContribution: Math.round(gamesScore + socialScore),
   }
 }
 

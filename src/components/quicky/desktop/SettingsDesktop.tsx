@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import {
   User, Phone, Mail, Bell, Palette, SlidersHorizontal, Shield, ShieldCheck,
   Crown, HelpCircle, FileText, LogOut, Gift, Sparkles, HeartHandshake, Settings as SettingsIcon,
-} from 'lucide-react'
+  Gamepad2 } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
@@ -34,7 +34,7 @@ type CatId =
   | 'notifications' | 'appearance' | 'dating'
   | 'privacy' | 'blocked'
   | 'subscription'
-  | 'admin-gifts' | 'admin-rules' | 'admin-stickers'
+  | 'admin-gifts' | 'admin-rules' | 'admin-stickers' | 'admin-games'
   | 'help' | 'legal'
 
 const GROUPS: { title: string; items: { id: CatId; label: string; icon: any }[] }[] = [
@@ -78,6 +78,7 @@ const ADMIN_ITEMS: { id: CatId; label: string; icon: any }[] = [
   { id: 'admin-gifts', label: 'Gift Catalog', icon: Gift },
   { id: 'admin-rules', label: 'How It Works Rules', icon: HeartHandshake },
   { id: 'admin-stickers', label: 'Sticker Bundles', icon: Sparkles },
+  { id: 'admin-games', label: 'Game Configuration', icon: Gamepad2 },
 ]
 
 function Panel({ children }: { children: React.ReactNode }) {
@@ -88,7 +89,14 @@ export function SettingsDesktop() {
   const setUser = useQuickyStore((s) => s.setUser)
   const setView = useQuickyStore((s) => s.setView)
   const user = useQuickyStore((s) => s.user)
-  const [cat, setCat] = useState<CatId>('profile')
+  // Refactor PRD §11/§12: a web Edit Profile action may request a specific
+  // section (Settings → Edit Profile). Consume the request once on mount.
+  const requestedSection = useQuickyStore((s) => s.settingsSection)
+  const clearSettingsSection = useQuickyStore((s) => s.clearSettingsSection)
+  const [cat, setCat] = useState<CatId>((requestedSection as CatId) ?? 'profile')
+  useEffect(() => {
+    if (requestedSection) clearSettingsSection()
+  }, [])
   const [confirmLogout, setConfirmLogout] = useState(false)
 
   const logout = async () => {
@@ -162,6 +170,7 @@ export function SettingsDesktop() {
           {cat === 'admin-gifts' && <AdminSlot kind="gifts" />}
           {cat === 'admin-rules' && <AdminSlot kind="rules" />}
           {cat === 'admin-stickers' && <AdminSlot kind="stickers" />}
+          {cat === 'admin-games' && <AdminSlot kind="games" />}
           {cat === 'subscription' && (
             <div className="h-full overflow-y-auto qk-desk-scroll">
               <PremiumView />
@@ -231,7 +240,7 @@ export function SettingsDesktop() {
  * panel they render the same way the phone screens do (their own chrome),
  * just hosted in the content area.
  */
-function AdminSlot({ kind }: { kind: 'gifts' | 'rules' | 'stickers' }) {
+function AdminSlot({ kind }: { kind: 'gifts' | 'rules' | 'stickers' | 'games' }) {
   const [Comp, setComp] = useState<null | React.ComponentType>(null)
   useEffect(() => {
     let alive = true
@@ -242,6 +251,9 @@ function AdminSlot({ kind }: { kind: 'gifts' | 'rules' | 'stickers' }) {
       } else if (kind === 'rules') {
         const m = await import('../AdminRulesScreen')
         if (alive) setComp(() => m.AdminRulesScreen)
+      } else if (kind === 'games') {
+        const m = await import('../AdminGamesScreen')
+        if (alive) setComp(() => m.AdminGamesScreen)
       } else {
         const m = await import('../AdminStickersScreen')
         if (alive) setComp(() => m.AdminStickersScreen)

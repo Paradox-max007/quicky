@@ -16,6 +16,7 @@ import { SectionHeader, SkeletonBlock } from './web-ui'
 export function ProfileDesktop() {
   const user = useQuickyStore((s) => s.user)
   const setView = useQuickyStore((s) => s.setView)
+  const openWebEditProfile = useQuickyStore((s) => s.openWebEditProfile)
   const { data, loaded } = useDashboard(true)
   const stats = data?.stats ?? null
   const tier = stats ? getScoreTier(stats.points) : null
@@ -67,7 +68,7 @@ export function ProfileDesktop() {
           </div>
         </div>
         <button
-          onClick={() => setView('edit-profile')}
+          onClick={() => openWebEditProfile()}
           className="shrink-0 flex items-center gap-2 rounded-full bg-coral-gradient px-5 py-2.5 text-sm font-bold active:scale-95 transition-transform"
           data-testid="profile-edit"
         >
@@ -154,13 +155,45 @@ export function ProfileDesktop() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-lg" aria-hidden>💋</span>
-                <span className="text-sm text-white/60 flex-1">Kiss Points</span>
+                <span className="text-sm text-white/60 flex-1">Game Points</span>
                 <span className="text-sm font-bold tabular-nums">{stats.kisses.toLocaleString()}</span>
               </div>
             </div>
           )}
         </div>
       </section>
+
+      {/* Chemistry breakdown card (refactor PRD §3/§4/§88): server-computed
+           layers from the central engine — Dating + Games + Social. */}
+      {stats?.chemistryBreakdown && (
+        <section className="rounded-3xl border border-white/8 bg-[var(--qk-card)]/60 p-6" data-testid="chemistry-breakdown">
+          <SectionHeader title="Overall chemistry" />
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-2xl font-black text-[var(--qk-accent-light)] tabular-nums">{stats.chemistry}</span>
+            <span className="text-xs text-white/45">/ 100 · dating + games + social (30 days)</span>
+          </div>
+          <div className="grid grid-cols-3 gap-5">
+            {[
+              { key: 'Dating', layer: stats.chemistryBreakdown.dating, tint: 'var(--qk-accent)' },
+              { key: 'Games', layer: stats.chemistryBreakdown.games, tint: 'var(--qk-purple)' },
+              { key: 'Social', layer: stats.chemistryBreakdown.social, tint: 'var(--qk-gold)' },
+            ].map(({ key, layer, tint }) => (
+              <div key={key}>
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="font-bold text-white/75">{key}</span>
+                  <span className="tabular-nums text-white/50">{layer.score} pts · {layer.activityCount} activities</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: ''.concat(String(Math.min(100, Math.round((layer.score / 42) * 100))), '%'), background: tint }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Dating stats | Game stats | Completion (§33/§36) ─────────────── */}
       <section className="grid grid-cols-[1fr_1fr_1.15fr] gap-6 items-start">
@@ -197,7 +230,7 @@ export function ProfileDesktop() {
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <span className="text-lg" aria-hidden>💋</span>
-                <span className="text-sm text-white/60 flex-1">Kiss Points</span>
+                <span className="text-sm text-white/60 flex-1">Game Points</span>
                 <span className="text-sm font-bold tabular-nums">{stats.kisses.toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-3">

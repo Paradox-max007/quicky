@@ -26,9 +26,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Plus, Send, X, Mic, Image as ImageIcon, Zap, Play, Square } from 'lucide-react'
+import { ArrowLeft, Plus, Send, X, Mic, Image as ImageIcon, Zap, Play, Square, MoreVertical, UserPlus, UserMinus, Ban, Eraser, ShieldAlert } from 'lucide-react'
 import { api, uploadFile } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
+import { ComplaintModal } from '../ComplaintModal'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore, type GameChatMessage } from '@/store/game-chat'
 import { Component, type ReactNode } from 'react'
@@ -106,6 +107,12 @@ function GameChatScreenInner({
   const me = useQuickyStore((s) => s.user)
   const peer = useGameChatStore((s) => s.activePeer)
   const conversationId = useGameChatStore((s) => s.activeConversationId)
+  // Refactor PRD §53 — personal chat ••• actions: Friend / Block / Clear
+  // Chat / Complaint, generated from the real relationship state.
+  const [relMenu, setRelMenu] = useState(false)
+  const [rel, setRel] = useState<{ isFriend: boolean; iBlockedThem: boolean; theyBlockedMe: boolean } | null>(null)
+  const [relBusy, setRelBusy] = useState(false)
+  const [complaintOpen, setComplaintOpen] = useState(false)
   const messages = useGameChatStore((s) => s.messages)
   const hasMore = useGameChatStore((s) => s.hasMore)
   const loadingOlder = useGameChatStore((s) => s.loadingOlder)
@@ -403,7 +410,7 @@ function GameChatScreenInner({
       {/* ambient glow — decorative only, never swallows taps */}
       <div className="pointer-events-none absolute -top-24 -right-16 w-72 h-72 rounded-full bg-[var(--qk-purple)]/15 blur-3xl" aria-hidden />
 
-      {/* ─── Header (§33): compact — back, avatar, name. No typing indicator. ── */}
+      {/* ─── Header (§33): compact — back, avatar, name, ⋯ actions. ── */}
       <header className="shrink-0 safe-area-top px-2 pt-2.5 pb-2 flex items-center gap-2 border-b border-white/10 bg-[var(--qk-bg)]/80 backdrop-blur relative z-20">
         <button
           onClick={() => {
@@ -426,10 +433,117 @@ function GameChatScreenInner({
         ) : (
           <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>🎲</span>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-white font-bold text-sm leading-tight truncate">{peerName}</p>
           <p className="text-white/40 text-[11px] leading-tight">Game chat</p>
         </div>
+        {peer.peerUserId && (
+          <div className="relative" data-testid="game-chat-actions">
+            <button
+              onClick={async () => {
+                const next = !relMenu
+                setRelMenu(next)
+                if (next && !rel) {
+                  try {
+                    setRel(await api.relationship(peer.peerUserId))
+                  } catch {
+                    setRel(null)
+                  }
+                }
+              }}
+              className="p-2 rounded-full hover:bg-white/10"
+              aria-label="Conversation actions"
+            >
+              <MoreVertical className="h-5 w-5" />
+            </button>
+            {relMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setRelMenu(false)} />
+                <div className="absolute right-0 top-11 z-40 w-52 rounded-2xl border border-white/10 bg-[var(--qk-card)] shadow-2xl p-1.5 flex flex-col">
+                  <button
+                    onClick={async () => {
+                      if (relBusy) return
+                      setRelBusy(true)
+                      try {
+                        if (rel?.isFriend) {
+                          await api.friends.remove(peer.peerUserId)
+                          toast.success('Friend removed')
+                        } else {
+                          await api.friends.add(peer.peerUserId)
+                          toast.success('Friend added')
+                        }
+                        setRel(await api.relationship(peer.peerUserId))
+                      } catch (e: any) {
+                        toast.error(e?.status === 409 ? 'Already friends' : (e?.message ?? 'Failed'))
+                      } finally {
+                        setRelBusy(false)
+                      }
+                    }}
+                    disabled={relBusy || rel?.theyBlockedMe}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-white/85 disabled:opacity-40 text-left"
+                  >
+                    {rel?.isFriend ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                    {rel?.isFriend ? 'Remove Friend' : 'Add Friend'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (relBusy) return
+                      setRelBusy(true)
+                      try {
+                        if (rel?.iBlockedThem) {
+                          await api.blocks.remove(peer.peerUserId)
+                          toast.success('Unblocked')
+                        } else {
+                          await api.blocks.add(peer.peerUserId)
+                          toast.success('Blocked')
+                        }
+                        setRel(await api.relationship(peer.peerUserId))
+                        setRelMenu(false)
+                      } catch (e: any) {
+                        toast.error(e?.message ?? 'Failed')
+                      } finally {
+                        setRelBusy(false)
+                      }
+                    }}
+                    disabled={relBusy}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-white/85 text-left"
+                  >
+                    <Ban className="w-4 h-4" />
+                    {rel?.iBlockedThem ? 'Unblock' : 'Block'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!conversationId || !confirm('Clear this conversation?')) return
+                      try {
+                        await api.gameChat.clear(conversationId)
+                        setRelMenu(false)
+                        toast.success('Conversation cleared')
+                        // reload the (now-cleared) view for me only (§56)
+                        useGameChatStore.getState().openConversation(peer)
+                      } catch (e: any) {
+                        toast.error(e?.message ?? 'Failed')
+                      }
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-white/85 text-left"
+                  >
+                    <Eraser className="w-4 h-4" />
+                    Clear Chat
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRelMenu(false)
+                      setComplaintOpen(true)
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-[#FF6B6B] text-left"
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    Complaint
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       {/* ─── §6/§7/§156: loading / error / user-gone — NEVER a black screen ── */}
@@ -797,6 +911,15 @@ function GameChatScreenInner({
           void onPickImage(e.target.files?.[0], 'quicky_image')
           e.target.value = ''
         }}
+      />
+
+      {/* Refactor PRD §57 — complaint modal (§58/§59 server records) */}
+      <ComplaintModal
+        open={complaintOpen}
+        onClose={() => setComplaintOpen(false)}
+        reportedUserId={peer.peerUserId}
+        reportedName={peer.peerName}
+        conversationId={conversationId}
       />
     </div>
   )

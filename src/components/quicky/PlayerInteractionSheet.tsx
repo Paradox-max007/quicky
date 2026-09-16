@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Tag, MessageCircle, AtSign, User, Send, ShoppingBag } from 'lucide-react'
+import { X, Tag, MessageCircle, AtSign, User, UserPlus, UserMinus, Send, ShoppingBag } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 
@@ -53,6 +53,10 @@ type Props = {
   onMessage?: (p: InteractionPlayer) => void
   onMention?: (p: InteractionPlayer) => void
   onProfile?: (p: InteractionPlayer) => void
+  /** Refactor PRD §96 — toolbox actions are generated from relationship state. */
+  isFriend?: boolean
+  friendBusy?: boolean
+  onToggleFriend?: (p: InteractionPlayer) => void
   onBuyCoins: () => void
   /** Parent performs the optimistic coin move + API call; resolves false on failure. */
   onSendGift: (recipientId: string, gift: CatalogGift) => Promise<boolean>
@@ -71,6 +75,9 @@ export function PlayerInteractionSheet({
   onMessage,
   onMention,
   onProfile,
+  isFriend,
+  friendBusy,
+  onToggleFriend,
   onBuyCoins,
   onSendGift,
 }: Props) {
@@ -180,7 +187,7 @@ export function PlayerInteractionSheet({
       {/* Top actions (mentions PRD §75: Tag / Message / Mention / Profile /
           Gifts) — independent rows; Mention prefills the Room Chat composer
           with @DisplayName and NEVER auto-sends (§29). */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <button className="sbr-ix-action" onClick={() => onTag?.(player)}>
           <Tag className="w-4 h-4" />
           <span>Tag</span>
@@ -192,6 +199,15 @@ export function PlayerInteractionSheet({
         <button className="sbr-ix-action" onClick={() => onMention?.(player)} data-testid="ix-mention">
           <AtSign className="w-4 h-4" />
           <span>Mention</span>
+        </button>
+        <button
+          className="sbr-ix-action"
+          onClick={() => onToggleFriend?.(player)}
+          disabled={friendBusy}
+          data-testid="ix-friend"
+        >
+          {isFriend ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+          <span>{isFriend ? 'Unfriend' : 'Friend'}</span>
         </button>
         <button className="sbr-ix-action" onClick={() => onProfile?.(player)}>
           <User className="w-4 h-4" />

@@ -151,5 +151,29 @@ for (const g of GAMES) {
   console.log(`seeded game: ${g.slug}`)
 }
 
+// Refactor PRD §20 — admin-managed rotating landing texts for the live
+// game. Idempotent: upsert by (gameId + text).
+const spinGame = await db.gameDefinition.findUnique({ where: { slug: 'spin-the-bottle' } })
+if (spinGame) {
+  const ROTATING_TEXTS = [
+    'Meet someone new',
+    'Take your chance',
+    'Choose Kiss or No Thanks',
+    'Play with friends',
+    'Make unexpected connections',
+  ]
+  for (let i = 0; i < ROTATING_TEXTS.length; i++) {
+    const existing = await db.gameDescriptionItem.findFirst({
+      where: { gameId: spinGame.id, text: ROTATING_TEXTS[i] },
+    })
+    if (!existing) {
+      await db.gameDescriptionItem.create({
+        data: { gameId: spinGame.id, text: ROTATING_TEXTS[i], sortOrder: i, isActive: true },
+      })
+    }
+  }
+  console.log(`seeded rotating texts: ${ROTATING_TEXTS.length}`)
+}
+
 console.log(`SEED OK — ${GAMES.length} game definitions`)
 await db.$disconnect()

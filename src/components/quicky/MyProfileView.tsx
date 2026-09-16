@@ -28,7 +28,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-type Photo = { id: string; url: string; isPrimary: boolean; isPrivate: boolean; position: number }
+type Photo = { id: string; url: string; isPrimary: boolean; isPrivate: boolean; position: number; displayHeight?: number | null }
 
 function SortablePhoto({
   photo,
@@ -135,6 +135,10 @@ export function MyProfileView() {
   const [profile, setProfile] = useState<any | null>(null)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [selectedIdx, setSelectedIdx] = useState(0)
+  // Refactor PRD §8 — a deleted photo must instantly disappear from the
+  // carousel, counter, indicators AND preview: every visual reference clamps
+  // to the live photo list while the embla sync catches up.
+  const viewIdx = Math.min(selectedIdx, Math.max(0, photos.length - 1))
   const [showVerify, setShowVerify] = useState(false)
   const [uploading, setUploading] = useState(false)
   // Caption edit sheet for own posts
@@ -145,6 +149,27 @@ export function MyProfileView() {
   const [deletingPost, setDeletingPost] = useState(false)
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, dragFree: false })
+  // Refactor PRD §9/§10 — persisted photo display height: local preview
+  // updates immediately, Save persists the canonical value server-side.
+  const [heightDraft, setHeightDraft] = useState<number | null>(null)
+  const [savingHeight, setSavingHeight] = useState(false)
+
+  const currentPhoto = photos[viewIdx] ?? null
+  const liveHeight = heightDraft ?? currentPhoto?.displayHeight ?? null
+
+  const savePhotoHeight = async () => {
+    if (!currentPhoto || heightDraft == null || savingHeight) return
+    setSavingHeight(true)
+    try {
+      await api.profileMedia.update(currentPhoto.id, heightDraft)
+      setPhotos((prev) => prev.map((p) => (p.id === currentPhoto.id ? { ...p, displayHeight: heightDraft } : p)))
+      toast.success('Photo height saved')
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to save')
+    } finally {
+      setSavingHeight(false)
+    }
+  }
 
   const onSelect = useCallback(() => {
     if (!emblaApi) return
@@ -310,7 +335,10 @@ export function MyProfileView() {
 
       {/* Hero photo carousel */}
       <div className="px-4 pb-4">
-        <div className="relative rounded-3xl overflow-hidden bg-[var(--qk-card)] border border-white/8 aspect-[3/4]">
+        <div
+          className="relative rounded-3xl overflow-hidden bg-[var(--qk-card)] border border-white/8 aspect-[3/4]"
+          style={liveHeight ? { height: liveHeight, aspectRatio: 'auto' } : undefined}
+        >
           {photos.length > 0 ? (
             <>
               <div ref={emblaRef} className="overflow-hidden w-full h-full">
@@ -329,25 +357,26 @@ export function MyProfileView() {
               {/* Photo pagination dots */}
               {photos.length > 1 && (
                 <div className="absolute top-3 left-3 right-3 flex gap-1 pointer-events-none">
+                  {/* Refactor PRD §7/§8: exactly photos.length indicators —
+                      never an extra empty slot. */}
                   {photos.map((_, i) => (
-                    <div key={i} className={cn('h-1 flex-1 rounded-full', i === selectedIdx ? 'bg-white' : 'bg-white/40')} />
+                    <div key={i} className={cn('h-1 flex-1 rounded-full', i === viewIdx ? 'bg-white' : 'bg-white/40')} />
                   ))}
-                  {photos.length < 6 && <div className="h-1 flex-1 rounded-full bg-white/10" />}
                 </div>
               )}
 
               {/* Prev/next arrows */}
-              {selectedIdx > 0 && (
+              {viewIdx > 0 && (
                 <button
-                  onClick={() => emblaApi?.scrollTo(selectedIdx - 1)}
+                  onClick={() => emblaApi?.scrollTo(viewIdx - 1)}
                   className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
                 >
                   <ChevronLeft className="w-5 h-5 text-white" />
                 </button>
               )}
-              {selectedIdx < photos.length - 1 && (
+              {viewIdx < photos.length - 1 && (
                 <button
-                  onClick={() => emblaApi?.scrollTo(selectedIdx + 1)}
+                  onClick={() => emblaApi?.scrollTo(viewIdx + 1)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
                 >
                   <ChevronRight className="w-5 h-5 text-white" />
@@ -355,7 +384,7 @@ export function MyProfileView() {
               )}
 
               {/* Private badge on current photo */}
-              {photos[selectedIdx]?.isPrivate && (
+              {photos[viewIdx]?.isPrivate && (
                 <div className="absolute top-3 right-12 flex items-center gap-1 bg-[var(--qk-gold)]/20 rounded-full px-2 py-0.5 pointer-events-none">
                   <Lock className="w-2.5 h-2.5 text-[var(--qk-gold)]" />
                   <span className="text-[10px] text-[var(--qk-gold)] font-semibold">Private</span>
@@ -424,7 +453,7 @@ export function MyProfileView() {
                 onClick={() => emblaApi?.scrollTo(i)}
                 className={cn(
                   'flex-shrink-0 w-14 h-14 rounded-xl overflow-hidden border-2 transition-all relative',
-                  i === selectedIdx ? 'border-[var(--qk-accent)]' : 'border-transparent'
+                  i === viewIdx ? 'border-[var(--qk-accent)]' : 'border-transparent'
                 )}
               >
                 <img src={p.url} alt="" className="w-full h-full object-cover" />
@@ -435,6 +464,40 @@ export function MyProfileView() {
                 )}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Refactor PRD §9/§10 — persisted photo display height editor.
+          Adjust -> immediate local preview; Save -> server persists the
+          canonical value; reopening restores it. */}
+      {photos.length > 0 && (
+        <div className="px-4 pb-3" data-testid="photo-height-editor">
+          <div className="rounded-2xl border border-white/8 bg-[var(--qk-card)]/60 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold">Photo display height</p>
+              <span className="text-xs tabular-nums text-white/50">{liveHeight ?? 'Default'}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={360}
+                max={720}
+                step={4}
+                value={liveHeight ?? 480}
+                onChange={(e) => setHeightDraft(Number(e.target.value))}
+                className="flex-1 accent-[var(--qk-accent)]"
+                aria-label="Photo display height"
+              />
+              <button
+                onClick={savePhotoHeight}
+                disabled={heightDraft == null || savingHeight}
+                className="shrink-0 rounded-full bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 text-[var(--qk-accent)] text-xs font-bold px-4 py-2 active:scale-95 transition-transform disabled:opacity-40"
+              >
+                {savingHeight ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            <p className="text-[11px] text-white/40 mt-2">Applies to this photo on your profile and everywhere your profile appears.</p>
           </div>
         </div>
       )}

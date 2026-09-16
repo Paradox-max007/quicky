@@ -158,7 +158,7 @@ export function DesktopSidebar({ data, loaded }: { data: DashboardData | null; l
           ) : (
             <>
               <StatRow icon="🎮" label="Games played" value={stats.gamesPlayed.toLocaleString()} />
-              <StatRow icon="💋" label="Kiss Points" value={stats.kisses.toLocaleString()} />
+              <StatRow icon="💋" label="Game Points" value={stats.kisses.toLocaleString()} />
               <StatRow icon="🎁" label="Gifts received" value={stats.giftsReceived.toLocaleString()} />
             </>
           )}

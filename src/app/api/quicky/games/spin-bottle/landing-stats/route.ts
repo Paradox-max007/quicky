@@ -62,7 +62,16 @@ export async function GET(_req: NextRequest) {
     }
   }
 
+  // Refactor PRD §20: admin-managed rotating description texts. Empty
+  // table -> the client falls back to its built-in rotation.
+  const descItems = await db.gameDescriptionItem.findMany({
+    where: { isActive: true, game: { slug: 'spin-the-bottle' } },
+    orderBy: { sortOrder: 'asc' },
+    select: { text: true },
+  })
+
   return NextResponse.json({
+    rotatingTexts: descItems.map((d) => d.text),
     // original record set (kept for the matchmaking modal + older callers)
     gamesPlayed: me2?.gamesPlayed ?? 0,
     kissesReceived: me2?.kissPoints ?? 0,

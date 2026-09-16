@@ -328,11 +328,11 @@ export function GameDecisionDrawer() {
               </motion.span>
               <p className="text-white font-black text-lg tracking-wide">{resultVisual.title}</p>
               {resultSpin.result === 'mutual_kiss' && (
-                <p className="text-white/70 text-xs font-bold">+1 Kiss Point each</p>
+                <p className="text-white/70 text-xs font-bold">+1 Game Point each</p>
               )}
               {resultSpin.result === 'partial_kiss' && (
                 <p className="text-white/70 text-xs font-bold">
-                  +1 Kiss Point →{' '}
+                  +1 Game Point →{' '}
                   {resultSpin.spinnerResponse === 'yes'
                     ? snapshot?.players.find((p) => p.userId === resultSpin.targetId)?.displayName ?? 'them'
                     : snapshot?.players.find((p) => p.userId === resultSpin.spinnerId)?.displayName ?? 'them'}

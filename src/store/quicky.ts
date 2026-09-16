@@ -36,6 +36,7 @@ export type AppView =
   | 'admin-gifts'
   | 'admin-rules'
   | 'admin-stickers'
+  | 'admin-games'
 
 export type QuickyUser = {
   id: string
@@ -166,6 +167,10 @@ type State = {
   activeProfileUserId: string | null
   // view to return to when the profile view closes
   profileReturnView: AppView
+  /** Refactor PRD §12 — requested Settings section for the canonical web
+   * Edit Profile navigation (Settings → Edit Profile). */
+  settingsSection: string | null
+  clearSettingsSection: () => void
   pendingMatchPartner: { matchId: string; partnerId: string; partnerName: string | null; partnerPhoto: string | null } | null
   paywall: PaywallContext | null
   // Post to scroll to & highlight when the Community tab next opens
@@ -226,6 +231,8 @@ type State = {
 
   // navigation
   setView: (v: AppView) => void
+  /** Refactor PRD §11/12 — canonical web Edit Profile navigation. */
+  openWebEditProfile: () => void
   setUser: (u: QuickyUser | null) => void
   setHydrated: (h: boolean) => void
   openChat: (matchId: string, returnView?: AppView) => void
@@ -275,6 +282,7 @@ export const useQuickyStore = create<State>((set) => ({
   activeMatchId: null,
   activeProfileUserId: null,
   profileReturnView: 'discovery',
+  settingsSection: null,
   pendingMatchPartner: null,
   paywall: null,
   communityFocusPostId: null,
@@ -294,6 +302,11 @@ export const useQuickyStore = create<State>((set) => ({
   totalUnread: 0,
 
   setView: (v) => set({ view: v }),
+  /** Refactor PRD §11/§12 — ONE canonical web Edit Profile navigation:
+   * every web "Edit Profile" button lands on Settings → Edit Profile. */
+  openWebEditProfile: () =>
+    set({ settingsSection: 'profile', view: 'settings' }),
+  clearSettingsSection: () => set({ settingsSection: null }),
   setUser: (u) => set({ user: u }),
   setHydrated: (h) => set({ hydrated: h }),
   openChat: (matchId, returnView) =>

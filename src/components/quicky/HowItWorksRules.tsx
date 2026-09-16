@@ -28,7 +28,7 @@ const FALLBACK_RULES: HowItWorksRule[] = [
   { id: 'fb-1', title: 'Take Your Seat', description: 'Join a room and meet other players around the table.', icon: '🎲' },
   { id: 'fb-2', title: 'Let It Spin', description: 'The system spins the bottle — when it points at you, the round begins.', icon: '🍾' },
   { id: 'fb-3', title: 'Kiss or No Thanks', description: 'Both players choose ❤️ Kiss or 💔 No Thanks — mutual kisses earn points.', icon: '💋' },
-  { id: 'fb-4', title: 'Gift & Shine', description: 'Send gifts, earn Kiss Points and climb the leaderboard.', icon: '🎁' },
+  { id: 'fb-4', title: 'Gift & Shine', description: 'Send gifts, earn Game Points and climb the leaderboard.', icon: '🎁' },
 ]
 
 const RULE_VISIBLE_MS = 4200 // §41: 3.5–5s readable pause

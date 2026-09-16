@@ -15,6 +15,7 @@ type Check = { ok: boolean; weight: number; missing: string }
 export function DatingProfileCard() {
   const user = useQuickyStore((s) => s.user)
   const setView = useQuickyStore((s) => s.setView)
+  const openWebEditProfile = useQuickyStore((s) => s.openWebEditProfile)
 
   const { completeness, missing, interests } = useMemo(() => {
     const photos = user?.photos ?? []
@@ -42,7 +43,7 @@ export function DatingProfileCard() {
       <div className="flex items-center justify-between mb-4">
         <p className="text-[11px] font-bold tracking-widest text-white/40 uppercase">Dating Profile</p>
         <button
-          onClick={() => setView('edit-profile')}
+          onClick={() => openWebEditProfile()}
           className="flex items-center gap-1.5 rounded-full border border-[var(--qk-accent)]/30 bg-[var(--qk-accent)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--qk-accent)] hover:bg-[var(--qk-accent)]/20 transition-colors"
         >
           <PencilLine className="w-3.5 h-3.5" />

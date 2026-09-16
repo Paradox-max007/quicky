@@ -73,6 +73,9 @@ model User {
   reportsAgainst   Report[] @relation("Reported")
   blockedBy        Block[]  @relation("Blocker")
   blockedUsers     Block[]  @relation("Blocked")
+  friendshipsSent     Friendship[] @relation("FriendRequester")
+  friendshipsReceived Friendship[] @relation("FriendAddressee")
+  conversationStates  ConversationState[]
   sessions         Session[]
   settings         UserSettings?
   posts            CommunityPost[] @relation("PostOwner")
@@ -121,6 +124,8 @@ model Photo {
   userId    String
   url       String
   position  Int      @default(0)
+  // Persisted display height in px for the owner's profile carousel (§9/§10).
+  displayHeight Int?
   isPrimary Boolean  @default(false)
   isPrivate Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -268,19 +273,31 @@ model Subscription {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// User complaints (refactor PRD §57-§60) — reuses the existing Report table
+// (§76: no duplicate tables). Statuses: OPEN | REVIEWING | RESOLVED | DISMISSED.
 model Report {
   id            String   @id @default(cuid())
   reporterId    String
   reportedId    String
+  // Name snapshot of the reported user at complaint time (§59)
+  reportedNameSnapshot String?
   // category: "harassment" | "spam" | "fake" | "inappropriate" | "underage" | "other"
   category      String
   details       String?
   screenshotUrl String?
-  // status: "pending" | "reviewing" | "resolved"
-  status        String   @default("pending")
+  // Origin context (§58 optional fields)
+  roomId        String?
+  messageId     String?
+  conversationId String?
+  // status: "OPEN" | "REVIEWING" | "RESOLVED" | "DISMISSED"
+  status        String   @default("OPEN")
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   reporter      User @relation("Reporter", fields: [reporterId], references: [id])
   reported      User @relation("Reported", fields: [reportedId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([reportedId])
 }
 
 model Block {
@@ -292,6 +309,34 @@ model Block {
   blocked    User @relation("Blocked", fields: [blockedId], references: [id])
   @@unique([blockerId, blockedId])
 }
+
+model Friendship {
+  id          String   @id @default(cuid())
+  requesterId String
+  addresseeId String
+  createdAt   DateTime @default(now())
+  requester   User     @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User     @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+}
+
+
+// Per-user "Clear Chat" marker (§56): hides a conversation's messages for ONE
+// participant without destroying the other participant's history.
+model ConversationState {
+  id                 String   @id @default(cuid())
+  userId             String
+  matchId            String?
+  gameConversationId String?
+  clearedAt          DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, matchId])
+  @@index([userId, gameConversationId])
+}
+
 
 model Session {
   id         String   @id @default(cuid())
@@ -1007,5 +1052,22 @@ model GameDefinition {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  descriptionItems GameDescriptionItem[]
+
   @@index([isActive, sortOrder])
 }
+
+// Admin-managed rotating description texts for a game landing (§20/§86):
+// ordered, activatable — replaces hardcoded text arrays.
+model GameDescriptionItem {
+  id        String         @id @default(cuid())
+  gameId    String
+  text      String
+  sortOrder Int            @default(0)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  game      GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId, sortOrder])
+}
+

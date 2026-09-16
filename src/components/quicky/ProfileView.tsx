@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check, Ruler, GraduationCap, Wine } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check, Ruler, GraduationCap, Wine, MoreVertical, UserPlus, UserMinus, Ban, ShieldAlert } from 'lucide-react'
+import { ComplaintModal } from './ComplaintModal'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { ProfilePostsGrid } from './ProfilePostsGrid'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,19 @@ export function ProfileView() {
   const setView = useQuickyStore((s) => s.setView)
   const returnView = useQuickyStore((s) => s.profileReturnView)
   const showPaywall = useQuickyStore((s) => s.showPaywall)
+  // Refactor PRD §27/§54 — profile •••: relationship-aware actions. Options
+  // never contradict each other (§54): Add OR Remove friend, Block/Unblock.
+  const [profileRelMenu, setProfileRelMenu] = useState(false)
+  const [rel, setRel] = useState<{ isFriend: boolean; iBlockedThem: boolean; theyBlockedMe: boolean } | null>(null)
+  const [relBusy, setRelBusy] = useState(false)
+  const [complaintOpen, setComplaintOpen] = useState(false)
+
+  useEffect(() => {
+    setRel(null)
+    setProfileRelMenu(false)
+    if (!userId) return
+    api.relationship(userId).then(setRel).catch(() => setRel(null))
+  }, [userId])
   const showMatchCelebration = useQuickyStore((s) => s.showMatchCelebration)
   const [profile, setProfile] = useState<any | null>(null)
   const [relationship, setRelationship] = useState<{ hasMatch: boolean; matchId: string | null; theyLikedMe: boolean; superLike: boolean } | null>(null)
@@ -144,12 +158,91 @@ export function ProfileView() {
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-y-auto no-scrollbar">
+    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white overflow-y-auto no-scrollbar relative">
       {/* Floating back button */}
       <header className="shrink-0 px-3 pt-3 pb-3 flex items-center justify-between absolute top-0 left-0 right-0 z-10">
         <button onClick={() => setView(returnView)} className="p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60" aria-label="Back">
           <ArrowLeft className="w-5 h-5 text-white" />
         </button>
+        {userId && (
+          <div className="relative" data-testid="profile-actions">
+            <button
+              onClick={() => setProfileRelMenu((v) => !v)}
+              className="p-2 rounded-full bg-black/40 backdrop-blur hover:bg-black/60"
+              aria-label="Profile actions"
+            >
+              <MoreVertical className="w-5 h-5 text-white" />
+            </button>
+            {profileRelMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setProfileRelMenu(false)} />
+                <div className="absolute right-0 top-11 z-40 w-52 rounded-2xl border border-white/10 bg-[var(--qk-card)] shadow-2xl p-1.5 flex flex-col">
+                  <button
+                    onClick={async () => {
+                      if (relBusy) return
+                      setRelBusy(true)
+                      try {
+                        if (rel?.isFriend) {
+                          await api.friends.remove(userId)
+                          toast.success('Friend removed')
+                        } else {
+                          await api.friends.add(userId)
+                          toast.success('Friend added')
+                        }
+                        setRel(await api.relationship(userId))
+                      } catch (e: any) {
+                        toast.error(e?.status === 409 ? 'Already friends' : (e?.message ?? 'Failed'))
+                      } finally {
+                        setRelBusy(false)
+                      }
+                    }}
+                    disabled={relBusy || rel?.theyBlockedMe}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-white/85 disabled:opacity-40 text-left"
+                  >
+                    {rel?.isFriend ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                    {rel?.isFriend ? 'Remove Friend' : 'Add Friend'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (relBusy) return
+                      setRelBusy(true)
+                      try {
+                        if (rel?.iBlockedThem) {
+                          await api.blocks.remove(userId)
+                          toast.success('Unblocked')
+                        } else {
+                          await api.blocks.add(userId)
+                          toast.success('Blocked')
+                        }
+                        setRel(await api.relationship(userId))
+                        setProfileRelMenu(false)
+                      } catch (e: any) {
+                        toast.error(e?.message ?? 'Failed')
+                      } finally {
+                        setRelBusy(false)
+                      }
+                    }}
+                    disabled={relBusy}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-white/85 text-left"
+                  >
+                    <Ban className="w-4 h-4" />
+                    {rel?.iBlockedThem ? 'Unblock' : 'Block'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setProfileRelMenu(false)
+                      setComplaintOpen(true)
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-[#FF6B6B] text-left"
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    Complaint
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Photo Carousel */}
@@ -421,6 +514,14 @@ export function ProfileView() {
           </div>
         )}
       </div>
+
+      {/* Refactor PRD §57 — complaint modal */}
+      <ComplaintModal
+        open={complaintOpen}
+        onClose={() => setComplaintOpen(false)}
+        reportedUserId={userId ?? ''}
+        reportedName={profile?.name ?? null}
+      />
     </div>
   )
 }

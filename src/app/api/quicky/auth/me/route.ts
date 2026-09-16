@@ -50,7 +50,7 @@ export async function GET() {
       city: full.city,
       interests: full.interests ? JSON.parse(full.interests) : [],
       prompts: full.prompts ? JSON.parse(full.prompts) : [],
-      photos: full.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary, isPrivate: p.isPrivate, position: p.position })),
+      photos: full.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary, isPrivate: p.isPrivate, position: p.position, displayHeight: p.displayHeight })),
       isPremium: full.isPremium,
       premiumUntil: full.premiumUntil,
       isVerified: full.isVerified,

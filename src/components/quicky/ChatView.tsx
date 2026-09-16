@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuickyStore, ChatMessage } from '@/store/quicky'
+import { ComplaintModal } from './ComplaintModal'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,7 +10,7 @@ import {
   ArrowLeft, Camera, Send, MoreVertical, BadgeCheck, Crown,
   ImagePlus, X, RotateCcw, Check, CheckCheck, Clock, AlertCircle,
   Reply, Copy, ChevronDown, Mic, Play, Pause, Trash2, Square, Sparkles, Wine,
-  Grid3X3, Gamepad2, Loader2,
+  Grid3X3, Gamepad2, Loader2, UserPlus, UserMinus, Ban, Eraser, ShieldAlert,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUICKY } from '@/lib/quicky/constants'
@@ -167,6 +168,74 @@ export function ChatView({
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [showActions, setShowActions] = useState(false)
+  // Refactor PRD §53 — chat actions depend on the relationship: Friend
+  // toggle / Block / Clear Chat / Complaint. Fetched when the sheet opens.
+  const [rel, setRel] = useState<{ isFriend: boolean; iBlockedThem: boolean; theyBlockedMe: boolean } | null>(null)
+  const [relBusy, setRelBusy] = useState(false)
+  const [complaintOpen, setComplaintOpen] = useState(false)
+
+  const loadRelationship = async (partnerId: string) => {
+    if (!partnerId) return
+    try {
+      setRel(await api.relationship(partnerId))
+    } catch {
+      setRel(null)
+    }
+  }
+
+  const toggleFriend = async () => {
+    const partnerId = match?.partner?.id
+    if (!partnerId || relBusy) return
+    setRelBusy(true)
+    try {
+      if (rel?.isFriend) {
+        await api.friends.remove(partnerId)
+        toast.success('Friend removed')
+      } else {
+        await api.friends.add(partnerId)
+        toast.success('Friend added')
+      }
+      setRel(await api.relationship(partnerId))
+    } catch (e: any) {
+      toast.error(e?.status === 409 ? 'Already friends' : (e?.message ?? 'Failed'))
+    } finally {
+      setRelBusy(false)
+    }
+  }
+
+  const toggleBlock = async () => {
+    const partnerId = match?.partner?.id
+    if (!partnerId || relBusy) return
+    setRelBusy(true)
+    try {
+      if (rel?.iBlockedThem) {
+        await api.blocks.remove(partnerId)
+        toast.success('Unblocked')
+      } else {
+        await api.blocks.add(partnerId)
+        toast.success('Blocked')
+      }
+      setRel(await api.relationship(partnerId))
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Failed')
+    } finally {
+      setRelBusy(false)
+    }
+  }
+
+  const clearChat = async () => {
+    // §56: confirm first, then a per-user marker — the partner's history
+    // is never destroyed.
+    if (!matchId || !confirm('Clear this conversation?')) return
+    try {
+      await api.chat.clear(matchId)
+      setMessages([])
+      setShowActions(false)
+      toast.success('Conversation cleared')
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Failed')
+    }
+  }
   const [showProfile, setShowProfile] = useState(false)
   const [pendingQuickies, setPendingQuickies] = useState<any[]>([])
   const [toDOpen, setToDOpen] = useState(false)
@@ -927,7 +996,14 @@ export function ChatView({
             )}
           </div>
         </button>
-        <button onClick={() => setShowActions((v) => !v)} className="p-2 hover:bg-white/5 rounded-full" aria-label="More">
+        <button
+          onClick={() => {
+            if (!showActions && match?.partner?.id) void loadRelationship(match.partner.id)
+            setShowActions((v) => !v)
+          }}
+          className="p-2 hover:bg-white/5 rounded-full"
+          aria-label="More"
+        >
           <MoreVertical className="w-5 h-5" />
         </button>
       </header>
@@ -1369,10 +1445,60 @@ export function ChatView({
                   }}
                 />
               </div>
+
+              {/* Refactor PRD §53 — relationship-aware management actions */}
+              <div className="mt-3 pt-3 border-t border-white/8 flex flex-col gap-1" data-testid="chat-manage-actions">
+                {match?.partner?.id && (
+                  <>
+                    <button
+                      onClick={toggleFriend}
+                      disabled={relBusy || rel?.theyBlockedMe}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm font-medium text-white/85 disabled:opacity-40"
+                    >
+                      {rel?.isFriend ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                      {rel?.isFriend ? 'Remove Friend' : 'Add Friend'}
+                    </button>
+                    <button
+                      onClick={toggleBlock}
+                      disabled={relBusy}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm font-medium text-white/85"
+                    >
+                      <Ban className="w-4 h-4" />
+                      {rel?.iBlockedThem ? 'Unblock' : 'Block'}
+                    </button>
+                    <button
+                      onClick={clearChat}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm font-medium text-white/85"
+                    >
+                      <Eraser className="w-4 h-4" />
+                      Clear Chat
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowActions(false)
+                        setComplaintOpen(true)
+                      }}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm font-medium text-[#FF6B6B]"
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                      Complaint
+                    </button>
+                  </>
+                )}
+              </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      {/* Refactor PRD §57 — complaint modal (reporter/reported IDs + snapshot) */}
+      <ComplaintModal
+        open={complaintOpen}
+        onClose={() => setComplaintOpen(false)}
+        reportedUserId={match?.partner?.id ?? ''}
+        reportedName={match?.partner?.name ?? null}
+        conversationId={matchId}
+      />
 
       {/* ToD game overlay */}
       {toDOpen && matchId && (

@@ -150,6 +150,9 @@ export const api = {
         `/api/quicky/matches/${matchId}/messages/${messageId}/react`,
         { method: 'POST', body: JSON.stringify({ emoji }) }
       ),
+    /** Refactor PRD §56 — per-user Clear Chat (dating conversations). */
+    clear: (matchId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/matches/${matchId}/messages`, { method: 'DELETE' }),
   },
   quicky: {
     pending: (matchId: string) =>
@@ -196,8 +199,41 @@ export const api = {
   unmatch: (matchId: string) =>
     jsonFetch(`/api/quicky/matches/${matchId}/unmatch`, { method: 'POST' }),
   games: {
-    /** Game Hub PRD §11: the DB-driven game catalog. */
-    list: () => jsonFetch<{ games: { id: string; slug: string; name: string; shortDescription: string; description: string; icon: string; artwork: string; supportedModes: string; minPlayers: number; maxPlayers: number; isPlayable: boolean; isFeatured: boolean; sortOrder: number }[] }>('/api/quicky/games'),
+    /** Game Hub PRD §11: the DB-driven game catalog (+ §16 live activePlayers). */
+    list: () => jsonFetch<{ games: { id: string; slug: string; name: string; shortDescription: string; description: string; icon: string; artwork: string; supportedModes: string; minPlayers: number; maxPlayers: number; isPlayable: boolean; isFeatured: boolean; sortOrder: number; activePlayers: number }[] }>('/api/quicky/games'),
+  },
+  /** Refactor PRD §25/§26/§80 — friendships. */
+  friends: {
+    list: () => jsonFetch<{ friends: any[] }>('/api/quicky/friends'),
+    add: (userId: string) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/friends', { method: 'POST', body: JSON.stringify({ userId }) }),
+    remove: (userId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/friends?userId=${userId}`, { method: 'DELETE' }),
+  },
+  /** Refactor PRD §55/§80 — server-side blocks. */
+  blocks: {
+    add: (userId: string) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/blocks', { method: 'POST', body: JSON.stringify({ userId }) }),
+    remove: (userId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/blocks?userId=${userId}`, { method: 'DELETE' }),
+  },
+  /** Refactor PRD §57/§80 — complaints. */
+  complaints: {
+    create: (data: { reportedUserId: string; reason: string; description?: string; roomId?: string; messageId?: string; conversationId?: string }) =>
+      jsonFetch<{ ok: boolean; complaintId: string }>('/api/quicky/complaints', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  /** Refactor PRD §54/§96 — relationship-aware action menus. */
+  relationship: (userId: string) =>
+    jsonFetch<{ userId: string; isFriend: boolean; iBlockedThem: boolean; theyBlockedMe: boolean }>(
+      `/api/quicky/relationship?userId=${userId}`
+    ),
+  /** Refactor PRD §9/§10/§80 — persisted profile photo display height. */
+  profileMedia: {
+    update: (photoId: string, displayHeight: number | null) =>
+      jsonFetch<{ ok: boolean; photo: { id: string; displayHeight: number | null } }>(
+        `/api/quicky/profile/media/${photoId}`,
+        { method: 'PATCH', body: JSON.stringify({ displayHeight }) }
+      ),
   },
   spinBottle: {
     landing: () =>
@@ -295,6 +331,23 @@ export const api = {
     },
   },
   admin: {
+    /** Refactor PRD §19/§84 — game configuration + rotating descriptions. */
+    games: {
+      list: () => jsonFetch<{ games: any[]; descriptionItems: any[] }>('/api/quicky/admin/games'),
+      create: (kind: 'game' | 'description', data: any) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/games', { method: 'POST', body: JSON.stringify({ kind, data }) }),
+      update: (kind: 'game' | 'description', id: string, data: any) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/games', { method: 'PATCH', body: JSON.stringify({ kind, id, data }) }),
+      remove: (kind: 'game' | 'description', id: string) =>
+        jsonFetch<{ ok: boolean }>(`/api/quicky/admin/games?kind=${kind}&id=${id}`, { method: 'DELETE' }),
+    },
+    /** Refactor PRD §60 — admin complaints queue. */
+    complaints: {
+      list: (status?: string) =>
+        jsonFetch<{ complaints: any[] }>(`/api/quicky/admin/complaints${status ? `?status=${status}` : ''}`),
+      setStatus: (id: string, status: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/complaints', { method: 'PATCH', body: JSON.stringify({ id, status }) }),
+    },
     gifts: {
       list: () =>
         jsonFetch<{ categories: any[]; gifts: any[] }>('/api/quicky/admin/gifts'),
@@ -409,6 +462,11 @@ export const api = {
         '/api/quicky/game-chat/messages',
         { method: 'POST', body: JSON.stringify(data) }
       ),
+    /** Refactor PRD §56 — per-user Clear Chat marker (game DMs). */
+    clear: (conversationId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/game-chat/messages?conversationId=${conversationId}`, {
+        method: 'DELETE',
+      }),
     markRead: (conversationId: string) =>
       jsonFetch<{ ok: boolean; lastReadAt: string }>('/api/quicky/game-chat/read', {
         method: 'POST',

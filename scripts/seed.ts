@@ -503,6 +503,30 @@ async function seed() {
         sortOrder: g.sortOrder,
       },
     })
+
+    // Refactor PRD §20 — rotating landing texts (idempotent by text)
+    {
+      const rotTexts = [
+        'Meet someone new',
+        'Take your chance',
+        'Choose Kiss or No Thanks',
+        'Play with friends',
+        'Make unexpected connections',
+      ]
+      const spinGameRef = await db.gameDefinition.findUnique({ where: { slug: 'spin-the-bottle' } })
+      if (spinGameRef) {
+        for (let i = 0; i < rotTexts.length; i++) {
+          const exists = await db.gameDescriptionItem.findFirst({
+            where: { gameId: spinGameRef.id, text: rotTexts[i] },
+          })
+          if (!exists) {
+            await db.gameDescriptionItem.create({
+              data: { gameId: spinGameRef.id, text: rotTexts[i], sortOrder: i, isActive: true },
+            })
+          }
+        }
+      }
+    }
   }
   console.log(`Seeded ${GAMES.length} game definitions`)
 

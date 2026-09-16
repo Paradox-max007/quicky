@@ -7,6 +7,7 @@
 // Clicking a card opens the game's LANDING page (§7: never straight into a
 // game); the return-to-table shortcut survives for live rooms.
 
+import { useState } from 'react'
 import { Crown, Zap, Play } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { useDashboard } from './useDashboard'
@@ -14,6 +15,7 @@ import { SectionHeader, SkeletonBlock } from './web-ui'
 import { useGames } from '../game-hub/useGames'
 import { GameCard } from '../game-hub/GameCard'
 import { artworkGradient } from '../game-hub/types'
+import { GamesFilterBar } from '../game-hub/GamesFilterBar'
 
 export function GamesDesktop() {
   const setView = useQuickyStore((s) => s.setView)
@@ -26,7 +28,21 @@ export function GamesDesktop() {
   const { games, loaded: gamesLoaded } = useGames()
 
   const featured = games?.find((g) => g.isFeatured && g.isPlayable) ?? games?.find((g) => g.isPlayable) ?? null
-  const rest = games ? games.filter((g) => g.id !== featured?.id) : []
+  // Refactor PRD §89 — hub filters above the grid (featured hero stays).
+  const [gamesFilter, setGamesFilter] = useState<'all' | 'party' | 'two' | 'soon'>('all')
+  const rest = games
+    ? games
+        .filter((g) => g.id !== featured?.id)
+        .filter((g) =>
+          gamesFilter === 'party'
+            ? g.supportedModes === 'GROUP' || g.supportedModes === 'BOTH'
+            : gamesFilter === 'two'
+              ? g.supportedModes === 'TWO_PLAYER' || g.supportedModes === 'BOTH'
+              : gamesFilter === 'soon'
+                ? !g.isPlayable
+                : true
+        )
+    : []
 
   const play = () => {
     if (roomId) {
@@ -96,7 +112,7 @@ export function GamesDesktop() {
                     <span className="font-semibold text-white/70">Coming soon</span>
                   )}
                   {stats && stats.gamesPlayed > 0 && <span>You&apos;ve played <b className="font-bold">{stats.gamesPlayed}</b></span>}
-                  {stats && stats.kisses > 0 && <span>💋 <b className="font-bold">{stats.kisses}</b> Kiss Points</span>}
+                  {stats && stats.kisses > 0 && <span>💋 <b className="font-bold">{stats.kisses}</b> Game Points</span>}
                 </div>
               </div>
               <div className="shrink-0 flex flex-col items-center gap-2">
@@ -114,6 +130,7 @@ export function GamesDesktop() {
       {/* ── All games (§42): DB cards in a responsive desktop grid (§67) ─── */}
       <section>
         <SectionHeader title="All games" />
+        <GamesFilterBar value={gamesFilter} onChange={setGamesFilter} />
         <div className="grid grid-cols-2 md:grid-cols-3 min-[1600px]:grid-cols-4 gap-5" data-testid="games-grid">
           {gamesLoaded && games
             ? rest.map((g, i) => <GameCard key={g.id} game={g} onOpen={(slug) => openGameLanding(slug)} index={i} testId={`game-card-${g.slug}`} />)

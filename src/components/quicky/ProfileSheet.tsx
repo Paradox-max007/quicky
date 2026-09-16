@@ -18,6 +18,8 @@ export function ProfileSheet({
   const [profile, setProfile] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
   const [photoIdx, setPhotoIdx] = useState(0)
+  // Refactor PRD §8 — deleted photo: indices clamp to the live photo list.
+  const safeIdx = Math.min(photoIdx, Math.max(0, (profile?.photos?.length ?? 1) - 1))
 
   useEffect(() => {
     ;(async () => {
@@ -64,7 +66,7 @@ export function ProfileSheet({
                 {/* Photo carousel */}
                 {profile.photos?.length > 0 && (
                   <div className="relative aspect-[3/4] w-full overflow-hidden rounded-t-3xl">
-                    <img src={profile.photos[photoIdx]?.url} alt={profile.name} className="w-full h-full object-cover" />
+                    <img src={profile.photos[safeIdx]?.url} alt={profile.name} className="w-full h-full object-cover" />
                     <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
                     {profile.photos.length > 1 && (
                       <>
@@ -72,7 +74,7 @@ export function ProfileSheet({
                         <button className="absolute right-0 top-0 bottom-0 w-1/3" onClick={() => setPhotoIdx((i) => (i + 1) % profile.photos.length)} aria-label="Next" />
                         <div className="absolute top-3 left-3 right-12 flex gap-1">
                           {profile.photos.map((_, i) => (
-                            <div key={i} className={`h-1 flex-1 rounded-full ${i === photoIdx ? 'bg-white' : 'bg-white/40'}`} />
+                            <div key={i} className={`h-1 flex-1 rounded-full ${i === safeIdx ? 'bg-white' : 'bg-white/40'}`} />
                           ))}
                         </div>
                       </>
