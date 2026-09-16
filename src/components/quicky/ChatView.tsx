@@ -136,13 +136,30 @@ function loadChatCache(matchId: string): { partner: any; messages: Msg[] } | nul
   }
 }
 
-export function ChatView({ embedded = false }: { embedded?: boolean } = {}) {
+export function ChatView({
+  embedded = false,
+  onBack,
+}: {
+  embedded?: boolean
+  /** Game Hub PRD §57: embedded callers (room panel) override back. */
+  onBack?: () => void
+} = {}) {
   const matchId = useQuickyStore((s) => s.activeMatchId)
   const setView = useQuickyStore((s) => s.setView)
   const setActiveMatchId = useQuickyStore((s) => s.setActiveMatchId)
   // Web Premium §9/§66: inside the desktop Chats shell the conversation is a
   // pane — "back" clears the selection instead of navigating away.
-  const chatBack = () => (embedded ? setActiveMatchId(null) : setView('matches'))
+  // Game Hub PRD §54/§57: back honors the caller — embedded room panels use
+  // onBack; the full-screen mobile chat returns to chatReturnView (unified
+  // center / in-game contacts / live room) or the legacy matches list.
+  const chatBack = () => {
+    if (embedded) {
+      if (onBack) onBack()
+      else setActiveMatchId(null)
+      return
+    }
+    setView(useQuickyStore.getState().chatReturnView ?? 'matches')
+  }
   const meUser = useQuickyStore((s) => s.user)
   const clearUnreadForMatch = useQuickyStore((s) => s.clearUnreadForMatch)
   const [match, setMatch] = useState<{ id: string; partner: any; me: { id: string; isPremium: boolean } } | null>(null)

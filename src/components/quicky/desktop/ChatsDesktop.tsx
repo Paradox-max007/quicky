@@ -304,7 +304,7 @@ export function ChatsDesktop() {
               )}
               data-testid="chats-tab-dating"
             >
-              Dating
+              Dating Chats
             </button>
           </div>
 

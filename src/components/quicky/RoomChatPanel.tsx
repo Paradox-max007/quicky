@@ -342,7 +342,7 @@ export function RoomChatPanel({
   /** Total unread private game chats (badge on the entry button). */
   gameChatsUnread?: number
   /** §3 unified chat state: which surface the shell renders. */
-  panel?: 'room' | 'contacts' | 'personal'
+  panel?: 'room' | 'contacts' | 'personal' | 'dating'
   /** §4: contacts / personal views render INSIDE this shell (normal children). */
   panelContent?: React.ReactNode
   /** §48: message id that mentions ME — its bubble flashes briefly. */
@@ -811,6 +811,7 @@ export function RoomChatPanel({
       {/* §4/§74/§118: ONE shell — the other states are normal children of
           THIS panel; the room content above stays mounted underneath. */}
       {roomContent}
+      {/* 'dating' renders the parent-provided embedded ChatView (§57) */}
       {panel !== 'room' && panelContent}
     </div>
   )

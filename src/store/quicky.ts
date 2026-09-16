@@ -24,6 +24,7 @@ export type AppView =
   | 'settings-help'
   | 'premium'
   | 'games'
+  | 'game-landing'
   | 'chats'
   | 'community'
   | 'chat'
@@ -171,6 +172,13 @@ type State = {
   communityFocusPostId: string | null
   // Active Spin the Bottle roomId (set when join succeeds; cleared on leave)
   spinBottleRoomId: string | null
+  // Game Hub PRD §12: the slug of the game whose landing page is open in the
+  // 'game-landing' view (Games → card → landing). null = nothing selected.
+  gameLandingSlug: string | null
+  // Where a full-screen mobile dating chat's back arrow returns (§54):
+  // the unified center ('chats'), the in-game contacts screen
+  // ('game-chat-contacts') or the live room ('spin-bottle-room').
+  chatReturnView: AppView | null
   // ─── Game Chat (private player-to-player, game-chat PRD §7) — SEPARATE
   // from Dating Chat: own list, own messages, own notifications.
   gameChatPeer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
@@ -181,7 +189,7 @@ type State = {
   // List) and 'personal' (Personal Game Chat). Capacitor ignores this and
   // uses the dedicated 'game-chat-contacts' / 'game-chat' screens instead
   // (layout PRD §8: Message → Contact List → Personal Chat).
-  roomChatPanel: 'room' | 'contacts' | 'personal'
+  roomChatPanel: 'room' | 'contacts' | 'personal' | 'dating'
   // Layout PRD §2.1/§51: "Message" on a player opens the CONTACT LIST with
   // that player pinned at the top — the conversation may not exist yet and
   // the list only shows real conversations (§23). The pinned row is
@@ -217,7 +225,7 @@ type State = {
   setView: (v: AppView) => void
   setUser: (u: QuickyUser | null) => void
   setHydrated: (h: boolean) => void
-  openChat: (matchId: string) => void
+  openChat: (matchId: string, returnView?: AppView) => void
   openProfile: (userId: string, returnView?: AppView) => void
   setUnreadMap: (map: Record<string, number>) => void
   clearUnreadForMatch: (matchId: string) => void
@@ -241,9 +249,11 @@ type State = {
   pinGameChatPeer: (
     peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
   ) => void
-  setRoomChatPanel: (p: 'room' | 'contacts' | 'personal') => void
+  setRoomChatPanel: (p: 'room' | 'contacts' | 'personal' | 'dating') => void
   /** Web Premium PRD §9/§67: open the desktop Chats page (GameChatShell). */
   openChats: (section?: 'game' | 'dating') => void
+  /** Game Hub PRD §12: open a game's landing page from its card. */
+  openGameLanding: (slug: string) => void
   setChatsSection: (s: 'game' | 'dating') => void
   /** Desktop chats page: select a dating conversation without navigating. */
   setActiveMatchId: (id: string | null) => void
@@ -264,6 +274,8 @@ export const useQuickyStore = create<State>((set) => ({
   paywall: null,
   communityFocusPostId: null,
   spinBottleRoomId: null,
+  gameLandingSlug: null,
+  chatReturnView: null,
   gameChatPeer: null,
   gameChatReturnView: 'spin-bottle',
   roomChatPanel: 'room',
@@ -278,7 +290,8 @@ export const useQuickyStore = create<State>((set) => ({
   setView: (v) => set({ view: v }),
   setUser: (u) => set({ user: u }),
   setHydrated: (h) => set({ hydrated: h }),
-  openChat: (matchId) => set({ activeMatchId: matchId, view: 'chat' }),
+  openChat: (matchId, returnView) =>
+    set({ activeMatchId: matchId, view: 'chat', chatReturnView: returnView ?? null }),
   openProfile: (userId, returnView) =>
     set({ activeProfileUserId: userId, view: 'profile-view', ...(returnView ? { profileReturnView: returnView } : {}) }),
   setUnreadMap: (map) => {
@@ -338,7 +351,8 @@ export const useQuickyStore = create<State>((set) => ({
   clearRoomChatMentionDraft: () => set({ roomChatMentionDraft: null }),
   openChats: (section) =>
     set((prev) => ({ view: 'chats', ...(section ? { chatsSection: section } : {}) })),
+  openGameLanding: (slug) => set({ gameLandingSlug: slug, view: 'game-landing' }),
   setChatsSection: (s) => set({ chatsSection: s }),
   setActiveMatchId: (id) => set({ activeMatchId: id }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameLandingSlug: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
 }))

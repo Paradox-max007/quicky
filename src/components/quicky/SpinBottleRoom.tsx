@@ -52,6 +52,8 @@ import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from './RoomChatPanel'
 import { GameChatScreen } from './game-chat/GameChatScreen'
+import { ChatView } from './ChatView'
+import { useDatingUnread } from './game-hub/useDatingUnread'
 import { GameContactsPanel } from './game-chat/GameContactsPanel'
 import { useGameChatStore } from '@/store/game-chat'
 import { CoinStoreSheet } from './CoinStoreSheet'
@@ -149,6 +151,11 @@ export function SpinBottleRoom({
   // to the Chats experience (contacts stay visible on the left); below
   // 1024px web the in-room chat panel remains the chat surface.
   const isDeskShell = useIsDesktopShell() === true
+  // Game Hub PRD §41/§53: lightweight poll for unread DATING messages —
+  // the banner must not interrupt gameplay; tap Reply → dating chat while
+  // the room runtime keeps running underneath (§44: nothing is reset).
+  const datingUnread = useDatingUnread(true)
+  const [datingBannerHidden, setDatingBannerHidden] = useState(false)
   const kbHeightRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
@@ -742,6 +749,53 @@ export function SpinBottleRoom({
             {/* Event banner */}
             <RoomEventBanner event={tonightEvent()} />
 
+            {/* Game Hub PRD §41/§53 — non-blocking DATING message banner.
+                The game continues underneath; Reply opens the dating chat
+                (web: inside the right chat panel / desktop Chats page,
+                mobile: full screen with back to THIS live room, §82). */}
+            {datingUnread && !datingBannerHidden && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mx-2 mb-2 rounded-2xl border border-[var(--qk-accent)]/30 bg-[var(--qk-card)]/90 backdrop-blur px-3 py-2.5 flex items-center gap-3"
+                data-testid="dating-message-banner"
+              >
+                <span className="shrink-0 text-lg" aria-hidden>💗</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black text-white truncate">
+                    New Dating Message — {datingUnread.name}
+                  </p>
+                  <p className="text-[11px] text-white/60 truncate">{datingUnread.preview}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const qk = useQuickyStore.getState()
+                    qk.clearUnreadForMatch(datingUnread.matchId)
+                    qk.setActiveMatchId(datingUnread.matchId)
+                    if (isNativeCapacitor) {
+                      qk.openChat(datingUnread.matchId, 'spin-bottle-room')
+                    } else if (isDeskShell) {
+                      qk.openChats('dating')
+                    } else {
+                      qk.setRoomChatPanel('dating')
+                    }
+                  }}
+                  className="shrink-0 rounded-full bg-coral-gradient px-3.5 py-1.5 text-[11px] font-black text-white active:scale-95 transition-transform"
+                  data-testid="dating-banner-reply"
+                >
+                  Reply
+                </button>
+                <button
+                  onClick={() => setDatingBannerHidden(true)}
+                  className="shrink-0 text-white/40 hover:text-white/80 text-xs px-1"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </motion.div>
+            )}
+
             {/* Wooden game stage — --seat-w is table-relative, set from the
                 measured stage box by the geometry engine (v2.1 §18-§25).
                 --duel-top anchors the response panel BELOW the center cards;
@@ -1025,6 +1079,8 @@ export function SpinBottleRoom({
                 <GameContactsPanel />
               ) : !isNativeCapacitor && roomChatPanel === 'personal' ? (
                 <GameChatScreen embedded onBack={() => setRoomChatPanel('contacts')} />
+              ) : !isNativeCapacitor && roomChatPanel === 'dating' ? (
+                <ChatView embedded onBack={() => setRoomChatPanel('contacts')} />
               ) : null
             }
             mentionFlashId={mentionFlashId}

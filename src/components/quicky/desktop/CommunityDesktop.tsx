@@ -20,6 +20,7 @@ import {
   Film,
   Loader2,
   Plus,
+  Gamepad2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
@@ -192,12 +193,20 @@ export function CommunityDesktop() {
           >
             <Film className="w-4 h-4" /> Share a Roll
           </button>
+          {/* Game Hub PRD §5/§6/§91: Post + animated Games entry */}
           <button
             onClick={() => setComposerMode('post')}
             className="flex items-center gap-1.5 bg-coral-gradient glow-coral rounded-full px-5 py-2.5 text-sm font-bold active:scale-95 transition-transform"
-            data-testid="community-new-post"
+            data-testid="community-post"
           >
-            <ImagePlus className="w-4 h-4" /> New Post
+            <ImagePlus className="w-4 h-4" /> Post
+          </button>
+          <button
+            onClick={() => useQuickyStore.getState().setView('games')}
+            className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
+            data-testid="community-games"
+          >
+            <Gamepad2 className="w-4 h-4 text-[var(--qk-accent)] qk-icon-float" aria-hidden /> Games
           </button>
         </div>
       </header>

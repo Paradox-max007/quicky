@@ -19,7 +19,7 @@ const NAV: { id: AppView; label: string; active: AppView[]; testId: string }[] =
   { id: 'discovery', label: 'Discover', active: ['discovery'], testId: 'topnav-discover' },
   { id: 'likes-you', label: 'Likes', active: ['likes-you'], testId: 'topnav-likes' },
   { id: 'community', label: 'Community', active: ['community'], testId: 'topnav-community' },
-  { id: 'games', label: 'Games', active: ['games', 'spin-bottle'], testId: 'topnav-games' },
+  { id: 'games', label: 'Games', active: ['games', 'spin-bottle', 'game-landing'], testId: 'topnav-games' },
   { id: 'chats', label: 'Chats', active: ['chats', 'matches', 'chat'], testId: 'topnav-chats' },
 ]
 

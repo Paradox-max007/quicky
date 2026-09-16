@@ -16,7 +16,7 @@ import {
   ImagePlus,
   Film,
   Loader2,
-  Dices,
+  Gamepad2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
@@ -191,32 +191,30 @@ export function CommunityScreen() {
       {/* Header */}
       <header className="shrink-0 safe-area-top px-5 pt-3 pb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Community</h1>
-        <button
-          onClick={() => setComposerMode('post')}
-          className="flex items-center gap-1.5 bg-coral-gradient glow-coral rounded-full px-4 py-2 text-sm font-semibold active:scale-95 transition-transform"
-        >
-          <ImagePlus className="w-4 h-4" /> New Post
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setComposerMode('post')}
+            className="flex items-center gap-1.5 bg-coral-gradient glow-coral rounded-full px-4 py-2 text-sm font-semibold active:scale-95 transition-transform"
+            data-testid="community-post"
+          >
+            <ImagePlus className="w-4 h-4" /> Post
+          </button>
+          {/* Game Hub PRD §5/§6/§7: compact Games entry with an animated icon
+              (the ICON floats, the button itself stays still, §6) */}
+          <button
+            onClick={() => useQuickyStore.getState().setView('games')}
+            className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/10 active:scale-95 transition-transform"
+            data-testid="community-games"
+          >
+            <Gamepad2 className="w-4 h-4 text-[var(--qk-accent)] qk-icon-float" aria-hidden /> Games
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pb-4">
-        {/* ── Spin the Bottle promo card ───────────────────────────── */}
-        <button
-          onClick={() => useQuickyStore.getState().setView('spin-bottle')}
-          className="w-[calc(100%-2rem)] mx-4 mt-3 mb-2 relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--qk-accent)] to-[var(--qk-purple)] glow-coral active:scale-[0.99] transition-transform"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_50%)]" />
-          <div className="relative flex items-center gap-3 p-4">
-            <div className="w-12 h-12 rounded-2xl bg-black/25 flex items-center justify-center">
-              <Dices className="w-6 h-6 text-white" />
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-black text-white">Spin the Bottle</p>
-              <p className="text-[11px] text-white/80">Up to 12 players · system-controlled spin</p>
-            </div>
-            <span className="text-[10px] font-bold bg-white/25 text-white rounded-full px-2.5 py-1">PLAY</span>
-          </div>
-        </button>
+        {/* Game Hub PRD §4: the Spin the Bottle promo banner is GONE —
+            games are reachable through the animated Games entry above and
+            the dedicated Games screen. */}
 
         {/* ── Rolls tray ─────────────────────────────────────────────── */}
         <div className="px-4 pt-2 pb-3 border-b border-white/5">

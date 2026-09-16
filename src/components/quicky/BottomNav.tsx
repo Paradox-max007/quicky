@@ -10,7 +10,7 @@ const TABS: { id: AppView; label: string; icon: typeof Heart }[] = [
   { id: 'discovery', label: 'Discover', icon: Flame },
   { id: 'likes-you', label: 'Likes', icon: Sparkles },
   { id: 'community', label: 'Community', icon: UsersRound },
-  { id: 'matches', label: 'Chats', icon: MessageCircle },
+  { id: 'chats', label: 'Chats', icon: MessageCircle },
   { id: 'profile-me', label: 'Me', icon: User },
 ]
 
@@ -27,7 +27,11 @@ export function BottomNav() {
         <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
         {TABS.map((tab) => {
           const Icon = tab.icon
-          const active = view === tab.id
+          // Chats tab stays lit across the whole chat stack (§29)
+          const active =
+            tab.id === 'chats'
+              ? view === 'chats' || view === 'chat' || view === 'matches'
+              : view === tab.id
           return (
             <button
               key={tab.id}
@@ -45,7 +49,7 @@ export function BottomNav() {
                   <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[var(--qk-accent)]" />
                 )}
                 {/* Unread messages badge on the Chats tab */}
-                {tab.id === 'matches' && totalUnread > 0 && (
+                {tab.id === 'chats' && totalUnread > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[var(--qk-accent)] flex items-center justify-center text-[9px] font-bold text-white border border-[var(--qk-bg)]">
                     {totalUnread > 99 ? '99+' : totalUnread}
                   </span>

@@ -1,0 +1,44 @@
+'use client'
+
+// Quicky — GAMES CATALOG HOOK (Game Hub PRD §8-§11/§79)
+// One fetch feeds the Games screen, the desktop hub and the game landings.
+// Loading skeleton → content, or Error + Retry (§79: never a blank screen).
+
+import { useCallback, useEffect, useState } from 'react'
+import { api } from '@/lib/quicky/api-client'
+import type { GameDef } from './types'
+
+export function useGames() {
+  const [games, setGames] = useState<GameDef[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  const load = useCallback(async () => {
+    // retry path — invoked from click handlers only
+    setFailed(false)
+    try {
+      const res = await api.games.list()
+      setGames(res.games ?? [])
+    } catch {
+      setFailed(true)
+    }
+  }, [])
+
+  // Initial fetch: the effect never calls setState synchronously (react-hooks
+  // v6 set-state-in-effect) — the fetch resolves first, then state updates.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await api.games.list()
+        if (!cancelled) setGames(res.games ?? [])
+      } catch {
+        if (!cancelled) setFailed(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return { games, loaded: games !== null, failed, retry: load }
+}

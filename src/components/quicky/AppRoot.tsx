@@ -30,6 +30,8 @@ import { CommunityScreen } from './CommunityScreen'
 import { ProfileView } from './ProfileView'
 import { SpinBottleLanding } from './SpinBottleLanding'
 import { GamesScreen } from './GamesScreen'
+import { GameLanding } from './game-hub/GameLanding'
+import { UnifiedChatsScreen } from './game-hub/UnifiedChatsScreen'
 import { SpinBottleRoom } from './SpinBottleRoom'
 import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { AdminRulesScreen } from './AdminRulesScreen'
@@ -71,8 +73,9 @@ function shellFor(view: AppView): string {
     case 'onboarding':
       return 'md:max-w-lg'
     case 'spin-bottle':
-      // Web: the Spin the Bottle landing is a full-width immersive page
-      // (hero + rules + game chats across the whole stage, like the room).
+    case 'game-landing':
+      // Web: game landings are full-width immersive pages (Game Hub PRD §61
+      // reference translation + the approved Spin the Bottle stage).
       return ''
     case 'premium':
       return 'md:max-w-2xl'
@@ -125,7 +128,9 @@ export function AppRoot() {
     void import('@capacitor/app').then(({ App }) =>
       App.addListener('backButton', () => {
         const { view: v, setView: sv } = useQuickyStore.getState()
-        if (v === 'spin-bottle') sv('community')
+        if (v === 'game-landing') sv('games')
+        else if (v === 'chats') sv('community')
+        else if (v === 'spin-bottle') sv('community')
         else if (v === 'spin-bottle-room') {
           useQuickyStore.getState().setSpinBottleRoomId(null)
           sv('spin-bottle')
@@ -271,13 +276,9 @@ export function AppRoot() {
     }
   }, [view])
 
-  // Web Premium PRD §57: "Chats" is a desktop (≥1024px) experience — the
-  // two-pane GameChatShell. If the viewport drops below 1024px (or the app
-  // runs inside Capacitor), fall back to the mobile dating chat list instead
-  // of stranding the user on a page without its navigation.
-  useEffect(() => {
-    if (isDeskShell === false && view === 'chats') setView('matches')
-  }, [isDeskShell, view, setView])
+  // Game Hub PRD §29: the unified Chat Center works on EVERY width — below
+  // 1024px it renders as the mobile UnifiedChatsScreen (tabs → conversation),
+  // at ≥1024px as the desktop two-pane shell. No fallback redirect needed.
 
   // Keep the unread-messages badge fresh across all tabs
   useEffect(() => {
@@ -380,6 +381,7 @@ export function AppRoot() {
               />
             )
           })()}
+          {view === 'game-landing' && <GameLanding />}
           {view === 'admin-gifts' && <AdminGiftsScreen />}
           {view === 'admin-rules' && <AdminRulesScreen />}
           {view === 'admin-stickers' && <AdminStickersScreen />}
@@ -388,12 +390,12 @@ export function AppRoot() {
           {/* Web Premium §39/§9: mobile fallbacks — on the desktop shell the
               pages render inside DesktopHome (Games hub / Chats shell). */}
           {view === 'games' && !useDesk && <GamesScreen />}
-          {view === 'chats' && !useDesk && <ChatList />}
+          {view === 'chats' && !useDesk && <UnifiedChatsScreen />}
           </div>
         </div>
         {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.
             Centered dock on desktop, full-width on mobile (unchanged). */}
-        {!useDesk && ['discovery', 'matches', 'likes-you', 'community', 'profile-me'].includes(view) && (
+        {!useDesk && ['discovery', 'matches', 'chats', 'likes-you', 'community', 'profile-me'].includes(view) && (
           <div className="shrink-0 w-full flex justify-center">
             <div className="w-full md:max-w-2xl">
               <BottomNav />

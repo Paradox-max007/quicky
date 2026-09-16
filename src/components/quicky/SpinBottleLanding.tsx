@@ -13,11 +13,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Sparkles, Gamepad2, Dices, Heart, Coins, Gift } from 'lucide-react'
+import { ArrowLeft, Sparkles, Gamepad2, Dices, Heart, Coins, Gift, Trophy } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { HowItWorksRules } from './HowItWorksRules'
+import { ChemistryIndicator } from './game-hub/ChemistryIndicator'
 import { GameChatList } from './game-chat/GameChatList'
 
 type Stats = {
@@ -28,6 +29,12 @@ type Stats = {
   giftsReceived: number
   coins: number
   level: number
+  // Game Hub PRD §59/§60/§74 extensions
+  quickyPoints?: number
+  streak?: { current: number; longest: number }
+  league?: { name: string; minimumPoints: number; nextName: string | null; nextMinimumPoints: number | null } | null
+  chemistry?: { overall: number; datingContribution: number; gameContribution: number }
+  dating?: { likesReceived: number; matches: number }
 }
 
 // v3 §10 — bigger pool, sequentially cycled.
@@ -49,9 +56,12 @@ const MSG_VISIBLE_MS = 1700
 export function SpinBottleLanding({
   onClose,
   onJoined,
+  backLabel = 'Back to Community',
 }: {
   onClose: () => void
   onJoined: (roomId: string) => void
+  /** Game Hub PRD §12: when opened from the Games hub the back goes to Games. */
+  backLabel?: string
 }) {
   const user = useQuickyStore((s) => s.user)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -133,7 +143,7 @@ export function SpinBottleLanding({
         <button
           onClick={onClose}
           className="p-2 rounded-full hover:bg-white/10"
-          aria-label="Back to Community"
+          aria-label={backLabel}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -184,6 +194,36 @@ export function SpinBottleLanding({
             >
               Play Now
             </button>
+
+            {/* §91: the supported mode is visible right under Play Now */}
+            <p className="text-[11px] font-semibold text-white/50 -mt-1">
+              👥 Group · 2–12 players
+            </p>
+
+            {/* §60/§74 — YOUR PROGRESS: League / Streak / Chemistry / Points.
+                Real Quicky progression data, never placeholder numbers. */}
+            {stats && (stats.league || stats.chemistry) && (
+              <div className="w-full rounded-3xl border border-white/8 bg-[var(--qk-card)]/60 p-5 flex flex-col gap-3.5" data-testid="spin-landing-progress">
+                <p className="text-[11px] font-black tracking-[0.18em] text-white/40 uppercase">Your progress</p>
+                {stats.league && (
+                  <div className="flex items-center gap-2 text-sm font-bold">
+                    <Trophy className="w-4 h-4 text-[var(--qk-gold)]" aria-hidden />
+                    {stats.league.name} League
+                    {stats.league.nextName && stats.league.nextMinimumPoints != null && (
+                      <span className="ml-auto text-[11px] font-medium text-white/40">
+                        {Math.max(0, stats.league.nextMinimumPoints - (stats.quickyPoints ?? 0)).toLocaleString('en-US')} to {stats.league.nextName}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {stats.chemistry && <ChemistryIndicator value={stats.chemistry.overall} />}
+                <div className="flex items-center gap-4 text-xs text-white/55">
+                  <span>🔥 {stats.streak?.current ?? 0}-day streak</span>
+                  <span>✨ {(stats.quickyPoints ?? 0).toLocaleString('en-US')} points</span>
+                  <span>💗 {stats.dating?.likesReceived ?? 0} likes</span>
+                </div>
+              </div>
+            )}
 
             {/* Lifecycle PRD §38-§53: ONE admin-managed rule at a time */}
             <HowItWorksRules />

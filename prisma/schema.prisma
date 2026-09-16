@@ -981,3 +981,31 @@ model AdminAuditLog {
   @@index([entityType, entityId])
   @@index([adminId, createdAt])
 }
+
+// ═══ GAME HUB — game catalog (Game Hub PRD §11/§71) ════════════════════════
+// One admin-configurable row per game. The Games grid and every game landing
+// page render FROM this table — cards are never hardcoded into a page (§11).
+//   supportedModes: GROUP | TWO_PLAYER | BOTH        (PRD §3)
+//   isPlayable:     a live room implementation exists (honest "LIVE" badge,
+//                   honest Play Now; §59 forbids fake statuses)
+//   isActive:       visible on the Games screen at all (§70 empty state)
+model GameDefinition {
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  shortDescription String   @default("")
+  description      String   @default("")
+  icon             String   @default("🎲")
+  artwork          String   @default("coral")
+  supportedModes   String   @default("GROUP")
+  minPlayers       Int      @default(2)
+  maxPlayers       Int      @default(12)
+  isPlayable       Boolean  @default(false)
+  isFeatured       Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}

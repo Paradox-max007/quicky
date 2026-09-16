@@ -195,6 +195,10 @@ export const api = {
   },
   unmatch: (matchId: string) =>
     jsonFetch(`/api/quicky/matches/${matchId}/unmatch`, { method: 'POST' }),
+  games: {
+    /** Game Hub PRD §11: the DB-driven game catalog. */
+    list: () => jsonFetch<{ games: { id: string; slug: string; name: string; shortDescription: string; description: string; icon: string; artwork: string; supportedModes: string; minPlayers: number; maxPlayers: number; isPlayable: boolean; isFeatured: boolean; sortOrder: number }[] }>('/api/quicky/games'),
+  },
   spinBottle: {
     landing: () =>
       jsonFetch<{

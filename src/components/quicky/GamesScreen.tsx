@@ -1,124 +1,98 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { Gamepad2, Dices, Sparkles, Users, CircleDot as RouletteIcon } from 'lucide-react'
+// Quicky — MOBILE GAMES HUB (Game Hub PRD §8-§11/§65/§68-§70)
+// A dedicated full screen of game cards rendered FROM the GameDefinition
+// catalog (never hardcoded, §11). Exactly 2 cards per row (§9), the whole
+// card tappable (§69), honest LIVE / SOON statuses (§59), real empty state
+// (§70). Tap a card → that game's landing page.
 
-// Placeholder screen for the upcoming community games section
-// (spin the bottle, roulette, ludo, ...). Real gameplay lands later.
+import { motion } from 'framer-motion'
+import { Sparkles } from 'lucide-react'
+import { useQuickyStore } from '@/store/quicky'
+import { useGames } from './game-hub/useGames'
+import { GameCard } from './game-hub/GameCard'
+
 export function GamesScreen() {
-  const games = [
-    { icon: Dices, name: 'Spin the Bottle', color: 'var(--qk-accent)' },
-    { icon: RouletteIcon, name: 'Roulette', color: 'var(--qk-gold)' },
-    { icon: Users, name: 'Ludo', color: 'var(--qk-purple)' },
-  ]
+  const setView = useQuickyStore((s) => s.setView)
+  const openGameLanding = useQuickyStore((s) => s.openGameLanding)
+  const { games, loaded, failed, retry } = useGames()
+
+  const open = (slug: string) => openGameLanding(slug)
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">
-      {/* Animated glow blobs */}
+      {/* Ambient glow blobs — cheap, slow, pointer-safe */}
       <motion.div
-        className="absolute -top-20 -left-20 w-64 h-64 rounded-full bg-[var(--qk-accent)]/20 blur-3xl"
+        className="pointer-events-none absolute -top-20 -left-20 w-64 h-64 rounded-full bg-[var(--qk-accent)]/15 blur-3xl"
         animate={{ x: [0, 30, 0], y: [0, 20, 0] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+        aria-hidden
       />
       <motion.div
-        className="absolute -bottom-24 -right-20 w-72 h-72 rounded-full bg-[var(--qk-purple)]/20 blur-3xl"
+        className="pointer-events-none absolute -bottom-24 -right-20 w-72 h-72 rounded-full bg-[var(--qk-purple)]/15 blur-3xl"
         animate={{ x: [0, -30, 0], y: [0, -20, 0] }}
-        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
+        aria-hidden
       />
 
-      {/* Floating sparkles */}
-      {Array.from({ length: 10 }).map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute pointer-events-none"
-          style={{ left: `${8 + (i * 9) % 84}%`, top: `${12 + ((i * 37) % 70)}%` }}
-          animate={{ y: [0, -14, 0], opacity: [0.15, 0.6, 0.15] }}
-          transition={{ duration: 3 + (i % 4), repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
-        >
-          <Sparkles className="w-4 h-4 text-white" />
-        </motion.div>
-      ))}
-
-      <header className="shrink-0 px-5 pt-3 pb-3">
+      <header className="shrink-0 safe-area-top px-5 pt-3 pb-3 relative z-10">
         <h1 className="text-2xl font-bold tracking-tight">Games</h1>
+        <p className="text-xs text-white/50 mt-0.5 flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-[var(--qk-gold)]" aria-hidden />
+          PLAY &amp; CONNECT
+        </p>
       </header>
 
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-8 relative">
-        {/* Bouncing gamepad hero */}
-        <motion.div
-          initial={{ scale: 0, rotate: -20 }}
-          animate={{ scale: 1, rotate: 0 }}
-          transition={{ type: 'spring', stiffness: 200, damping: 14 }}
-          className="relative mb-6"
-        >
-          <motion.div
-            animate={{ y: [0, -10, 0], rotate: [-4, 4, -4] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[var(--qk-accent)] to-[var(--qk-purple)] flex items-center justify-center shadow-2xl"
-          >
-            <Gamepad2 className="w-12 h-12 text-white" strokeWidth={1.75} />
-          </motion.div>
-          {/* Pulsing ring */}
-          <motion.div
-            className="absolute inset-0 rounded-3xl border-2 border-[var(--qk-accent)]/50"
-            animate={{ scale: [1, 1.35], opacity: [0.6, 0] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
-          />
-        </motion.div>
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 pb-6 relative z-10">
+        {/* Loading skeleton (§79) */}
+        {!loaded && !failed && (
+          <div className="grid grid-cols-2 gap-3" data-testid="games-skeleton">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-3xl border border-white/8 bg-white/5 overflow-hidden animate-pulse">
+                <div className="aspect-[4/3] bg-white/8" />
+                <div className="p-3 flex flex-col gap-2">
+                  <div className="h-3 w-2/3 rounded bg-white/10" />
+                  <div className="h-2.5 w-1/2 rounded bg-white/8" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
-        <motion.h2
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="text-2xl font-bold"
-        >
-          Community Games
-        </motion.h2>
-        <motion.p
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="text-white/60 text-sm mt-1.5 max-w-[260px]"
-        >
-          Play, match and connect with others in real time. Launching soon.
-        </motion.p>
-
-        {/* Upcoming games teaser */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="mt-8 flex gap-3"
-        >
-          {games.map((g, i) => (
-            <motion.div
-              key={g.name}
-              animate={{ y: [0, -6, 0] }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
-              className="flex flex-col items-center gap-1.5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 backdrop-blur-sm"
+        {/* Error + retry (§79) */}
+        {failed && loaded === false && (
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-8">
+            <span className="text-4xl" aria-hidden>🎮</span>
+            <p className="text-white/60 text-sm">We couldn&apos;t load the games.</p>
+            <button
+              onClick={() => void retry()}
+              className="text-sm font-bold text-[var(--qk-accent)] px-5 py-2.5 rounded-full border border-[var(--qk-accent)]/30"
+              data-testid="games-retry"
             >
-              <g.icon className="w-6 h-6" style={{ color: g.color }} />
-              <span className="text-[10px] font-medium text-white/70 whitespace-nowrap">{g.name}</span>
-            </motion.div>
-          ))}
-        </motion.div>
+              Try again
+            </button>
+          </div>
+        )}
 
-        {/* Shimmering "coming soon" pill */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.55 }}
-          className="mt-8 relative overflow-hidden rounded-full border border-[var(--qk-accent)]/40 bg-[var(--qk-accent)]/10 px-5 py-2"
-        >
-          <motion.div
-            className="absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/25 to-transparent -skew-x-12"
-            animate={{ x: ['-80px', '260px'] }}
-            transition={{ duration: 1.8, repeat: Infinity, repeatDelay: 1, ease: 'easeInOut' }}
-          />
-          <span className="relative text-xs font-semibold tracking-wide text-[var(--qk-accent)] uppercase">
-            Launching Soon
-          </span>
-        </motion.div>
+        {/* Grid — exactly 2 per row on mobile (§9) */}
+        {loaded && games && games.length > 0 && (
+          <div className="grid grid-cols-2 gap-3" data-testid="games-grid">
+            {games.map((g, i) => (
+              <GameCard key={g.id} game={g} onOpen={open} index={i} testId={`game-card-${g.slug}`} />
+            ))}
+          </div>
+        )}
+
+        {/* Empty state (§70) */}
+        {loaded && games && games.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-center px-8">
+            <span className="text-4xl" aria-hidden>🎮</span>
+            <p className="font-bold">More games are coming soon.</p>
+            <p className="text-white/55 text-xs leading-relaxed">
+              Check back soon for new ways to play.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
