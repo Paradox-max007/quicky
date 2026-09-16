@@ -5,7 +5,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { INTEREST_TAGS, PROFILE_PROMPTS, EDUCATION_OPTIONS, LIFESTYLE_OPTIONS } from '@/lib/quicky/constants'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, Plus, X, Calendar } from 'lucide-react'
+import { ArrowLeft, Check, Plus, X, Calendar, Ruler } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Step = 'basics' | 'bio' | 'interests' | 'prompts'
@@ -243,22 +243,41 @@ export function EditProfileScreen() {
               />
             </Field>
             <Field label="Height">
-              <div className="flex items-center gap-3">
-                <select
-                  value={htCm ?? ""}
-                  onChange={(e) => setHtCm(e.target.value ? Number(e.target.value) : null)}
-                  className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base focus:outline-none focus:border-[var(--qk-accent)] [color-scheme:dark]"
-                >
-                  <option value="">Prefer not to say</option>
-                  {Array.from({ length: 71 }, (_, i) => 140 + i).map((cm) => (
-                    <option key={cm} value={cm}>{cm} cm</option>
-                  ))}
-                </select>
-                {htCm ? (
-                  <span className="text-xs text-white/50 whitespace-nowrap">
-                    {Math.floor(htCm / 30.48)}′{Math.round((htCm / 2.54) % 12)}″
+              <div className="bg-white/5 rounded-2xl p-4 border border-white/8">
+                <div className="flex items-center gap-2 mb-3">
+                  <Ruler className="w-4 h-4 text-[var(--qk-accent-light)]" />
+                  <h3 className="text-sm font-semibold">Your height</h3>
+                  <span className="ml-auto text-sm font-bold tabular-nums">
+                    {htCm ? `${htCm} cm` : '—'}
                   </span>
-                ) : null}
+                  {htCm ? (
+                    <span className="text-xs text-white/50 whitespace-nowrap">{heightImperial(htCm)}</span>
+                  ) : null}
+                </div>
+                <input
+                  type="range"
+                  min={140}
+                  max={210}
+                  step={1}
+                  value={htCm ?? 175}
+                  disabled={!htCm}
+                  onChange={(e) => setHtCm(Number(e.target.value))}
+                  className={cn('w-full accent-[var(--qk-accent)]', !htCm && 'opacity-40')}
+                  aria-label="Height in centimeters"
+                  data-testid="height-slider"
+                />
+                <div className="flex items-center justify-between mt-1.5">
+                  <span className="text-[10px] text-white/30">140 cm</span>
+                  <button
+                    type="button"
+                    onClick={() => setHtCm(htCm ? null : 175)}
+                    className="text-[10px] font-semibold text-white/50 hover:text-white transition-colors"
+                    data-testid="height-toggle"
+                  >
+                    {htCm ? 'Prefer not to say' : 'Set height'}
+                  </button>
+                  <span className="text-[10px] text-white/30">210 cm</span>
+                </div>
               </div>
             </Field>
 
@@ -466,4 +485,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </div>
   )
+}
+
+function heightImperial(cm: number): string {
+  const totalIn = Math.round(cm / 2.54)
+  return `${Math.floor(totalIn / 12)}′${totalIn % 12}″`
 }

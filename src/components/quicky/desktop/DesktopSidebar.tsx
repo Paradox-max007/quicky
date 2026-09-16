@@ -113,6 +113,13 @@ export function DesktopSidebar({ data, loaded }: { data: DashboardData | null; l
           <>
             <StatRow icon="🔥" label={stats.streak ? 'Day streak' : 'No streak yet'} value={stats.streak ? `${stats.streak.current}` : '—'} accent={!!stats.streak && stats.streak.current > 0} />
             <StatRow icon="✨" label="Quicky Points" value={stats.points.toLocaleString()} />
+            <StatRow icon="💫" label="Chemistry" value={`${stats.chemistry}%`} accent />
+            <div className="px-1 pt-1 pb-0.5" data-testid="sidebar-chemistry">
+              <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
+                <div className="h-full rounded-full bg-coral-gradient transition-all" style={{ width: `${Math.max(3, stats.chemistry)}%` }} />
+              </div>
+              <p className="text-[10px] text-white/35 mt-1">Dating + games · last 30 days</p>
+            </div>
             {stats.league && (
               <div className="px-1 pt-1.5">
                 <div className="flex items-center justify-between text-[11px] mb-1">

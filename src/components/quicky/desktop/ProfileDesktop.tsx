@@ -6,7 +6,7 @@
 // never one giant stretched mobile card. Profile completion reuses the REAL
 // field checks (§36/§59).
 
-import { Crown, BadgeCheck, PencilLine, MapPin, Sparkles, Trophy } from 'lucide-react'
+import { Crown, BadgeCheck, PencilLine, MapPin, Sparkles, Trophy, Ruler, GraduationCap, Wine } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { useDashboard } from './useDashboard'
 import { getScoreTier } from '@/lib/quicky/constants'
@@ -93,6 +93,28 @@ export function ProfileDesktop() {
                     {t.replace(/-/g, ' ')}
                   </span>
                 ))}
+              </div>
+            </div>
+          )}
+          {(user?.heightCm || user?.education || user?.lifestyle) && (
+            <div className="mt-5">
+              <SectionHeader title="The details" className="mb-2.5" />
+              <div className="flex flex-wrap gap-2">
+                {user?.heightCm ? (
+                  <span className="text-[11px] font-semibold bg-white/8 text-white/75 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                    <Ruler className="w-3 h-3 text-[var(--qk-accent)]" /> {user.heightCm} cm
+                  </span>
+                ) : null}
+                {user?.education ? (
+                  <span className="text-[11px] font-semibold bg-white/8 text-white/75 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                    <GraduationCap className="w-3 h-3 text-[var(--qk-accent)]" /> {user.education}
+                  </span>
+                ) : null}
+                {user?.lifestyle ? (
+                  <span className="text-[11px] font-semibold bg-white/8 text-white/75 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                    <Wine className="w-3 h-3 text-[var(--qk-accent)]" /> {user.lifestyle}
+                  </span>
+                ) : null}
               </div>
             </div>
           )}

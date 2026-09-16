@@ -120,35 +120,39 @@ export function PremiumView() {
       {!isPremium && plans.length > 0 && (
         <div className="px-4 pb-3">
           <h2 className="text-xs font-semibold text-white/50 uppercase tracking-wide mb-2 px-1">Choose a plan</h2>
-          <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2" data-testid="premium-plans-grid">
             {plans.map((p) => (
               <button
                 key={p.id}
                 onClick={() => setSelectedPlan(p.id)}
                 className={cn(
-                  'flex items-center justify-between p-3 rounded-2xl border-2 transition-all text-left',
+                  'flex flex-col items-start gap-2 p-3.5 rounded-2xl border-2 transition-all text-left',
                   selectedPlan === p.id
                     ? 'border-[var(--qk-gold)] bg-[var(--qk-gold)]/10 glow-gold'
-                    : 'border-white/10 bg-white/5'
+                    : 'border-white/10 bg-white/5 hover:bg-white/8'
                 )}
+                data-testid={`premium-plan-${p.id}`}
+                aria-pressed={selectedPlan === p.id}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between w-full">
                   <div
                     className={cn(
-                      'w-5 h-5 rounded-full border-2 flex items-center justify-center',
+                      'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0',
                       selectedPlan === p.id ? 'border-[var(--qk-gold)] bg-[var(--qk-gold)]' : 'border-white/30'
                     )}
                   >
                     {selectedPlan === p.id && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold">{p.label}</p>
-                    {p.saveText && <p className="text-xs text-[var(--qk-gold)]">{p.saveText}</p>}
-                  </div>
+                  {p.saveText && (
+                    <span className="text-[9px] font-bold text-[var(--qk-gold)] bg-[var(--qk-gold)]/15 rounded-full px-2 py-0.5">
+                      {p.saveText}
+                    </span>
+                  )}
                 </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold">${p.price}</p>
-                  <p className="text-xs text-white/50">{p.period}</p>
+                <p className="text-sm font-semibold leading-tight">{p.label}</p>
+                <div>
+                  <p className="text-xl font-extrabold tabular-nums">${p.price}</p>
+                  <p className="text-[11px] text-white/50">{p.period}</p>
                 </div>
               </button>
             ))}
@@ -158,11 +162,12 @@ export function PremiumView() {
 
       {/* CTA */}
       {!isPremium ? (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 flex flex-col items-center">
           <button
             onClick={subscribe}
             disabled={subscribing}
-            className="w-full md:w-auto md:px-12 bg-gold-gradient glow-gold text-black rounded-2xl py-3.5 font-bold text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+            className="w-full max-w-xs sm:w-auto sm:px-16 bg-gold-gradient glow-gold text-black rounded-2xl py-3.5 font-bold text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+            data-testid="premium-upgrade"
           >
             <Crown className="w-5 h-5" fill="currentColor" stroke="none" />
             {subscribing ? 'Processing...' : 'Upgrade now'}
@@ -172,7 +177,7 @@ export function PremiumView() {
           </p>
         </div>
       ) : (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 flex flex-col items-center">
           <div className="bg-white/5 border border-white/8 rounded-2xl p-4 mb-3">
             <div className="flex items-center justify-between mb-1">
               <p className="text-sm font-semibold">Active Subscription</p>
@@ -189,7 +194,7 @@ export function PremiumView() {
           </div>
           <button
             onClick={cancel}
-            className="w-full md:w-auto md:px-8 bg-white/5 border border-white/10 rounded-2xl py-3 font-medium text-sm text-white/60 hover:bg-white/10"
+            className="w-full max-w-xs sm:w-auto sm:px-10 bg-white/5 border border-white/10 rounded-2xl py-3 font-medium text-sm text-white/60 hover:bg-white/10"
           >
             Cancel Premium
           </button>

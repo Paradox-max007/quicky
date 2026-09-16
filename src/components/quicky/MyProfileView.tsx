@@ -5,7 +5,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
-import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Loader2, Pencil, Trash2 } from 'lucide-react'
+import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Loader2, Pencil, Trash2, Ruler, GraduationCap, Wine } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { ProfilePostsGrid } from './ProfilePostsGrid'
 import { cn } from '@/lib/utils'
@@ -486,6 +486,31 @@ export function MyProfileView() {
         <div className="px-4 pb-3">
           <h3 className="text-xs font-semibold text-white/50 mb-1.5 uppercase tracking-wide">Bio</h3>
           <p className="text-sm text-white/80 text-pretty">{profile.bio}</p>
+        </div>
+      )}
+
+      {/* Details — height/education/lifestyle (Task 8: saved values reflect
+          here exactly as they do on discovery cards) */}
+      {(profile.heightCm || profile.education || profile.lifestyle) && (
+        <div className="px-4 pb-3">
+          <h3 className="text-xs font-semibold text-white/50 mb-1.5 uppercase tracking-wide">Details</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {profile.heightCm ? (
+              <span className="text-xs font-medium bg-white/8 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                <Ruler className="w-3 h-3 text-[var(--qk-accent)]" /> {profile.heightCm} cm
+              </span>
+            ) : null}
+            {profile.education ? (
+              <span className="text-xs font-medium bg-white/8 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                <GraduationCap className="w-3 h-3 text-[var(--qk-accent)]" /> {profile.education}
+              </span>
+            ) : null}
+            {profile.lifestyle ? (
+              <span className="text-xs font-medium bg-white/8 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                <Wine className="w-3 h-3 text-[var(--qk-accent)]" /> {profile.lifestyle}
+              </span>
+            ) : null}
+          </div>
         </div>
       )}
 

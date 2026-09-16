@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
+import { computeOverallChemistry } from '@/lib/quicky/chemistry'
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000
 
@@ -185,6 +186,16 @@ export async function GET() {
   activity.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   const recentActivity = activity.slice(0, 8)
 
+  // Chemistry: the CENTRAL engine (Game Hub PRD §16/§20) — one server-side
+  // 0-100 score from dating + game signals (30-day window). Never fabricated
+  // client-side (§20).
+  let chemistryOverall = 0
+  try {
+    chemistryOverall = (await computeOverallChemistry(uid)).overall
+  } catch {
+    chemistryOverall = 0
+  }
+
   // ─── League from real GameLeague tiers (no fabricated names, §9) ─────────
   let league: { name: string; minimumPoints: number; nextName: string | null; nextMinimumPoints: number | null } | null = null
   if (leagues.length > 0) {
@@ -214,6 +225,7 @@ export async function GET() {
       giftsReceived,
       streak: streak ? { current: streak.currentStreak, longest: streak.longestStreak } : null,
       league,
+      chemistry: chemistryOverall,
     },
     activity: recentActivity,
     live: {

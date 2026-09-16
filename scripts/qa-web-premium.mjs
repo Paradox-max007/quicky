@@ -72,7 +72,7 @@ ok('chat three-row layout: header/viewport/composer', gcs.includes('w-full h-ful
 
 // ── Pages (§19-§44/§69-§74) ─────────────────────────────────────────────────
 const community = src('components/quicky/desktop/CommunityDesktop.tsx')
-ok('community alternates media side (§20-§22/§69)', community.includes('mediaLeft = idx % 2 === 0') && community.includes('data-media-side'))
+ok('community compact instagram-style feed, media uncropped (Task 8)', community.includes('community-compact-feed') && community.includes('object-contain') && !community.includes('data-media-side'))
 ok('community details carry like/comment engagement (§23)', community.includes('likeCount') && community.includes('MessageCircle'))
 ok('community comments = premium side panel (§24)', community.includes("variant=\"panel\"") || community.includes("variant='panel'"))
 

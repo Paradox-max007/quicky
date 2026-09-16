@@ -146,19 +146,21 @@ export function CommunityDesktop() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8" data-testid="community-skeleton">
+      <div className="flex flex-col gap-5 mx-auto w-full max-w-[500px]" data-testid="community-skeleton">
         <div className="flex items-center justify-between">
           <SkeletonBlock className="h-9 w-56" />
           <SkeletonBlock className="h-10 w-32 rounded-full" />
         </div>
         {[0, 1].map((i) => (
-          <div key={i} className={cn('grid gap-6 items-center', i % 2 === 0 ? 'grid-cols-[1.15fr_1fr]' : 'grid-cols-[1fr_1.15fr]')}>
-            <SkeletonBlock className="aspect-[4/3] rounded-3xl" />
-            <div className="flex flex-col gap-3">
-              <SkeletonBlock className="h-6 w-2/5" />
-              <SkeletonBlock className="h-4 w-full" />
-              <SkeletonBlock className="h-4 w-3/5" />
-              <SkeletonBlock className="h-4 w-1/4" />
+          <div key={i} className="rounded-3xl border border-white/8 bg-[var(--qk-card)]/50 overflow-hidden">
+            <div className="flex items-center gap-2.5 px-4 py-3">
+              <SkeletonBlock className="h-9 w-9 rounded-full" />
+              <SkeletonBlock className="h-4 w-1/3" />
+            </div>
+            <SkeletonBlock className="w-full h-56" />
+            <div className="px-4 py-3 flex flex-col gap-2">
+              <SkeletonBlock className="h-5 w-24" />
+              <SkeletonBlock className="h-4 w-3/4" />
             </div>
           </div>
         ))}
@@ -202,7 +204,11 @@ export function CommunityDesktop() {
             <ImagePlus className="w-4 h-4" /> Post
           </button>
           <button
-            onClick={() => useQuickyStore.getState().setView('games')}
+            onClick={() => {
+              const st = useQuickyStore.getState()
+              st.setGamesReturnView('community')
+              st.setView('games')
+            }}
             className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10 transition-colors"
             data-testid="community-games"
           >
@@ -248,7 +254,9 @@ export function CommunityDesktop() {
         })}
       </div>
 
-      {/* ── Editorial posts — alternating MEDIA | DETAILS (§20-§22/§69) ──── */}
+      {/* ── Compact feed — Instagram-web style: small centered cards with the
+          engagement row under each post (Task 8). Media keeps its NATURAL
+          dimensions — the Task-5 no-crop rule still applies verbatim. ──── */}
       {posts.length === 0 ? (
         <EmptyState
           icon={<ImagePlus className="w-10 h-10 text-white/20" />}
@@ -261,115 +269,102 @@ export function CommunityDesktop() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-8" data-testid="community-editorial-feed">
-          {posts.map((post, idx) => {
-            const mediaLeft = idx % 2 === 0 // §69: post 1 media left, post 2 right…
-            return (
-              <article
-                key={post.id}
-                className="qk-card-hover rounded-3xl border border-white/8 bg-[var(--qk-card)]/50 overflow-hidden"
-                data-testid={`community-post-${post.id}`}
-                data-media-side={mediaLeft ? 'left' : 'right'}
-              >
-                <div className={cn('grid md:grid-cols-[1.1fr_1fr] items-stretch', !mediaLeft && 'md:grid-cols-[1fr_1.1fr]')}>
-                  {/* Media */}
+        <div className="flex flex-col gap-5 mx-auto w-full max-w-[500px]" data-testid="community-compact-feed">
+          {posts.map((post) => (
+            <article
+              key={post.id}
+              className="qk-card-hover rounded-3xl border border-white/8 bg-[var(--qk-card)]/50 overflow-hidden"
+              data-testid={`community-post-${post.id}`}
+            >
+              {/* Card header */}
+              <div className="flex items-center gap-2.5 px-4 py-3">
+                <Avatar src={post.author.avatar} name={post.author.name} size={36} onClick={() => openProfile(post.author.id, 'community')} />
+                {post.coOwner && (
+                  <Avatar src={post.coOwner.avatar} name={post.coOwner.name} size={36} onClick={() => openProfile(post.coOwner!.id, 'community')} />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <button
+                      onClick={() => openProfile(post.author.id, 'community')}
+                      className="text-sm font-semibold truncate hover:underline underline-offset-2"
+                    >
+                      {post.coOwner
+                        ? `${post.author.name ?? 'Someone'} & ${post.coOwner.name ?? 'Someone'}`
+                        : post.author.name ?? 'Someone'}
+                    </button>
+                    {post.author.isVerified && (
+                      <BadgeCheck className="w-3.5 h-3.5 text-[var(--qk-accent)] shrink-0" fill="currentColor" stroke="black" />
+                    )}
+                    {(post.author.isPremium || post.coOwner?.isPremium) && (
+                      <Crown className="w-3 h-3 text-[var(--qk-gold)] shrink-0" fill="currentColor" stroke="none" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-white/40">{timeAgo(post.createdAt)}</p>
+                </div>
+                {(post.author.id === meId || post.coOwner?.id === meId) && (
+                  <button
+                    onClick={() => setConfirmDeletePostId(post.id)}
+                    className="p-1.5 rounded-full hover:bg-white/10 text-white/40"
+                    aria-label="Delete post"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Media — natural dimensions, NEVER cropped */}
+              <div className="relative flex items-center justify-center bg-black">
+                {post.gameType ? (
                   <div
                     className={cn(
-                      'relative flex items-center justify-center bg-black',
-                      post.gameType && 'min-h-[300px]',
-                      !mediaLeft && 'md:order-2'
+                      'w-full bg-gradient-to-br px-8 py-10 flex flex-col justify-center text-white',
+                      GAME_GRADIENTS[post.gameType] ?? 'from-[var(--qk-purple)] to-[var(--qk-accent)]'
                     )}
                   >
-                    {post.gameType ? (
-                      <div
-                        className={cn(
-                          'absolute inset-0 bg-gradient-to-br p-8 flex flex-col justify-center text-white',
-                          GAME_GRADIENTS[post.gameType] ?? 'from-[var(--qk-purple)] to-[var(--qk-accent)]'
-                        )}
-                      >
-                        <p className="text-6xl">{post.emoji ?? '🎮'}</p>
-                        <h3 className="text-3xl font-black mt-4">{post.gameTitle}</h3>
-                        <p className="text-base text-white/90 mt-3 leading-relaxed">{post.gameBody}</p>
-                        <p className="text-xs uppercase tracking-[0.2em] text-white/60 mt-6">Quicky Games</p>
-                      </div>
-                    ) : (
-                      <PostMedia post={post} onDoubleTapLike={() => doubleTapLike(post)} burst={burstFor?.id === post.id ? burstFor.n : 0} />
-                    )}
+                    <p className="text-4xl">{post.emoji ?? '🎮'}</p>
+                    <h3 className="text-2xl font-black mt-2">{post.gameTitle}</h3>
+                    <p className="text-sm text-white/90 mt-1.5 leading-relaxed">{post.gameBody}</p>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/60 mt-4">Quicky Games</p>
                   </div>
+                ) : (
+                  <PostMedia post={post} onDoubleTapLike={() => doubleTapLike(post)} burst={burstFor?.id === post.id ? burstFor.n : 0} />
+                )}
+              </div>
 
-                  {/* Details (§23) */}
-                  <div className={cn('p-7 flex flex-col gap-4', !mediaLeft && 'md:order-1')}>
-                    <div className="flex items-center gap-3">
-                      <Avatar src={post.author.avatar} name={post.author.name} size={42} onClick={() => openProfile(post.author.id, 'community')} />
-                      {post.coOwner && (
-                        <Avatar src={post.coOwner.avatar} name={post.coOwner.name} size={42} onClick={() => openProfile(post.coOwner!.id, 'community')} />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <button
-                            onClick={() => openProfile(post.author.id, 'community')}
-                            className="text-sm font-semibold truncate hover:underline underline-offset-2"
-                          >
-                            {post.coOwner
-                              ? `${post.author.name ?? 'Someone'} & ${post.coOwner.name ?? 'Someone'}`
-                              : post.author.name ?? 'Someone'}
-                          </button>
-                          {post.author.isVerified && (
-                            <BadgeCheck className="w-4 h-4 text-[var(--qk-accent)] shrink-0" fill="currentColor" stroke="black" />
-                          )}
-                          {(post.author.isPremium || post.coOwner?.isPremium) && (
-                            <Crown className="w-3.5 h-3.5 text-[var(--qk-gold)] shrink-0" fill="currentColor" stroke="none" />
-                          )}
-                        </div>
-                        <p className="text-[11px] text-white/40">{timeAgo(post.createdAt)}</p>
-                      </div>
-                      {(post.author.id === meId || post.coOwner?.id === meId) && (
-                        <button
-                          onClick={() => setConfirmDeletePostId(post.id)}
-                          className="p-2 rounded-full hover:bg-white/10 text-white/40"
-                          aria-label="Delete post"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-
-                    {post.caption && (
-                      <p className="text-[15px] text-white/85 leading-relaxed">
-                        <span className="font-semibold text-white">{post.author.name ?? 'Someone'}</span> {post.caption}
-                      </p>
-                    )}
-
-                    {/* Engagement (§23): counts + controls in the details pane */}
-                    <div className="mt-auto flex items-center gap-5 pt-2">
-                      <button
-                        onClick={() => togglePostLike(post)}
-                        className="flex items-center gap-2 text-sm font-semibold text-white/85 hover:text-white transition-colors"
-                        aria-label={post.likedByMe ? 'Unlike post' : 'Like post'}
-                      >
-                        <Heart
-                          className={cn('w-6 h-6 transition-transform', post.likedByMe ? 'text-[var(--qk-accent)] scale-110' : 'text-white/85')}
-                          fill={post.likedByMe ? 'currentColor' : 'none'}
-                        />
-                        {post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}
-                      </button>
-                      {post.commentsEnabled && (
-                        <button
-                          onClick={() => setCommentsTarget(post.id)}
-                          className="flex items-center gap-2 text-sm font-semibold text-white/85 hover:text-white transition-colors"
-                          aria-label="Open comments"
-                          data-testid={`community-comments-${post.id}`}
-                        >
-                          <MessageCircle className="w-6 h-6" />
-                          {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+              {/* Engagement + caption (§23, compact) */}
+              <div className="px-4 py-3 flex flex-col gap-2">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => togglePostLike(post)}
+                    className="flex items-center gap-1.5 text-sm font-semibold text-white/85 hover:text-white transition-colors"
+                    aria-label={post.likedByMe ? 'Unlike post' : 'Like post'}
+                  >
+                    <Heart
+                      className={cn('w-[22px] h-[22px] transition-transform', post.likedByMe ? 'text-[var(--qk-accent)] scale-110' : 'text-white/85')}
+                      fill={post.likedByMe ? 'currentColor' : 'none'}
+                    />
+                    {post.likeCount}
+                  </button>
+                  {post.commentsEnabled && (
+                    <button
+                      onClick={() => setCommentsTarget(post.id)}
+                      className="flex items-center gap-1.5 text-sm font-semibold text-white/85 hover:text-white transition-colors"
+                      aria-label="Open comments"
+                      data-testid={`community-comments-${post.id}`}
+                    >
+                      <MessageCircle className="w-[22px] h-[22px]" />
+                      {post.commentCount}
+                    </button>
+                  )}
                 </div>
-              </article>
-            )
-          })}
+                {post.caption && (
+                  <p className="text-[13px] text-white/80 leading-relaxed line-clamp-3">
+                    <span className="font-semibold text-white">{post.author.name ?? 'Someone'}</span> {post.caption}
+                  </p>
+                )}
+              </div>
+            </article>
+          ))}
         </div>
       )}
 

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check, Ruler, GraduationCap, Wine } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { ProfilePostsGrid } from './ProfilePostsGrid'
 import { cn } from '@/lib/utils'
@@ -294,6 +294,26 @@ export function ProfileView() {
       {/* Profile details */}
       <div className="p-4 flex flex-col gap-3">
         {profile.bio && <p className="text-sm text-white/80 text-pretty">{profile.bio}</p>}
+
+        {(profile.heightCm || profile.education || profile.lifestyle) && (
+          <div className="flex flex-wrap gap-1.5">
+            {profile.heightCm ? (
+              <span className="text-xs font-medium bg-white/8 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                <Ruler className="w-3 h-3 text-[var(--qk-accent)]" /> {profile.heightCm} cm
+              </span>
+            ) : null}
+            {profile.education ? (
+              <span className="text-xs font-medium bg-white/8 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                <GraduationCap className="w-3 h-3 text-[var(--qk-accent)]" /> {profile.education}
+              </span>
+            ) : null}
+            {profile.lifestyle ? (
+              <span className="text-xs font-medium bg-white/8 rounded-full px-2.5 py-1 inline-flex items-center gap-1.5">
+                <Wine className="w-3 h-3 text-[var(--qk-accent)]" /> {profile.lifestyle}
+              </span>
+            ) : null}
+          </div>
+        )}
 
         {profile.interests?.length > 0 && (
           <div>

@@ -26,7 +26,8 @@
     "android:install": "bun scripts/android.ts install",
     "android:run": "bun scripts/android.ts run",
     "scripts:gen-personas": "bun scripts/gen-personas.ts",
-    "scripts:seed": "bun scripts/seed.ts"
+    "scripts:seed": "bun scripts/seed.ts",
+  "scripts:seed:games": "bun scripts/seed-game-definitions.mjs"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",

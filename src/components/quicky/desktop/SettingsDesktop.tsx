@@ -151,8 +151,8 @@ export function SettingsDesktop() {
       <section className="flex-1 min-w-0 h-full rounded-3xl border border-white/8 bg-[var(--qk-card)]/40 overflow-hidden" data-testid="settings-content">
         <Panel>
           {cat === 'profile' && <EditProfileScreen />}
-          {cat === 'phone' && <PhoneNumberScreen />}
-          {cat === 'email' && <EmailScreen />}
+          {cat === 'phone' && <PhoneNumberScreen inline />}
+          {cat === 'email' && <EmailScreen inline />}
           {cat === 'notifications' && <NotificationsScreen />}
           {cat === 'appearance' && <AppearanceScreen />}
           {cat === 'dating' && <DiscoveryPreferencesScreen />}

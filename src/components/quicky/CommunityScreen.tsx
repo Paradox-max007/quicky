@@ -199,14 +199,19 @@ export function CommunityScreen() {
           >
             <ImagePlus className="w-4 h-4" /> Post
           </button>
-          {/* Game Hub PRD §5/§6/§7: compact Games entry with an animated icon
-              (the ICON floats, the button itself stays still, §6) */}
+          {/* Game Hub PRD §5/§6/§7 + Task 8: compact Games entry with an
+              animated icon — the ICON spins slowly and CONTINUOUSLY in place
+              (never stops), the button itself stays still */}
           <button
-            onClick={() => useQuickyStore.getState().setView('games')}
+            onClick={() => {
+              const st = useQuickyStore.getState()
+              st.setGamesReturnView('community')
+              st.setView('games')
+            }}
             className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/10 active:scale-95 transition-transform"
             data-testid="community-games"
           >
-            <Gamepad2 className="w-4 h-4 text-[var(--qk-accent)] qk-icon-float" aria-hidden /> Games
+            <Gamepad2 className="w-4 h-4 text-[var(--qk-accent)] qk-icon-spin-slow" aria-hidden /> Games
           </button>
         </div>
       </header>

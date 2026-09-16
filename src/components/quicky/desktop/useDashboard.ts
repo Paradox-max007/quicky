@@ -22,6 +22,8 @@ export type DashboardStats = {
   giftsReceived: number
   streak: { current: number; longest: number } | null
   league: { name: string; minimumPoints: number; nextName: string | null; nextMinimumPoints: number | null } | null
+  // Central chemistry score 0-100 (dating + game signals, server-computed)
+  chemistry: number
 }
 
 export type DashboardActivity = {

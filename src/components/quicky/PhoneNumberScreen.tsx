@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
 import { Phone, ArrowRight, ShieldCheck } from 'lucide-react'
 
-export function PhoneNumberScreen() {
+export function PhoneNumberScreen({ inline = false }: { inline?: boolean }) {
   const setUser = useQuickyStore((s) => s.setUser)
   const user = useQuickyStore((s) => s.user)
 
@@ -78,25 +78,40 @@ export function PhoneNumberScreen() {
           <>
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-white/50 uppercase tracking-wide">New Phone Number</label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                <input
-                  type="tel"
-                  placeholder="+1 (555) 555-0100"
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-10 py-3.5 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
-                />
+              <div className={inline ? 'flex items-stretch gap-2' : 'block'}>
+                <div className="relative flex-1 min-w-0">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                  <input
+                    type="tel"
+                    placeholder="+1 (555) 555-0100"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-10 py-3.5 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
+                  />
+                </div>
+                {inline && (
+                  <button
+                    onClick={sendOtp}
+                    disabled={loading}
+                    className="shrink-0 bg-coral-gradient glow-coral rounded-2xl px-5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                    data-testid="phone-send-inline"
+                  >
+                    {loading ? 'Sending...' : 'Send code'}
+                    {!loading && <ArrowRight className="w-4 h-4" />}
+                  </button>
+                )}
               </div>
             </div>
-            <button
-              onClick={sendOtp}
-              disabled={loading}
-              className="w-full bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
-            >
-              {loading ? 'Sending...' : 'Send verification code'}
-              {!loading && <ArrowRight className="w-4 h-4" />}
-            </button>
+            {!inline && (
+              <button
+                onClick={sendOtp}
+                disabled={loading}
+                className="w-full bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                {loading ? 'Sending...' : 'Send verification code'}
+                {!loading && <ArrowRight className="w-4 h-4" />}
+              </button>
+            )}
           </>
         ) : (
           <>
@@ -104,28 +119,42 @@ export function PhoneNumberScreen() {
               <p className="text-xs text-white/60">A 4-digit code was sent to</p>
               <p className="text-sm font-semibold text-[var(--qk-accent-light)] mt-0.5">{newPhone}</p>
             </div>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="0000"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-center text-2xl font-bold tracking-[0.6em] placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
-              autoFocus
-            />
+            <div className={inline ? 'flex items-stretch gap-2' : 'block'}>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="0000"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-center text-2xl font-bold tracking-[0.6em] placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)] transition-colors"
+                autoFocus
+              />
+              {inline && (
+                <button
+                  onClick={verify}
+                  disabled={loading}
+                  className="shrink-0 bg-coral-gradient glow-coral rounded-2xl px-5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  data-testid="phone-verify-inline"
+                >
+                  {loading ? 'Verifying...' : 'Verify'}
+                </button>
+              )}
+            </div>
             {demoCode && (
               <div className="bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/30 rounded-xl px-4 py-3 text-center">
                 <p className="text-xs text-white/60">Demo code (no real SMS):</p>
                 <p className="text-2xl font-bold text-[var(--qk-accent)] tracking-[0.4em] mt-1">{demoCode}</p>
               </div>
             )}
-            <button
-              onClick={verify}
-              disabled={loading}
-              className="w-full bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
-            >
-              {loading ? 'Verifying...' : 'Verify & update'}
-            </button>
+            {!inline && (
+              <button
+                onClick={verify}
+                disabled={loading}
+                className="w-full bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                {loading ? 'Verifying...' : 'Verify & update'}
+              </button>
+            )}
             <button
               onClick={() => {
                 setStep('edit')

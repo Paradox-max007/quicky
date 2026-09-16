@@ -216,6 +216,16 @@ export const COIN_PACKS = [
   { id: 'coins_5000', coins: 5000, price: 24.99, label: '5,000 Coins', bestValue: false },
 ] as const
 
+// Task 8 — premium coin store perks: premium members get +20% bonus coins on
+// standard packs, 10% off the displayed price, and two exclusive coin sets
+// (server-enforced in the coins purchase route — free members get 403).
+export const PREMIUM_COIN_BONUS_PCT = 0.2
+export const PREMIUM_PRICE_DISCOUNT_PCT = 0.1
+export const PREMIUM_EXCLUSIVE_COIN_PACKS = [
+  { id: 'pcoins_12000', coins: 12000, price: 49.99, label: '12,000 Coins', bestValue: false, exclusive: true },
+  { id: 'pcoins_30000', coins: 30000, price: 99.99, label: '30,000 Coins', bestValue: true, exclusive: true },
+] as const
+
 // Coin rewards for game events
 export const COIN_REWARDS = {
   kissYes: 20,       // target says yes

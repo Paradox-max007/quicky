@@ -200,6 +200,7 @@ export function DiscoverStage() {
                     interactive={false}
                     viewerIsPremium={viewerIsPremium}
                     showPaywall={() => showPaywall({ kind: 'generic' })}
+                    showInfoTabs={false}
                   />
                 )}
                 {next1 && (
@@ -210,6 +211,7 @@ export function DiscoverStage() {
                     interactive={false}
                     viewerIsPremium={viewerIsPremium}
                     showPaywall={() => showPaywall({ kind: 'generic' })}
+                    showInfoTabs={false}
                   />
                 )}
                 <SwipeCardWrapper
@@ -217,6 +219,7 @@ export function DiscoverStage() {
                   candidate={top}
                   viewerIsPremium={viewerIsPremium}
                   showPaywall={() => showPaywall({ kind: 'generic' })}
+                  showInfoTabs={false}
                   onSwipe={(dir) => {
                     const type = dir === 'right' ? 'like' : dir === 'left' ? 'pass' : 'superlike'
                     handleSwipe(top, type as 'like' | 'superlike' | 'pass')

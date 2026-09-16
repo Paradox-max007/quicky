@@ -107,7 +107,8 @@ export function HelpSupportScreen() {
             <button
               onClick={send}
               disabled={sending}
-              className="w-full bg-coral-gradient glow-coral rounded-2xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              className="ml-auto bg-coral-gradient glow-coral rounded-full px-6 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              data-testid="support-send"
             >
               {sending ? (
                 <>

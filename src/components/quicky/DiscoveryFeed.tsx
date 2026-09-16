@@ -385,12 +385,16 @@ export function CardLayout({
   interactive,
   viewerIsPremium,
   showPaywall,
+  showInfoTabs = true,
 }: {
   candidate: DiscoveryCandidate
   style?: React.CSSProperties
   interactive?: boolean
   viewerIsPremium: boolean
   showPaywall: () => void
+  /** Task 8: web Discover hides the About/Details tabs — the side cards own
+      that information; the photo card stays clean. */
+  showInfoTabs?: boolean
 }) {
   const [photoIdx, setPhotoIdx] = useState(0)
   const [infoTab, setInfoTab] = useState<'about' | 'details'>('about')
@@ -510,8 +514,11 @@ export function CardLayout({
         </>
       )}
 
-      {/* Info — two switchable tabs: About | Details */}
+      {/* Info — two switchable tabs: About | Details. On web Discover the
+          dedicated About-them/Details cards own this job, so the stage passes
+          showInfoTabs={false} and the card keeps a clean photo overlay. */}
       <div className="absolute bottom-0 left-0 right-0 p-4">
+        {showInfoTabs && (
         <div className="flex gap-1 mb-2 bg-black/40 rounded-full p-0.5 w-max">
           <button
             onClick={(e) => { e.stopPropagation(); setInfoTab('about') }}
@@ -528,6 +535,7 @@ export function CardLayout({
             Details
           </button>
         </div>
+        )}
         <div className="flex items-end justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-1">
@@ -549,10 +557,10 @@ export function CardLayout({
                 {candidate.distanceKm ? `${candidate.distanceKm} km away` : candidate.city}
               </div>
             )}
-            {infoTab === 'about' && candidate.bio && (
+            {showInfoTabs && infoTab === 'about' && candidate.bio && (
               <p className="text-xs text-white/70 mt-1 line-clamp-2">{candidate.bio}</p>
             )}
-            {infoTab === 'about' && candidate.interests.length > 0 && (
+            {showInfoTabs && infoTab === 'about' && candidate.interests.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {candidate.interests.slice(0, 3).map((t) => (
                   <span key={t} className="text-[10px] font-medium bg-white/10 rounded-full px-2 py-0.5 capitalize">
@@ -564,7 +572,7 @@ export function CardLayout({
                 )}
               </div>
             )}
-            {infoTab === 'details' && (
+            {showInfoTabs && infoTab === 'details' && (
               <div className="flex flex-col gap-1 mt-1.5" data-testid="card-details-panel">
                 <MiniRow label="Height" value={candidate.heightCm ? candidate.heightCm + ' cm' : 'Not shared'} />
                 <MiniRow label="Education" value={candidate.education ?? 'Not shared'} />
@@ -618,11 +626,13 @@ export function SwipeCardWrapper({
   onSwipe,
   viewerIsPremium,
   showPaywall,
+  showInfoTabs = true,
 }: {
   candidate: DiscoveryCandidate
   onSwipe: (dir: 'left' | 'right' | 'up') => void
   viewerIsPremium: boolean
   showPaywall: () => void
+  showInfoTabs?: boolean
 }) {
   const x = useMotionValue(0)
   const y = useMotionValue(0)
@@ -672,6 +682,7 @@ export function SwipeCardWrapper({
         interactive
         viewerIsPremium={viewerIsPremium}
         showPaywall={showPaywall}
+        showInfoTabs={showInfoTabs}
       />
 
       {/* LIKE indicator */}

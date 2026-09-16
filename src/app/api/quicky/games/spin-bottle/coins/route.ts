@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/quicky/auth'
-import { COIN_PACKS } from '@/lib/quicky/constants'
+import { COIN_PACKS, PREMIUM_COIN_BONUS_PCT, PREMIUM_EXCLUSIVE_COIN_PACKS } from '@/lib/quicky/constants'
 
 export async function GET(_req: NextRequest) {
   const me = await getCurrentUser()
@@ -23,19 +23,31 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null)
   const packageId = String(body?.packageId ?? '')
-  const pack = COIN_PACKS.find((p) => p.id === packageId)
+  const pack = [...COIN_PACKS, ...PREMIUM_EXCLUSIVE_COIN_PACKS].find((p) => p.id === packageId)
   if (!pack) return NextResponse.json({ error: 'invalid_package' }, { status: 400 })
 
+  // Task 8 — premium perks: exclusive coin sets are premium-only (enforced
+  // here, not just hidden in the UI) and premium buyers get +20% bonus coins
+  // on the standard packs.
+  const buyer = await db.user.findUnique({ where: { id: me.id }, select: { isPremium: true } })
+  const isPremium = !!buyer?.isPremium
+  const isExclusive = 'exclusive' in pack && pack.exclusive === true
+  if (isExclusive && !isPremium) {
+    return NextResponse.json({ error: 'premium_only' }, { status: 403 })
+  }
+  const bonusCoins = isPremium && !isExclusive ? Math.round(pack.coins * PREMIUM_COIN_BONUS_PCT) : 0
+  const totalCoins = pack.coins + bonusCoins
+
   // MOCK purchase: simulate success → add coins → persist audit row.
-  const meta = JSON.stringify({ packageId: pack.id, coins: pack.coins, mock: true, label: pack.label })
+  const meta = JSON.stringify({ packageId: pack.id, coins: totalCoins, baseCoins: pack.coins, bonusCoins, premium: isPremium, mock: true, label: pack.label })
   const updated = await db.$transaction(async (tx) => {
     const user = await tx.user.update({
       where: { id: me.id },
-      data: { coinBalance: { increment: pack.coins } },
+      data: { coinBalance: { increment: totalCoins } },
       select: { coinBalance: true },
     })
     await tx.coinLedger.create({
-      data: { userId: me.id, delta: pack.coins, reason: 'purchase', meta },
+      data: { userId: me.id, delta: totalCoins, reason: 'purchase', meta },
     })
     return user
   })
@@ -44,7 +56,9 @@ export async function POST(req: NextRequest) {
     ok: true,
     mock: true, // explicit: this whole flow is MOCK / DEVELOPMENT (§29)
     packageId: pack.id,
-    coinsAdded: pack.coins,
+    coinsAdded: totalCoins,
+    bonusCoins,
+    premium: isPremium,
     coinBalance: updated.coinBalance,
   })
 }

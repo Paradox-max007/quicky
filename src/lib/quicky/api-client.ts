@@ -288,7 +288,7 @@ export const api = {
       // v3 §30: the SINGLE purchase entry point — swapping the mock for
       // Google Play / Apple IAP / Stripe later only changes this route.
       purchase: (packageId: string) =>
-        jsonFetch<{ ok: boolean; mock: boolean; coinsAdded: number; coinBalance: number }>(
+        jsonFetch<{ ok: boolean; mock: boolean; coinsAdded: number; bonusCoins?: number; premium?: boolean; coinBalance: number }>(
           '/api/quicky/games/spin-bottle/coins',
           { method: 'POST', body: JSON.stringify({ packageId }) }
         ),

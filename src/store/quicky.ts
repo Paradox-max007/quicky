@@ -202,6 +202,9 @@ type State = {
   // field is where the contacts screen's back arrow (and the Android hardware
   // back) goes: Game Contacts → Game Room.
   gameChatContactsReturnView: AppView
+  // Task 8: where the mobile Games hub's back arrow returns — the surface
+  // that opened it (community page, …). null → defaults to 'community'.
+  gamesReturnView: AppView | null
   // Mentions PRD §77: Profile → "Mention" sets this draft; RoomChatPanel
   // consumes it (insert @DisplayName token + focus composer). No message is
   // ever sent automatically (§29).
@@ -254,6 +257,8 @@ type State = {
   openChats: (section?: 'game' | 'dating') => void
   /** Game Hub PRD §12: open a game's landing page from its card. */
   openGameLanding: (slug: string) => void
+  /** Task 8: remember the surface that opened the Games hub (back arrow). */
+  setGamesReturnView: (v: AppView | null) => void
   setChatsSection: (s: 'game' | 'dating') => void
   /** Desktop chats page: select a dating conversation without navigating. */
   setActiveMatchId: (id: string | null) => void
@@ -281,6 +286,7 @@ export const useQuickyStore = create<State>((set) => ({
   roomChatPanel: 'room',
   gameChatPinnedPeer: null,
   gameChatContactsReturnView: 'spin-bottle-room',
+  gamesReturnView: null,
   roomChatMentionDraft: null,
   chatsSection: 'game',
   unreadByMatch: {},
@@ -352,7 +358,8 @@ export const useQuickyStore = create<State>((set) => ({
   openChats: (section) =>
     set((prev) => ({ view: 'chats', ...(section ? { chatsSection: section } : {}) })),
   openGameLanding: (slug) => set({ gameLandingSlug: slug, view: 'game-landing' }),
+  setGamesReturnView: (v) => set({ gamesReturnView: v }),
   setChatsSection: (s) => set({ chatsSection: s }),
   setActiveMatchId: (id) => set({ activeMatchId: id }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameLandingSlug: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
 }))

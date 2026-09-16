@@ -5,6 +5,7 @@ import { useQuickyStore, AppView } from '@/store/quicky'
 import { Bell, Coins, Crown, Heart, Sparkles, Gift, MessageCircle, Trophy, Settings as SettingsIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDashboard, timeAgo, DashboardActivity } from './useDashboard'
+import { CoinStoreModal } from './CoinStoreModal'
 
 /**
  * TOP NAVIGATION — the ONLY primary navigation on web (Web Premium PRD §2-§4,
@@ -43,9 +44,11 @@ export function DesktopTopBar() {
   const setView = useQuickyStore((s) => s.setView)
   const openChats = useQuickyStore((s) => s.openChats)
   const user = useQuickyStore((s) => s.user)
+  const setUser = useQuickyStore((s) => s.setUser)
   const { data } = useDashboard(true)
 
   const [notifOpen, setNotifOpen] = useState(false)
+  const [coinStoreOpen, setCoinStoreOpen] = useState(false)
   const popRef = useRef<HTMLDivElement | null>(null)
 
   // Close the notification center on outside click or Escape (§41/§64)
@@ -71,6 +74,7 @@ export function DesktopTopBar() {
   const goChats = () => openChats()
 
   return (
+    <>
     <header
       className="shrink-0 h-14 border-b border-white/5 bg-black/25 backdrop-blur-md flex items-center gap-3 px-4 min-[1280px]:px-6 relative z-30"
       data-testid="desktop-topnav"
@@ -109,9 +113,10 @@ export function DesktopTopBar() {
 
       {/* Coins → premium / coin store */}
       <button
-        onClick={() => setView('premium')}
+        onClick={() => setCoinStoreOpen(true)}
         className="flex items-center gap-1.5 rounded-full border border-[var(--qk-gold)]/30 bg-[var(--qk-gold)]/10 px-3 py-1.5 text-sm font-semibold text-[var(--qk-gold)] hover:bg-[var(--qk-gold)]/15 transition-colors"
-        aria-label="Coins and premium"
+        aria-label="Coins — open the coin store"
+        data-testid="topnav-coins"
       >
         <Coins className="w-4 h-4" />
         {(user?.coinBalance ?? 0).toLocaleString()}
@@ -212,5 +217,20 @@ export function DesktopTopBar() {
         )}
       </button>
     </header>
+
+    {/* Task 8: the coin balance opens the COIN STORE — a purchase surface
+        deliberately distinct from the Premium subscription flow. Rendered
+        OUTSIDE the header on purpose: the header's backdrop-blur creates a
+        containing block that would trap the fixed-position modal inside the
+        56px bar. */}
+    <CoinStoreModal
+      open={coinStoreOpen}
+      onClose={() => setCoinStoreOpen(false)}
+      coinBalance={user?.coinBalance ?? 0}
+      onPurchased={(newBalance) => {
+        if (user) setUser({ ...user, coinBalance: newBalance })
+      }}
+    />
+    </>
   )
 }

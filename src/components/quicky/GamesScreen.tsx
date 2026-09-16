@@ -7,7 +7,7 @@
 // (§70). Tap a card → that game's landing page.
 
 import { motion } from 'framer-motion'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, ArrowLeft } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { useGames } from './game-hub/useGames'
 import { GameCard } from './game-hub/GameCard'
@@ -15,6 +15,8 @@ import { GameCard } from './game-hub/GameCard'
 export function GamesScreen() {
   const setView = useQuickyStore((s) => s.setView)
   const openGameLanding = useQuickyStore((s) => s.openGameLanding)
+  const gamesReturnView = useQuickyStore((s) => s.gamesReturnView)
+  const setGamesReturnView = useQuickyStore((s) => s.setGamesReturnView)
   const { games, loaded, failed, retry } = useGames()
 
   const open = (slug: string) => openGameLanding(slug)
@@ -35,12 +37,26 @@ export function GamesScreen() {
         aria-hidden
       />
 
-      <header className="shrink-0 safe-area-top px-5 pt-3 pb-3 relative z-10">
-        <h1 className="text-2xl font-bold tracking-tight">Games</h1>
-        <p className="text-xs text-white/50 mt-0.5 flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3 text-[var(--qk-gold)]" aria-hidden />
-          PLAY &amp; CONNECT
-        </p>
+      <header className="shrink-0 safe-area-top px-4 pt-3 pb-3 relative z-10 flex items-center gap-2">
+        <button
+          onClick={() => {
+            const back = gamesReturnView ?? 'community'
+            setGamesReturnView(null)
+            setView(back)
+          }}
+          className="p-2 -ml-1 rounded-full hover:bg-white/5 active:scale-95 transition"
+          aria-label="Back"
+          data-testid="games-back"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Games</h1>
+          <p className="text-xs text-white/50 mt-0.5 flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-[var(--qk-gold)]" aria-hidden />
+            PLAY &amp; CONNECT
+          </p>
+        </div>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 pb-6 relative z-10">
@@ -90,6 +106,9 @@ export function GamesScreen() {
             <p className="font-bold">More games are coming soon.</p>
             <p className="text-white/55 text-xs leading-relaxed">
               Check back soon for new ways to play.
+            </p>
+            <p className="text-white/35 text-[11px] leading-relaxed">
+              Local dev tip: run <code className="text-white/60">npm run scripts:seed:games</code> to load the game catalog.
             </p>
           </div>
         )}
