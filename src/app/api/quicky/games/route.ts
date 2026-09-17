@@ -13,9 +13,17 @@ export async function GET() {
   // Refactor PRD §16/§17: live active-player count per game. The rooms
   // table is the server-authoritative presence store; a player row still
   // attached to a non-closed room counts as active right now.
-  const activeSpinPlayers = await db.spinRoomPlayer.count({
-    where: { room: { status: { in: ['WAITING', 'STARTING', 'PLAYING'] } }, leftAt: null },
-  })
+  // Ludo PRD §73 — per-game presence: Ludo rooms live in the SAME room
+  // table, filtered by gameType. The count = players inside active Ludo
+  // rooms, not the number of rooms.
+  const [activeSpinPlayers, activeLudoPlayers] = await Promise.all([
+    db.spinRoomPlayer.count({
+      where: { room: { gameType: 'spin_bottle', status: { in: ['WAITING', 'STARTING', 'PLAYING'] } }, leftAt: null },
+    }),
+    db.spinRoomPlayer.count({
+      where: { room: { gameType: 'ludo', status: { in: ['WAITING', 'STARTING', 'PLAYING'] } }, leftAt: null },
+    }),
+  ])
 
   const games = await db.gameDefinition.findMany({
     where: { isActive: true },
@@ -40,7 +48,12 @@ export async function GET() {
   return NextResponse.json({
     games: games.map((g) => ({
       ...g,
-      activePlayers: g.slug === 'spin-the-bottle' ? activeSpinPlayers : 0,
+      activePlayers:
+        g.slug === 'spin-the-bottle'
+          ? activeSpinPlayers
+          : g.slug === 'ludo'
+            ? activeLudoPlayers
+            : 0,
     })),
   })
 }

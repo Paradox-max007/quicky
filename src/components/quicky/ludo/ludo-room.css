@@ -1,0 +1,516 @@
+/* ============================================================
+   Quicky Ludo — game-area styles (Ludo PRD §8/§9/§29-§34/§103)
+   The room SHELL (top bar, body split, wooden stage, chat panel,
+   sheets, exit dialogs) is intentionally reused from
+   spin-bottle-room.css (.sbr-*) — Ludo only adds the board,
+   tokens, dice, player HUD and overlays here (.ldo-*), scoped
+   so nothing leaks (Ludo PRD §115: no duplicated architecture).
+
+   MECHANICS:
+   - the board is a square: aspect-ratio 1/1, sized from the
+     MEASURED stage box (--ldo-board set by JS in px, Ludo PRD §9
+     — never a hardcoded width/height).
+   - tokens move via transform only (§102: transform/opacity/scale
+     animations; 60fps; no top/left animation).
+   - prefers-reduced-motion kills bounce/glow/confetti (§104).
+   ============================================================ */
+
+.ldo-root {
+  --ldo-line: rgba(255, 255, 255, 0.09);
+  --ldo-cell: 24px; /* JS-overridden from the measured board */
+  --ldo-red: #f43f5e;
+  --ldo-red-dark: #be123c;
+  --ldo-green: #10b981;
+  --ldo-green-dark: #047857;
+  --ldo-yellow: #f59e0b;
+  --ldo-yellow-dark: #b45309;
+  --ldo-blue: #38bdf8;
+  --ldo-blue-dark: #0369a1;
+}
+
+/* ── Board frame (sits on the wooden .sbr-stage) ─────────── */
+.ldo-board-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.ldo-board {
+  position: relative;
+  width: var(--ldo-board, min(92%, 420px));
+  aspect-ratio: 1 / 1;
+  pointer-events: auto;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #fdf6ec 0%, #f3e7d3 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(255, 255, 255, 0.8),
+    inset 0 -3px 8px rgba(97, 61, 18, 0.25),
+    0 10px 26px rgba(20, 8, 0, 0.45);
+  overflow: hidden;
+  touch-action: manipulation;
+}
+/* active player color pulse around the board (§30) */
+.ldo-board.ldo-turn-pulse {
+  animation: ldo-board-pulse 2.2s ease-in-out infinite;
+}
+@keyframes ldo-board-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px var(--ldo-turn-color, transparent), 0 10px 26px rgba(20, 8, 0, 0.45); }
+  50% { box-shadow: inset 0 0 0 4px var(--ldo-turn-color, transparent), 0 10px 30px rgba(20, 8, 0, 0.55); }
+}
+
+/* generic grid cell */
+.ldo-cell {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(97, 61, 18, 0.18);
+}
+.ldo-cell-track { background: #fbf3e4; }
+.ldo-cell-start { background: var(--cell-color); }
+.ldo-cell-safe::after {
+  content: '⭐';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--ldo-cell) * 0.5);
+  opacity: 0.5;
+}
+.ldo-cell-home { background: var(--cell-color); opacity: 0.85; }
+
+/* yard blocks (6×6) */
+.ldo-yard {
+  position: absolute;
+  border-radius: 12%;
+  background: var(--yard-color);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35), inset 0 0 22px rgba(0, 0, 0, 0.18);
+}
+.ldo-yard-inner {
+  position: absolute;
+  inset: 18%;
+  border-radius: 14%;
+  background: rgba(255, 251, 244, 0.92);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* center finish (3×3 diamond) */
+.ldo-center {
+  position: absolute;
+  left: 40%;
+  top: 40%;
+  width: 20%;
+  height: 20%;
+  transform: rotate(45deg);
+  background: conic-gradient(
+    var(--ldo-red) 0 25%,
+    var(--ldo-green) 0 50%,
+    var(--ldo-yellow) 0 75%,
+    var(--ldo-blue) 0 100%
+  );
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Tokens (§11/§19/§20/§23) ────────────────────────────── */
+.ldo-token {
+  position: absolute;
+  width: calc(var(--ldo-cell) * 0.78);
+  height: calc(var(--ldo-cell) * 0.78);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  transform: translate(-50%, -50%);
+  transition: left 0.16s ease-out, top 0.16s ease-out;
+  will-change: left, top;
+  z-index: 5;
+  cursor: default;
+}
+.ldo-token-animating { transition: left 0.16s ease-out, top 0.16s ease-out; z-index: 8; }
+.ldo-token-dot {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--tk-light), var(--tk-color) 58%, var(--tk-dark));
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ldo-token-selectable { cursor: pointer; }
+.ldo-token-selectable .ldo-token-dot {
+  animation: ldo-token-pulse 1.15s ease-in-out infinite;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 14px 4px var(--tk-color);
+}
+@keyframes ldo-token-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.09); }
+}
+.ldo-token-shake .ldo-token-dot { animation: ldo-token-shake 0.32s ease-in-out; }
+@keyframes ldo-token-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px) rotate(-6deg); }
+  75% { transform: translateX(3px) rotate(6deg); }
+}
+.ldo-token-captured .ldo-token-dot { animation: ldo-token-captured 0.85s ease-in-out; }
+@keyframes ldo-token-captured {
+  0% { transform: scale(1); }
+  22% { transform: scale(1.25) translateY(-4px); }
+  45% { transform: scale(0.94) rotate(-10deg); opacity: 0.85; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.ldo-token-finished .ldo-token-dot { animation: ldo-token-finish 0.8s ease-out; }
+@keyframes ldo-token-finish {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.18); }
+  55% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+/* stacking offsets (§23 — never render directly over each other) */
+.ldo-stack-1 { margin-left: calc(var(--ldo-cell) * 0.16); margin-top: calc(var(--ldo-cell) * -0.1); }
+.ldo-stack-2 { margin-left: calc(var(--ldo-cell) * -0.16); margin-top: calc(var(--ldo-cell) * 0.1); }
+.ldo-stack-3 { margin-left: calc(var(--ldo-cell) * 0.05); margin-top: calc(var(--ldo-cell) * 0.18); }
+
+/* capture floating chip (§21 "⚡ Captured!") */
+.ldo-capture-chip {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  pointer-events: none;
+  background: rgba(10, 10, 14, 0.88);
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  color: #fff;
+  font-weight: 900;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  animation: ldo-chip 0.95s ease-out forwards;
+}
+@keyframes ldo-chip {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.7); }
+  25% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -80%) scale(0.95); }
+}
+
+/* ── Player HUD strip (§29/§30) ──────────────────────────── */
+.ldo-hud {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px 2px;
+  flex-wrap: wrap;
+}
+.ldo-hud-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px 5px 6px;
+  border-radius: 999px;
+  background: rgba(21, 20, 30, 0.86);
+  border: 1.5px solid var(--ldo-line);
+  min-height: 44px; /* touch target (§69) */
+  min-width: 0;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ldo-hud-chip.ldo-active {
+  border-color: var(--chip-color);
+  box-shadow: 0 0 12px -2px var(--chip-color);
+}
+.ldo-hud-chip.ldo-offline { opacity: 0.55; }
+.ldo-hud-avatar {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid var(--chip-color);
+  background: #26232f;
+}
+.ldo-hud-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ldo-hud-avatar span {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: #fff;
+  font-size: 13px;
+}
+.ldo-hud-meta { min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+.ldo-hud-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ldo-hud-sub { font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
+.ldo-hud-turn { color: var(--chip-color); }
+
+/* ── Dice + turn control (§31/§32) ───────────────────────── */
+.ldo-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 6px 10px 8px;
+}
+.ldo-dice {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #ffffff, #e8ddc8);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), inset 0 -3px 6px rgba(97, 61, 18, 0.2);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  padding: 8px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.ldo-dice.ldo-rolling { animation: ldo-dice-roll 0.65s ease-in-out infinite; }
+@keyframes ldo-dice-roll {
+  0% { transform: rotate(0) scale(1); }
+  25% { transform: rotate(-14deg) scale(1.06); }
+  50% { transform: rotate(9deg) scale(0.97); }
+  75% { transform: rotate(-7deg) scale(1.04); }
+  100% { transform: rotate(0) scale(1); }
+}
+.ldo-pip {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #4a4a55, #17171d);
+  align-self: center;
+  justify-self: center;
+  aspect-ratio: 1;
+}
+.ldo-pip.off { visibility: hidden; }
+
+.ldo-roll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  min-width: 168px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 14.5px;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(90deg, #e11d48 0%, #f43f5e 100%);
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.45);
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s, filter 0.2s;
+}
+.ldo-roll-btn:active { transform: scale(0.96); }
+.ldo-roll-btn:disabled {
+  cursor: default;
+  filter: saturate(0.35) brightness(0.75);
+  box-shadow: none;
+}
+.ldo-status-line {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+  padding: 0 12px 6px;
+}
+.ldo-status-line b { color: #fff; }
+
+/* ── Countdown overlay (§56/§93) ─────────────────────────── */
+.ldo-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(10, 10, 14, 0.72);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+.ldo-countdown-num {
+  font-size: 84px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 6px 30px rgba(244, 63, 94, 0.6);
+  animation: ldo-cd 0.9s ease-out infinite;
+}
+@keyframes ldo-cd {
+  0% { transform: scale(1.5); opacity: 0; }
+  30% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.85; }
+}
+.ldo-countdown-title {
+  font-size: 54px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 6px 30px rgba(244, 63, 94, 0.65);
+  animation: ldo-ludo 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) 1;
+}
+@keyframes ldo-ludo {
+  0% { transform: scale(0.3); opacity: 0; }
+  70% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.ldo-countdown-sub { font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.7); }
+
+/* ── Result overlay (§28/§103) ───────────────────────────── */
+.ldo-result {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(10, 10, 14, 0.8);
+  backdrop-filter: blur(4px);
+}
+.ldo-result-avatar {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 4px solid var(--qk-gold, #f5c04a);
+  box-shadow: 0 0 34px rgba(245, 192, 74, 0.5);
+  background: #26232f;
+  animation: ldo-pop 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) 1;
+}
+.ldo-result-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ldo-result-title {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #fff;
+  text-shadow: 0 4px 24px rgba(245, 192, 74, 0.55);
+  animation: ldo-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 0.15s both;
+}
+@keyframes ldo-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.ldo-result-sub { font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.65); text-align: center; padding: 0 24px; }
+.ldo-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ldo-confetti i {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.9;
+  animation: ldo-confetti 2.4s linear infinite;
+}
+@keyframes ldo-confetti {
+  0% { transform: translateY(-20px) rotate(0); }
+  100% { transform: translateY(110vh) rotate(540deg); }
+}
+
+/* ── Lobby (waiting) hint (§95) ──────────────────────────── */
+.ldo-waiting {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(10, 10, 14, 0.82);
+  border: 1px solid var(--ldo-line);
+  border-radius: 14px;
+  padding: 7px 14px;
+  pointer-events: none;
+  max-width: calc(100% - 24px);
+}
+.ldo-waiting b { font-size: 12.5px; color: #fff; white-space: nowrap; }
+.ldo-waiting span { font-size: 10.5px; color: rgba(255, 255, 255, 0.55); white-space: nowrap; }
+
+/* ── Desktop layout (≥1024px, matches the sbr split) ─────── */
+@media (min-width: 1024px) {
+  .ldo-hud { padding: 8px 12px 4px; gap: 10px; }
+  .ldo-hud-name { max-width: 120px; font-size: 13px; }
+  .ldo-controls { gap: 20px; padding: 10px 14px 12px; }
+  .ldo-dice { width: 64px; height: 64px; }
+}
+
+/* ── Reduced motion (§104) ───────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .ldo-token,
+  .ldo-token-animating { transition: none; }
+  .ldo-token-selectable .ldo-token-dot,
+  .ldo-board.ldo-turn-pulse,
+  .ldo-dice.ldo-rolling,
+  .ldo-countdown-num,
+  .ldo-confetti i { animation: none !important; }
+  .ldo-token-shake .ldo-token-dot,
+  .ldo-token-captured .ldo-token-dot,
+  .ldo-token-finished .ldo-token-dot { animation: none !important; }
+}
+
+/* ── Game area column (HUD → stage → dice → giftbar) ─────── */
+.ldo-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ldo-stage-holder {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 0;
+}
+.ldo-giftbar {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px 8px;
+}
+.ldo-gift-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  background: rgba(244, 63, 94, 0.12);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  min-height: 40px;
+  transition: background 0.15s, transform 0.15s;
+}
+.ldo-gift-btn:active { transform: scale(0.96); }
+.ldo-gift-btn:hover { background: rgba(244, 63, 94, 0.22); }
+
+@media (min-width: 1024px) {
+  .ldo-giftbar { display: flex; }
+}

@@ -33,6 +33,7 @@ import { GamesScreen } from './GamesScreen'
 import { GameLanding } from './game-hub/GameLanding'
 import { UnifiedChatsScreen } from './game-hub/UnifiedChatsScreen'
 import { SpinBottleRoom } from './SpinBottleRoom'
+import { LudoRoom } from './ludo/LudoRoom'
 import { AdminGiftsScreen } from './AdminGiftsScreen'
 import { AdminRulesScreen } from './AdminRulesScreen'
 import { AdminStickersScreen } from './AdminStickersScreen'
@@ -48,6 +49,7 @@ import { Toaster as SonnerToaster } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { useGameChatStore } from '@/store/game-chat'
 import { useGameRoomStore } from '@/store/game-room'
+import { useLudoRoomStore } from '@/store/ludo-room'
 import { cn } from '@/lib/utils'
 import type { AppView } from '@/store/quicky'
 
@@ -63,6 +65,7 @@ import type { AppView } from '@/store/quicky'
 function shellFor(view: AppView): string {
   switch (view) {
     case 'spin-bottle-room':
+    case 'ludo-room':
       // Web: full-window club layout (game table left + chat sidebar right,
       // per the approved web design). Mobile/Capacitor: full width anyway.
       return ''
@@ -135,6 +138,13 @@ export function AppRoot() {
         else if (v === 'spin-bottle-room') {
           useQuickyStore.getState().setSpinBottleRoomId(null)
           sv('spin-bottle')
+        } else if (v === 'ludo-room') {
+          // Ludo PRD §110: hardware back leaves the room via the leave API
+          // (never a dangling membership server-side) and returns to Games.
+          void api.ludo.leave(useQuickyStore.getState().ludoRoomId ?? '').catch(() => {})
+          useLudoRoomStore.getState().detach()
+          useQuickyStore.getState().setLudoRoomId(null)
+          sv('games')
         } else if (v === 'game-chat-contacts') {
           // Mentions PRD §82: the contacts screen's back → its OWN return
           // view (the live room) — the runtime never stopped. Distinct from
@@ -200,6 +210,38 @@ export function AppRoot() {
     }
   }, [hydrated])
 
+  // ─── LUDO room restore after refresh (Ludo PRD §63) — same contract: the
+  // server decides whether the stored board still has me as a member; a
+  // stale id is dropped and NEVER restored into a ghost room.
+  useEffect(() => {
+    if (!hydrated) return
+    let cancelled = false
+    const storedLudo = (() => {
+      try {
+        return localStorage.getItem('quicky_ludo_room_id')
+      } catch {
+        return null
+      }
+    })()
+    if (!storedLudo) return
+    void (async () => {
+      try {
+        const res = await api.ludo.room(storedLudo)
+        if (!cancelled && res?.snapshot) {
+          useQuickyStore.getState().setLudoRoomId(storedLudo)
+          useLudoRoomStore.getState().attach(storedLudo)
+        }
+      } catch {
+        try {
+          localStorage.removeItem('quicky_ludo_room_id')
+        } catch {}
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated])
+
   // ─── GAME CHAT stream lifecycle (game-chat PRD §91) ──────────────────────
   // ONE lightweight stream serves every conversation. It lives while the
   // user is anywhere in the Spin the Bottle section (landing, table, chat,
@@ -207,10 +249,13 @@ export function AppRoot() {
   const gameSectionActive =
     view === 'spin-bottle' ||
     view === 'spin-bottle-room' ||
+    view === 'ludo-room' ||
     view === 'game-chat' ||
     view === 'game-chat-contacts' ||
     view === 'chats' ||
-    (view === 'profile-view' && useQuickyStore.getState().profileReturnView === 'spin-bottle-room')
+    (view === 'profile-view' &&
+      (useQuickyStore.getState().profileReturnView === 'spin-bottle-room' ||
+        useQuickyStore.getState().profileReturnView === 'ludo-room'))
   useEffect(() => {
     if (gameSectionActive) useGameChatStore.getState().connectStream()
     else useGameChatStore.getState().disconnectStream()
@@ -223,7 +268,9 @@ export function AppRoot() {
   // (leave / room deleted / session ended, §48) or the user leaves the game
   // section; visibilitychange inside the hook re-acquires (§78 resume).
   const roomAttached = useGameRoomStore((s) => !!s.roomId)
+  const ludoAttached = useLudoRoomStore((s) => !!s.roomId)
   useGameWakeLock(roomAttached && gameSectionActive)
+  useGameWakeLock(ludoAttached && gameSectionActive)
 
   // ─── APP RESUME (layout PRD §78) ─────────────────────────────────────────
   // Capacitor resume → reconcile the authoritative room snapshot + refresh
@@ -239,6 +286,8 @@ export function AppRoot() {
       App.addListener('resume', () => {
         const room = useGameRoomStore.getState()
         if (room.roomId) void room.reconcile()
+        const ludo = useLudoRoomStore.getState()
+        if (ludo.roomId) void ludo.reconcile() // Ludo PRD §63: resume → reconcile board
         const chat = useGameChatStore.getState()
         if (chat.activeConversationId) void chat.refreshActive()
         chat.refreshList(true)
@@ -383,6 +432,23 @@ export function AppRoot() {
             )
           })()}
           {view === 'game-landing' && <GameLanding />}
+          {/* Quicky Ludo room (Ludo PRD §33/§34) — same full-window shell
+              contract as the Spin Bottle room. Missing id → back to Games. */}
+          {view === 'ludo-room' && (() => {
+            const ludoRoomId = useQuickyStore.getState().ludoRoomId
+            if (!ludoRoomId) {
+              return null
+            }
+            return (
+              <LudoRoom
+                roomId={ludoRoomId}
+                onClose={() => {
+                  useQuickyStore.getState().setLudoRoomId(null)
+                  setView('games')
+                }}
+              />
+            )
+          })()}
           {view === 'admin-gifts' && <AdminGiftsScreen />}
           {view === 'admin-rules' && <AdminRulesScreen />}
           {view === 'admin-stickers' && <AdminStickersScreen />}

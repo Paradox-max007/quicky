@@ -205,6 +205,73 @@ export const api = {
     activePlayers: () =>
       jsonFetch<{ counts: Record<string, number>; serverNow: number }>('/api/quicky/games/active-players'),
   },
+  // ── Quicky Ludo (Ludo PRD §48/§49/§81) — the client NEVER sends dice,
+  // positions, winners or turns: only actionIds + a token id. ───────────────
+  ludo: {
+    landing: () =>
+      jsonFetch<{
+        coins: number
+        gamesPlayed: number
+        quickyPoints: number
+        ludoGames: number
+        ludoWins: number
+        tokensFinished: number
+        captures: number
+      }>('/api/quicky/games/ludo/landing'),
+    join: () =>
+      jsonFetch<{ ok: boolean; roomId: string; createdNewRoom: boolean; snapshot: any }>(
+        '/api/quicky/games/ludo/join',
+        { method: 'POST' }
+      ),
+    room: (roomId: string) =>
+      jsonFetch<{ ok: boolean; snapshot: any }>(`/api/quicky/games/ludo/room?roomId=${roomId}`),
+    ping: (roomId: string) =>
+      jsonFetch<{ ok: boolean; touched: boolean }>('/api/quicky/games/ludo/ping', {
+        method: 'POST',
+        body: JSON.stringify({ roomId }),
+      }),
+    leave: (roomId: string) =>
+      jsonFetch<{ ok: boolean; roomDeleted?: boolean }>('/api/quicky/games/ludo/leave', {
+        method: 'POST',
+        body: JSON.stringify({ roomId }),
+      }),
+    roll: (roomId: string, actionId: string) =>
+      jsonFetch<{ ok: boolean; dice: number; legalMoves: string[]; stateVersion: number; state: any }>(
+        '/api/quicky/games/ludo/roll',
+        { method: 'POST', body: JSON.stringify({ roomId, actionId }) }
+      ),
+    move: (roomId: string, tokenId: string, actionId: string) =>
+      jsonFetch<{ ok: boolean; stateVersion: number; state: any }>(
+        '/api/quicky/games/ludo/move',
+        { method: 'POST', body: JSON.stringify({ roomId, tokenId, actionId }) }
+      ),
+    chat: (roomId: string) =>
+      jsonFetch<{ messages: any[] }>(`/api/quicky/games/spin-bottle/chat?roomId=${roomId}`),
+    sendChat: (roomId: string, text: string, mentions?: { userId: string; displayName: string }[]) =>
+      jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
+        method: 'POST',
+        body: JSON.stringify({ roomId, text, mentions: mentions ?? [] }),
+      }),
+    gifts: {
+      catalog: () =>
+        jsonFetch<{ categories: any[]; gifts: any[] }>('/api/quicky/games/spin-bottle/gifts'),
+      send: (roomId: string, recipientId: string, itemId: string, quantity = 1) =>
+        jsonFetch<{ ok: boolean; coinBalance: number }>(
+          '/api/quicky/games/spin-bottle/gifts',
+          { method: 'POST', body: JSON.stringify({ roomId, recipientId, itemId, quantity }) }
+        ),
+      sendBulk: (
+        roomId: string,
+        itemId: string,
+        recipientFilter: 'all' | 'male' | 'female',
+        quantity: number
+      ) =>
+        jsonFetch<{ ok: boolean; coinBalance: number; recipientCount: number; quantity: number; totalCost: number }>(
+          '/api/quicky/games/spin-bottle/gifts',
+          { method: 'POST', body: JSON.stringify({ roomId, itemId, recipientFilter, quantity }) }
+        ),
+    },
+  },
   /** Refactor PRD §25/§26/§80 — friendships. */
   friends: {
     list: () => jsonFetch<{ friends: any[] }>('/api/quicky/friends'),

@@ -18,6 +18,7 @@ import { ArrowLeft, Trophy, Flame, Sparkles, Gift, Heart, Gamepad2, Users, Heart
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { SpinBottleLanding } from '../SpinBottleLanding'
+import { LudoLanding } from '../ludo/LudoLanding'
 import { CoinStoreSheet } from '../CoinStoreSheet'
 import { ChemistryIndicator } from './ChemistryIndicator'
 import { GameFriendsSection } from './GameFriendsSection'
@@ -79,6 +80,21 @@ export function GameLanding() {
         onJoined={(roomId) => {
           setSpinBottleRoomId(roomId)
           setView('spin-bottle-room')
+        }}
+      />
+    )
+  }
+
+  // Quicky Ludo owns its landing (Ludo PRD §71): same architecture —
+  // hero, records, info — with a REAL Play Now that joins a room.
+  if (slug === 'ludo') {
+    return (
+      <LudoLanding
+        onClose={() => setView('games')}
+        onJoined={(roomId) => {
+          const qk = useQuickyStore.getState()
+          qk.setLudoRoomId(roomId)
+          qk.setView('ludo-room')
         }}
       />
     )

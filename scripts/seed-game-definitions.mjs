@@ -38,19 +38,21 @@ const GAMES = [
     sortOrder: 2,
   },
   {
+    // Ludo PRD §108 — canonical slug stays 'ludo'; user-facing name is
+    // Quicky Ludo. isPlayable: true — the room-based 4-player game is live.
     slug: 'ludo',
-    name: 'Ludo',
-    shortDescription: 'Board-game night — classic Ludo, 2 to 4 players.',
+    name: 'Quicky Ludo',
+    shortDescription: 'Classic 4-player Ludo — dice, captures and a race to home.',
     description:
-      'Classic Ludo with a social layer. Play head-to-head with a partner or open the board to a group.',
+      'The classic board game inside the Quicky game room. Up to 4 players per table, server-authoritative dice and moves, real-time tokens, chat, gifts and mentions. Roll a 6 to start a token, capture opponents on unsafe squares, and bring all four tokens home to win.',
     icon: '🎲',
     artwork: 'gold',
-    supportedModes: 'BOTH',
+    supportedModes: 'GROUP',
     minPlayers: 2,
     maxPlayers: 4,
-    isPlayable: false,
-    isFeatured: false,
-    sortOrder: 3,
+    isPlayable: true,
+    isFeatured: true,
+    sortOrder: 2,
   },
   {
     slug: 'party-quiz',

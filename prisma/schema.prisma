@@ -97,6 +97,11 @@ model User {
   kissPoints          Int              @default(0)
   gamesPlayed         Int              @default(0)
   kissesGiven         Int              @default(0)
+  // Ludo PRD §74 — permanent lifetime Ludo stats (Ludo Games lives in
+  // gamesPlayed above; rooms cascade away, these counters survive).
+  ludoWins            Int              @default(0)
+  ludoTokensFinished  Int              @default(0)
+  ludoCaptures        Int              @default(0)
   giftsSentCount      Int              @default(0)
   giftsReceivedCount  Int              @default(0)
   sentGifts           SpinRoomGift[]   @relation("GiftSender")
@@ -514,6 +519,15 @@ model SpinRoom {
   // odd = female, alternating around the table) — see room-assignment.ts.
   maleCapacity    Int      @default(6)
   femaleCapacity  Int      @default(6)
+  // Ludo PRD §76 — the room table is SHARED by every room game ("the room is
+  // the platform, the game is a plug-in"): gameType picks the engine that
+  // owns this room. "spin_bottle" (default) | "ludo". Ludo rooms are created
+  // with maxPlayers=4 / minPlayers=2 and NO gender balancing (Ludo PRD §6).
+  gameType        String   @default("spin_bottle")
+  // Ludo PRD §77 — authoritative LudoGameState JSON (players, turn, dice,
+  // tokens, winner, stateVersion, sixStreak). Animations are client-side and
+  // never stored. Spin Bottle rooms keep this null.
+  gameState       Json?
   currentTurnIdx  Int      @default(0)
   // ID of the active spin row (kept here for fast polling lookup)
   currentSpinId   String?
@@ -528,6 +542,7 @@ model SpinRoom {
   chatMentions    SpinRoomChatMention[]
 
   @@index([status, lastActivityAt])
+  @@index([gameType, status, lastActivityAt])
 }
 
 model SpinRoomPlayer {

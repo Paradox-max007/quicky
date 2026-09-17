@@ -31,6 +31,7 @@ export type AppView =
   | 'profile-view'
   | 'spin-bottle'
   | 'spin-bottle-room'
+  | 'ludo-room'
   | 'game-chat'
   | 'game-chat-contacts'
   | 'admin-gifts'
@@ -177,6 +178,8 @@ type State = {
   communityFocusPostId: string | null
   // Active Spin the Bottle roomId (set when join succeeds; cleared on leave)
   spinBottleRoomId: string | null
+  // Active Quicky Ludo roomId (Ludo PRD §71/§110 — same lifecycle rules).
+  ludoRoomId: string | null
   // Game Hub PRD §12: the slug of the game whose landing page is open in the
   // 'game-landing' view (Games → card → landing). null = nothing selected.
   gameLandingSlug: string | null
@@ -248,6 +251,8 @@ type State = {
   openCommunityPost: (postId: string) => void
   clearCommunityFocus: () => void
   setSpinBottleRoomId: (id: string | null) => void
+  /** Ludo PRD §71 — active Ludo room (survives refresh like the spin room). */
+  setLudoRoomId: (id: string | null) => void
   openGameChat: (
     peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null },
     returnView?: AppView
@@ -287,6 +292,7 @@ export const useQuickyStore = create<State>((set) => ({
   paywall: null,
   communityFocusPostId: null,
   spinBottleRoomId: null,
+  ludoRoomId: null,
   gameLandingSlug: null,
   chatReturnView: null,
   gameChatPeer: null,
@@ -343,6 +349,13 @@ export const useQuickyStore = create<State>((set) => ({
     } catch {}
     set({ spinBottleRoomId: id })
   },
+  setLudoRoomId: (id) => {
+    try {
+      if (id) localStorage.setItem('quicky_ludo_room_id', id)
+      else localStorage.removeItem('quicky_ludo_room_id')
+    } catch {}
+    set({ ludoRoomId: id })
+  },
   openGameChat: (peer, returnView) =>
     set({
       gameChatPeer: peer,
@@ -374,5 +387,5 @@ export const useQuickyStore = create<State>((set) => ({
   setGamesReturnView: (v) => set({ gamesReturnView: v }),
   setChatsSection: (s) => set({ chatsSection: s }),
   setActiveMatchId: (id) => set({ activeMatchId: id }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, ludoRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
 }))
