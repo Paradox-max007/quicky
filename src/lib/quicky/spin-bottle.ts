@@ -27,6 +27,7 @@
 import { db } from '@/lib/db'
 import { seatAngle, seatVector } from './spin-geometry'
 import { emitRoomUpdate } from './spin-events'
+import { effectiveSeatGender, type SeatGender } from './room-assignment'
 
 // NOTE (v2.1 §47-§55): the server NEVER writes game/table events (spin
 // started, target selected, results, timeouts) into spinRoomMessage — the
@@ -57,21 +58,29 @@ export function seatVectorFor(seatIndex: number): { x: number; y: number } {
   return seatVector(seatIndex)
 }
 
-// Gender matching: pick the first eligible player whose gender differs
-// from the spinner's. If "nonbinary"/"other" or both share the same gender,
-// we still try the remaining pool (any non-self) so the game keeps flowing.
+// Gender matching (Games PRD §11/§73): the bottle may ONLY spin when BOTH
+// genders are present, and the target must be an OPPOSITE-GENDER player.
+// Genders are resolved through the seat architecture: a player's effective
+// seat gender is their profile gender when it maps cleanly, otherwise the
+// gender slot of the seat they occupy (even = male, odd = female).
 export function eligibleTargets(
   spinnerGender: string | null,
-  players: { userId: string; gender: string | null; isActive: boolean; connection: string }[]
+  players: { userId: string; gender: string | null; seatIndex?: number; isActive: boolean; connection: string }[]
 ): { userId: string; gender: string | null }[] {
   const pool = players.filter((p) => p.isActive && p.connection === 'online')
   if (pool.length === 0) return []
-  const opposite = pool.filter(
-    (p) => spinnerGender && p.gender && p.gender !== spinnerGender
-  )
+  const spinnerSeat: SeatGender | null =
+    spinnerGender === 'male' ? 'male' : spinnerGender === 'female' ? 'female' : null
+  const opposite = pool.filter((p) => {
+    const g = effectiveSeatGender(p.gender, p.seatIndex ?? null)
+    return g !== null && spinnerSeat !== null && g !== spinnerSeat
+  })
   if (opposite.length > 0) return opposite
-  // Fallback: any other player (same gender games shouldn't be totally stuck)
-  return pool
+  // Spinner gender unknown (nonbinary/other): any other VALID player is a
+  // legal target — but only when the room itself passed the both-gender gate,
+  // which beginSpin guarantees before we get here.
+  if (spinnerSeat === null) return pool
+  return []
 }
 
 // Compute the bottle rotation that lands pointing at the target's seat ray.
@@ -144,18 +153,49 @@ export async function beginSpin(roomId: string) {
   const online = active.filter((p) => p.connection === 'online')
   if (online.length < room.minPlayers) return
 
+  // ── Games PRD §11/§73 — NO-SPIN GATE (server-authoritative):
+  //   totalPlayers > 1  AND  malePlayers > 0  AND  femalePlayers > 0
+  // Example A/B of the PRD: 3 males + 0 females → the bottle does NOT spin,
+  // does not animate, does not select a target, does not start a timer. The
+  // room flips back to WAITING and the client shows "Waiting for more
+  // players" (§13 — never gendered wording).
+  const genders = await db.user.findMany({
+    where: { id: { in: online.map((p) => p.userId) } },
+    select: { id: true, gender: true },
+  })
+  const genderById = new Map(genders.map((u) => [u.id, u.gender]))
+  const seatGenders = online.map(
+    (p) => effectiveSeatGender(genderById.get(p.userId) ?? null, p.seatIndex) ?? 'male'
+  )
+  const maleCount = seatGenders.filter((g) => g === 'male').length
+  const femaleCount = seatGenders.filter((g) => g === 'female').length
+  if (!(online.length > 1 && maleCount > 0 && femaleCount > 0)) {
+    if (room.status !== 'WAITING') {
+      await db.spinRoom.update({ where: { id: roomId }, data: { status: 'WAITING' } })
+      emitRoomUpdate(roomId)
+    }
+    return
+  }
+
   // Find the spinner by currentTurnIdx
   const turnIdx = room.currentTurnIdx % online.length
   const spinner = online[turnIdx]
   if (!spinner) return
 
-  // Pick a target from the opposite-gender pool
+  // Pick a target from the opposite-gender pool (the gate above guarantees
+  // one exists whenever the spinner's own gender is known)
   const spinnerUser = await db.user.findUnique({ where: { id: spinner.userId }, select: { gender: true } })
   const candidates = eligibleTargets(
     spinnerUser?.gender ?? null,
     online
       .filter((p) => p.userId !== spinner.userId)
-      .map((p) => ({ userId: p.userId, gender: null as string | null, isActive: true, connection: 'online' as const }))
+      .map((p) => ({
+        userId: p.userId,
+        gender: genderById.get(p.userId) ?? null,
+        seatIndex: p.seatIndex,
+        isActive: true,
+        connection: 'online' as const,
+      }))
   )
   if (candidates.length === 0) return
   const target = candidates[Math.floor(Math.random() * candidates.length)]
@@ -448,4 +488,46 @@ export async function forfeitRoundFor(roomId: string, userId: string) {
     const t = setTimeout(() => onResponseTimeout(roomId, spin.id), 2500)
     pushTimer(roomId, t)
   }
+}
+
+/**
+ * Games PRD §14-§17 — a round participant LEAVES mid-round. The old behaviour
+ * (refuse the leave with 409) contradicted the leave-must-work rule (§14);
+ * now the SERVER cancels the round explicitly:
+ *   ACTIVE ROUND → PLAYER LEFT → SERVER CANCELS ROUND → ROUND_CANCELLED
+ *   → CLIENT RESETS ROUND → recalculate valid players (§17).
+ * No stale spinner/target IDs survive in any client state: the room's
+ * currentSpinId is cleared and every subscriber receives both the typed
+ * ROUND_CANCELLED event and a fresh snapshot.
+ */
+export async function cancelRoundForLeaver(roomId: string, userId: string): Promise<boolean> {
+  const room = await db.spinRoom.findUnique({ where: { id: roomId } })
+  if (!room?.currentSpinId) return false
+  const spin = await db.spinBottleSpin.findUnique({ where: { id: room.currentSpinId } })
+  if (!spin || (spin.status !== 'spinning' && spin.status !== 'awaiting')) return false
+  if (spin.spinnerId !== userId && spin.targetId !== userId) return false
+
+  // Conditional write: only the FIRST cancellation path wins the race
+  // (leave + watchdog + forfeit can all fire in the same window).
+  const cancelled = await db.spinBottleSpin.updateMany({
+    where: { id: spin.id, status: { in: ['spinning', 'awaiting'] } },
+    data: { status: 'completed', result: 'cancelled', completedAt: new Date() },
+  })
+  if (cancelled.count === 0) return false
+
+  await db.spinRoom.update({
+    where: { id: roomId },
+    data: { currentSpinId: null, lastActivityAt: new Date() },
+  })
+  emitRoomUpdate(roomId, 'ROUND_CANCELLED', {
+    roomId,
+    userId,
+    spinId: spin.id,
+    timestamp: new Date().toISOString(),
+  })
+  // Recalculate whether the game can continue (§16 step 6) — advance the
+  // rotation (which re-runs the no-spin gate) after a short presentation beat.
+  const t = setTimeout(() => advanceTurn(roomId), 1200)
+  pushTimer(roomId, t)
+  return true
 }

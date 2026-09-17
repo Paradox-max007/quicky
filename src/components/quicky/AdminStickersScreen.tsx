@@ -22,6 +22,9 @@ type Bundle = {
   name: string
   description: string | null
   icon: string
+  unlockType?: string
+  eventId?: string | null
+  event?: { name: string } | null
   leagueId: string | null
   seasonId: string | null
   league?: { name: string } | null
@@ -41,8 +44,10 @@ type BundleForm = {
   name: string
   description: string
   icon: string
+  unlockType: string
   leagueId: string
   seasonId: string
+  eventId: string
   priceCoins: string
   minimumLeaguePoints: string
   purchaseEnabled: boolean
@@ -51,12 +56,24 @@ type BundleForm = {
   sortOrder: string
 }
 
+// Games PRD §32 — acquisition mechanisms (admin-configurable)
+const UNLOCK_TYPES: { value: string; label: string }[] = [
+  { value: 'coins', label: '🪙 Coins purchase' },
+  { value: 'league', label: '🏆 League reward' },
+  { value: 'season', label: '📅 Season pass' },
+  { value: 'event', label: '🎉 Event unlock' },
+  { value: 'subscription', label: '👑 Subscription' },
+  { value: 'free', label: '🎁 Free' },
+]
+
 const EMPTY_BUNDLE: BundleForm = {
   name: '',
   description: '',
   icon: '✨',
+  unlockType: 'coins',
   leagueId: '',
   seasonId: '',
+  eventId: '',
   priceCoins: '0',
   minimumLeaguePoints: '0',
   purchaseEnabled: true,
@@ -74,11 +91,12 @@ type StickerForm = {
   isActive: boolean
 }
 
-export function AdminStickersScreen() {
+export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
   const [bundles, setBundles] = useState<Bundle[]>([])
   const [leagues, setLeagues] = useState<any[]>([])
   const [seasons, setSeasons] = useState<any[]>([])
+  const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [bundleForm, setBundleForm] = useState<BundleForm | null>(null)
   const [stickerForm, setStickerForm] = useState<StickerForm | null>(null)
@@ -92,6 +110,7 @@ export function AdminStickersScreen() {
       setBundles(res.bundles ?? [])
       setLeagues(res.leagues ?? [])
       setSeasons(res.seasons ?? [])
+      setEvents((res as any).events ?? [])
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to load sticker bundles')
     } finally {
@@ -106,19 +125,26 @@ export function AdminStickersScreen() {
   const saveBundle = async () => {
     if (!bundleForm || saving) return
     if (!bundleForm.name.trim()) return toast.error('Bundle name is required')
-    // §117: at least one acquisition route
+    // §117: at least one acquisition route — event/season/subscription/free
+    // unlocks carry their own requirement instead.
     const price = Math.floor(Number(bundleForm.priceCoins)) || 0
     const points = Math.floor(Number(bundleForm.minimumLeaguePoints)) || 0
-    if (!bundleForm.purchaseEnabled && !bundleForm.rewardEnabled) {
+    const selfSufficient = ['event', 'season', 'subscription', 'free'].includes(bundleForm.unlockType)
+    if (!bundleForm.purchaseEnabled && !bundleForm.rewardEnabled && !selfSufficient) {
       return toast.error('Enable coin purchase or league reward')
+    }
+    if (bundleForm.unlockType === 'event' && !bundleForm.eventId) {
+      return toast.error('Pick the event for this event-unlock set')
     }
     setSaving(true)
     const data = {
       name: bundleForm.name.trim(),
       description: bundleForm.description.trim() || undefined,
       icon: bundleForm.icon.trim() || '✨',
+      unlockType: bundleForm.unlockType,
       leagueId: bundleForm.leagueId || null,
       seasonId: bundleForm.seasonId || null,
+      eventId: bundleForm.eventId || null,
       priceCoins: price,
       minimumLeaguePoints: points,
       purchaseEnabled: bundleForm.purchaseEnabled,
@@ -167,7 +193,7 @@ export function AdminStickersScreen() {
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">
       <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2 flex items-center gap-2 border-b border-white/10 relative z-10">
-        <button onClick={() => setView('settings')} className="p-2 rounded-full hover:bg-white/10" aria-label="Back">
+        <button onClick={() => (onBack ? onBack() : setView('settings'))} className="p-2 rounded-full hover:bg-white/10" aria-label="Back">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
@@ -208,8 +234,11 @@ export function AdminStickersScreen() {
                   {!b.isActive && <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-white/10 text-white/60">INACTIVE</span>}
                 </div>
                 <p className="text-[11px] text-white/50 mt-0.5">
+                  <span className="font-bold text-white/70">{b.unlockType ?? 'coins'}</span>
+                  {b.unlockType === 'event' && (b as any).event ? ` (${(b as any).event.name})` : ''}
+                  {' · '}
                   {b.league ? `League: ${b.league.name} · ` : ''}
-                  {b.season ? `Season: ${b.season} · ` : ''}
+                  {b.season ? `Season: ${b.season.name ?? b.season} · ` : ''}
                   {b.purchaseEnabled ? `🪙 ${b.priceCoins}` : ''}
                   {b.purchaseEnabled && b.rewardEnabled ? ' · ' : ''}
                   {b.rewardEnabled ? `🏆 min ${b.minimumLeaguePoints} pts` : ''}
@@ -225,8 +254,10 @@ export function AdminStickersScreen() {
                         name: b.name,
                         description: b.description ?? '',
                         icon: b.icon,
+                        unlockType: (b as any).unlockType ?? 'coins',
                         leagueId: b.leagueId ?? '',
                         seasonId: b.seasonId ?? '',
+                        eventId: (b as any).eventId ?? '',
                         priceCoins: String(b.priceCoins),
                         minimumLeaguePoints: String(b.minimumLeaguePoints),
                         purchaseEnabled: b.purchaseEnabled,
@@ -339,6 +370,31 @@ export function AdminStickersScreen() {
                 </Field>
                 <Field label="Display Order">
                   <input value={bundleForm.sortOrder} onChange={(e) => setBundleForm({ ...bundleForm, sortOrder: e.target.value })} className={inputCls} inputMode="numeric" />
+                </Field>
+                {/* Games PRD §32/§63 — acquisition method (admin-configurable) */}
+                <Field label="Unlock Method">
+                  <select
+                    value={bundleForm.unlockType}
+                    onChange={(e) => setBundleForm({ ...bundleForm, unlockType: e.target.value })}
+                    className={inputCls}
+                    data-testid="bundle-unlock-type"
+                  >
+                    {UNLOCK_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Event">
+                  <select
+                    value={bundleForm.eventId}
+                    onChange={(e) => setBundleForm({ ...bundleForm, eventId: e.target.value })}
+                    className={inputCls}
+                  >
+                    <option value="">— none —</option>
+                    {events.map((ev) => (
+                      <option key={ev.id} value={ev.id}>{ev.name}</option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="League">
                   <select value={bundleForm.leagueId} onChange={(e) => setBundleForm({ ...bundleForm, leagueId: e.target.value })} className={inputCls}>

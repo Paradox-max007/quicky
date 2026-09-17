@@ -16,6 +16,8 @@ export type GameDef = {
   isPlayable: boolean
   isFeatured: boolean
   sortOrder: number
+  /** Games PRD §38/§39 — currently active players (near-realtime). */
+  activePlayers: number
 }
 
 // Theme-aware gradients per artwork key (dark + premium, §64/§88)

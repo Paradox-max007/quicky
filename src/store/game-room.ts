@@ -50,6 +50,10 @@ export type RoomSnapshot = {
     gender: string | null
     kissPoints: number
   }[]
+  /** Games PRD §11/§73 — server-mirrored spin gate (rendering only). */
+  canSpin: boolean
+  maleCount: number
+  femaleCount: number
   currentSpin: {
     id: string
     spinnerId: string
@@ -171,7 +175,15 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
       ctl.optimisticRef = null
       set({ optimistic: null })
     }
-    if (!spinId && ctl.lastSpinId) ctl.lastSpinId = null
+    if (!spinId) {
+      // Games PRD §17 — ROUND_CANCELLED / between rounds: no stale
+      // spinner/target/optimistic state may survive in any client.
+      ctl.lastSpinId = null
+      if (ctl.optimisticRef) {
+        ctl.optimisticRef = null
+        set({ optimistic: null })
+      }
+    }
 
     set((prev) => {
       // merge room chat — snapshot messages + optimistic/realtime items
@@ -237,6 +249,20 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
             const snap = JSON.parse((e as MessageEvent).data) as RoomSnapshot
             set({ streamOk: true })
             applySnapshot(snap)
+          } catch {}
+        })
+        // Games PRD §16/§70 — discrete typed events (PLAYER_LEFT,
+        // ROUND_CANCELLED, …). The authoritative snapshot follows right
+        // behind; these signals only drive immediate UX reactions.
+        es.addEventListener('room_event', (e) => {
+          try {
+            const { event } = JSON.parse((e as MessageEvent).data) as { event: string }
+            if (event === 'ROUND_CANCELLED' && ctl.optimisticRef) {
+              ctl.optimisticRef = null
+              set({ optimistic: null })
+            }
+            // PLAYER_LEFT: the fresh snapshot removes the card + frees the
+            // seat; no local player-list surgery is allowed (§14).
           } catch {}
         })
         es.addEventListener('room_gone', () => void handleRoomGone())

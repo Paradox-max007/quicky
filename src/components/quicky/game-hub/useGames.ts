@@ -3,10 +3,14 @@
 // Quicky — GAMES CATALOG HOOK (Game Hub PRD §8-§11/§79)
 // One fetch feeds the Games screen, the desktop hub and the game landings.
 // Loading skeleton → content, or Error + Retry (§79: never a blank screen).
+// Games PRD §39 — active-player counts refresh on a light 30s poll so the
+// card badges stay near-realtime without re-fetching the whole catalog.
 
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/quicky/api-client'
 import type { GameDef } from './types'
+
+const ACTIVE_PLAYERS_POLL_MS = 30_000
 
 export function useGames() {
   const [games, setGames] = useState<GameDef[] | null>(null)
@@ -38,6 +42,27 @@ export function useGames() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // §39 — near-realtime active-player counts: light poll, merge into cards.
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const res = await api.games.activePlayers()
+        if (!res?.counts) return
+        setGames((prev) =>
+          prev
+            ? prev.map((g) => ({
+                ...g,
+                activePlayers: res.counts[g.slug] ?? 0,
+              }))
+            : prev
+        )
+      } catch {
+        // badge refresh is best-effort; the last counts stay visible
+      }
+    }, ACTIVE_PLAYERS_POLL_MS)
+    return () => clearInterval(timer)
   }, [])
 
   return { games, loaded: games !== null, failed, retry: load }

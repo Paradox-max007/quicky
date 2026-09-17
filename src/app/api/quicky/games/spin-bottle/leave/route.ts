@@ -1,12 +1,13 @@
-// Quicky — Leave a Spin the Bottle room (PRD §9/§66/§67 + lifecycle PRD §5/§8/§17)
+// Quicky — Leave a Spin the Bottle room (Games PRD §14-§17 + lifecycle §5/§8/§17)
 // POST /api/quicky/games/spin-bottle/leave { roomId }
 //
-// Room lock: while a round is SPINNING/AWAITING, its spinner and target are
-// locked — the server refuses their leave with 409 ("Finish the current
-// round first"). Spectators may leave any time. Crash/disconnect recovery
-// never depends on this endpoint: the response-deadline watchdog resolves
-// every round within 10s, and the cleanup worker (instrumentation.ts) sweeps
-// members idle ≥ 10 min plus every empty/singleton room.
+// Games PRD §14-§17 — leaving ALWAYS works. The old 409 "finish the round
+// first" lock is gone: if the leaver is the spinner or the target of an
+// active round, the SERVER CANCELS the round (cancelRoundForLeaver →
+// ROUND_CANCELLED realtime event) before membership ends. Seat release,
+// the leave chip and the fresh snapshot then propagate to every client,
+// which removes the player card and frees the seat (§14: never a stale
+// card — server state is authoritative).
 //
 // Lifecycle transitions handled here (server-authoritative):
 //   · last player left  → the room and ALL its temporary data are deleted
@@ -16,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
-import { cancelRoomTimers, advanceTurn, activeRoundParticipant } from '@/lib/quicky/spin-bottle'
+import { cancelRoomTimers, advanceTurn, cancelRoundForLeaver } from '@/lib/quicky/spin-bottle'
 import { deleteRoomCompletely } from '@/lib/quicky/room-cleanup'
 import { emitRoomUpdate } from '@/lib/quicky/spin-events'
 
@@ -32,19 +33,15 @@ export async function POST(req: NextRequest) {
   })
   if (!me_row) return NextResponse.json({ ok: true, alreadyLeft: true })
 
-  // ROOM LOCK — active-round participants cannot walk away mid-round (§66).
-  if (await activeRoundParticipant(roomId, me.id)) {
-    return NextResponse.json(
-      { error: 'Finish the current round first.' },
-      { status: 409 }
-    )
-  }
-
-  // Mark the player as left
+  // Mark the player as left — seat released at the SERVER first (§14).
   await db.spinRoomPlayer.update({
     where: { id: me_row.id },
     data: { leftAt: new Date(), isActive: false, connection: 'offline' },
   })
+
+  // Games PRD §17: if I was the spinner/target, the round dies WITH me —
+  // no client may keep a round alive that involves a player who is gone.
+  await cancelRoundForLeaver(roomId, me.id)
 
   // Leave chip (v2.1 §51/§52): resolved from the EVENT data at leave time —
   // the frontend never has to guess the name after the row is gone.
@@ -55,6 +52,15 @@ export async function POST(req: NextRequest) {
       kind: 'leave',
       text: `${(await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name ?? 'Someone'} left`,
     },
+  })
+
+  // Games PRD §16 — typed realtime leave event (payload per §16), followed
+  // by the authoritative snapshot refresh.
+  emitRoomUpdate(roomId, 'PLAYER_LEFT', {
+    roomId,
+    userId: me.id,
+    seatIndex: me_row.seatIndex,
+    timestamp: new Date().toISOString(),
   })
 
   // Recount CURRENT active membership (lifecycle §8/§9 — never history).
@@ -87,6 +93,7 @@ export async function POST(req: NextRequest) {
 
   if (!roundInFlight) {
     // Idle between rounds → nudge the rotation so the table keeps flowing
+    // (advanceTurn → beginSpin re-runs the both-gender no-spin gate).
     await advanceTurn(roomId)
   }
   emitRoomUpdate(roomId)

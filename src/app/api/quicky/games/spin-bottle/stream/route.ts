@@ -60,7 +60,11 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const scheduleSnapshot = () => {
+      const scheduleSnapshot = (event = 'ROOM_UPDATED', payload?: unknown) => {
+        // PRD §16/§70 — discrete realtime events (PLAYER_LEFT, ROUND_CANCELLED,
+        // …) are forwarded to the client AS THEY HAPPEN; the fresh snapshot
+        // (authoritative state) follows right behind.
+        if (event !== 'ROOM_UPDATED') send('room_event', { event, payload })
         if (closed || sendTimer) return
         // Coalesce bursts (multiple emits inside one transaction window)
         sendTimer = setTimeout(() => {

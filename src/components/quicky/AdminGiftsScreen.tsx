@@ -56,7 +56,7 @@ type CategoryForm = {
 const EMPTY_GIFT: GiftForm = { name: '', icon: '🎁', categoryId: '', priceCoins: '10', isActive: true, sortOrder: '99' }
 const EMPTY_CATEGORY: CategoryForm = { name: '', icon: '🎁', sortOrder: '99', isActive: true }
 
-export function AdminGiftsScreen() {
+export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
   const [tab, setTab] = useState<'gifts' | 'categories'>('gifts')
   const [categories, setCategories] = useState<AdminCategory[]>([])
@@ -155,7 +155,7 @@ export function AdminGiftsScreen() {
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2 flex items-center gap-2">
-        <button onClick={() => setView('settings')} className="p-2 rounded-full hover:bg-white/10" aria-label="Back">
+        <button onClick={() => (onBack ? onBack() : setView('settings'))} className="p-2 rounded-full hover:bg-white/10" aria-label="Back">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-bold">Admin · Gifts</h1>

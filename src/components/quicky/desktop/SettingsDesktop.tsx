@@ -120,6 +120,17 @@ export function SettingsDesktop() {
           <SettingsIcon className="w-5 h-5 text-white/70" />
           <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         </div>
+        {/* Games PRD §55 — dedicated admin console (separate shell at /admin). */}
+        {user?.isAdmin && (
+          <button
+            onClick={() => window.open('/admin', '_blank')}
+            className="mb-5 mx-2 flex items-center gap-2 rounded-xl border border-[var(--qk-accent)]/30 bg-[var(--qk-accent)]/10 px-3 py-2.5 text-xs font-bold text-[var(--qk-accent)] hover:bg-[var(--qk-accent)]/20 transition-colors"
+            data-testid="open-admin-console"
+          >
+            <Shield className="w-4 h-4" aria-hidden />
+            Open Admin Console
+          </button>
+        )}
         {groups.map((g) => (
           <div key={g.title} className="mb-5">
             <p className="text-[10px] font-bold tracking-[0.18em] text-white/35 uppercase mb-1.5 px-2">{g.title}</p>

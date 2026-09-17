@@ -80,7 +80,8 @@ function statusCopy(status: string): { emoji: string; text: string } {
     case 'completed':
       return { emoji: '✨', text: 'Round complete' }
     default:
-      return { emoji: '⏳', text: 'Waiting for players' }
+      // Games PRD §13 — NEVER gendered wording; aggregate + neutral only.
+      return { emoji: '⏳', text: 'Waiting for more players' }
   }
 }
 
@@ -572,21 +573,17 @@ export function SpinBottleRoom({
     onClose()
   }
 
-  // Change Table (PRD §65): atomic leave → random join → load new state.
-  // No intermediate blank screen — the new snapshot (returned by join) swaps
-  // in while the table stays rendered.
+  // Change Table (Games PRD §9): ONE server call — the server runs the exact
+  // same gender-aware assignment algorithm as Play Now (excluding this room)
+  // and returns the new snapshot. The client never decides the assignment.
+  // No intermediate blank screen — the new snapshot swaps in while the table
+  // stays rendered. Round participants may switch: the server cancels the
+  // round safely (PRD §14-§17).
   const changeTable = async () => {
     if (switching || !roomId) return
-    if (iAmRoundParticipant) {
-      toast('Finish the current round first.')
-      return
-    }
     setSwitching(true)
     try {
-      try {
-        await api.spinBottle.leave(roomId)
-      } catch {}
-      const res = await api.spinBottle.join()
+      const res = await api.spinBottle.changeTable(roomId)
       if (res?.roomId && res.roomId !== roomId) {
         useQuickyStore.getState().setSpinBottleRoomId(res.roomId)
         // attach() resets the runtime state (snapshot/chat/optimistic/closure)
@@ -594,7 +591,10 @@ export function SpinBottleRoom({
         // rotation/settle/dismissed flags from the roomId change.
         useGameRoomStore.getState().attach(res.roomId)
         toast('Moved to a new table 🍾')
-      } else {
+      } else if (res?.roomId) {
+        // Server kept us (no other valid table) — a fresh room was created
+        // for us or we re-seated; sync the snapshot either way.
+        useGameRoomStore.getState().attach(res.roomId)
         toast('No other table available right now — try again soon.')
       }
     } catch (e: any) {
@@ -727,10 +727,12 @@ export function SpinBottleRoom({
   const takenSeats = new Set(seatPlayers.map((p) => p.seatIndex))
   const openSeats = Array.from({ length: MAX_SEATS }, (_, i) => i).filter((i) => !takenSeats.has(i))
 
-  const chatPlayers: ChatPlayer[] = (snapshot?.players ?? []).map((p) => ({
+  const chatPlayers = (snapshot?.players ?? []).map((p) => ({
     userId: p.userId,
     displayName: p.displayName,
     avatar: p.avatar,
+    gender: p.gender as string | null | undefined,
+    seatIndex: p.seatIndex as number | undefined,
   }))
 
   return (
@@ -959,7 +961,14 @@ export function SpinBottleRoom({
                   {status === 'completed' && (
                     <span className="sbr-bs-text">✨ Round complete</span>
                   )}
-                  {status === 'idle' && <span className="sbr-bs-text">Waiting for players…</span>}
+                  {status === 'idle' && (
+                    <>
+                      <span className="sbr-bs-text">Waiting for more players</span>
+                      {snapshot && !snapshot.canSpin && snapshot.players.length > 1 && (
+                        <span className="sbr-bs-sub">The game will start when another player joins.</span>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1139,9 +1148,9 @@ export function SpinBottleRoom({
           />
         </div>
 
-        {/* ═══ v3 §34-§39 — ROOM OPTIONS (opened by the 🚪 RoomExitControl).
-            Round lock (§36): while I'm spinning/deciding, BOTH move & leave
-            are disabled and the sheet explains why; Cancel always works. */}
+        {/* ═══ Games PRD §34-§39/§14-§17 — ROOM OPTIONS. Leaving ALWAYS works:
+            if a round is in flight the server cancels it safely (§17) — no
+            more 409 lock. Cancel always works too. */}
         <AnimatePresence>
           {showExit && (
             <>
@@ -1163,12 +1172,12 @@ export function SpinBottleRoom({
                 <h3 className="text-base font-black">Room options</h3>
                 {iAmRoundParticipant && (
                   <p className="text-sm font-semibold text-amber-300/90 -mt-1">
-                    Round in progress — finish it first, the table is locked while you decide.
+                    Round in progress — leaving cancels the round for everyone.
                   </p>
                 )}
                 <button
                   className="sbr-sheet-btn-stay w-full justify-center"
-                  disabled={switching || iAmRoundParticipant}
+                  disabled={switching}
                   onClick={async () => {
                     setShowExit(false)
                     await changeTable()
@@ -1179,7 +1188,7 @@ export function SpinBottleRoom({
                 </button>
                 <button
                   className="sbr-sheet-btn-leave w-full justify-center"
-                  disabled={switching || iAmRoundParticipant}
+                  disabled={switching}
                   onClick={() => {
                     setShowExit(false)
                     void leave()
@@ -1285,6 +1294,12 @@ export function SpinBottleRoom({
           onGiftSent={(newBalance) => {
             setCoinBalance(newBalance)
             // My sent total also moves — the next snapshot reconciles fully.
+          }}
+          onBuyCoins={() => {
+            // Games PRD §27 — insufficient coins opens the EXISTING
+            // coin-purchase modal (identical on Web / Capacitor).
+            setShowGiftSheet(false)
+            setShowCoinStore(true)
           }}
         />
       </div>

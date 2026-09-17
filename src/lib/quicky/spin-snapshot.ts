@@ -5,6 +5,7 @@
 // is only visible to THEMSELF — everyone else (including spectators) gets
 // nulls until the round is completed and the server publishes the result.
 import { db } from '@/lib/db'
+import { normalizeGender, seatGenderForIndex } from './room-assignment'
 
 export type RoomPlayerSummary = {
   userId: string
@@ -31,6 +32,16 @@ export type RoomSnapshot = {
    */
   singletonStartedAt: string | null
   players: RoomPlayerSummary[]
+  /**
+   * Games PRD §11/§73 — server-authoritative spin gate, mirrored to the
+   * client for RENDERING only (the server re-checks before every spin):
+   * canSpin = totalPlayers > 1 && maleCount > 0 && femaleCount > 0.
+   * Gender counts are aggregate only — the UI never labels a seat or a
+   * waiting state with gender wording (§5/§13).
+   */
+  canSpin: boolean
+  maleCount: number
+  femaleCount: number
   currentSpin: {
     id: string
     spinnerId: string
@@ -192,6 +203,14 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
   const iAmTarget = currentSpin?.targetId === viewerId && currentSpin?.status === 'awaiting'
   const iAmSpinner = currentSpin?.spinnerId === viewerId && currentSpin?.status === 'awaiting'
 
+  // Spin gate mirror (§11/§73) — effective seat gender = profile gender when
+  // it maps cleanly, else the gender slot of the occupied seat.
+  const effective = (p: RoomPlayerSummary) =>
+    normalizeGender(p.gender) ?? seatGenderForIndex(p.seatIndex)
+  const maleCount = players.filter((p) => effective(p) === 'male').length
+  const femaleCount = players.filter((p) => effective(p) === 'female').length
+  const canSpin = players.length > 1 && maleCount > 0 && femaleCount > 0
+
   // Viewer economy (v3 §19-§25): balance + gifts received in one query each,
   // kiss points come from the player row already fetched above.
   const [viewerUser, giftsReceivedAgg] = await Promise.all([
@@ -207,6 +226,9 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
     currentTurnIdx: room.currentTurnIdx,
     singletonStartedAt: room.singletonStartedAt?.toISOString() ?? null,
     players,
+    canSpin,
+    maleCount,
+    femaleCount,
     currentSpin,
     myTurnIndex,
     myTurnIs,

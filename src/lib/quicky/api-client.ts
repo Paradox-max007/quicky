@@ -201,6 +201,9 @@ export const api = {
   games: {
     /** Game Hub PRD §11: the DB-driven game catalog (+ §16 live activePlayers). */
     list: () => jsonFetch<{ games: { id: string; slug: string; name: string; shortDescription: string; description: string; icon: string; artwork: string; supportedModes: string; minPlayers: number; maxPlayers: number; isPlayable: boolean; isFeatured: boolean; sortOrder: number; activePlayers: number }[] }>('/api/quicky/games'),
+    /** Games PRD §39 — near-realtime active-player counts per game slug. */
+    activePlayers: () =>
+      jsonFetch<{ counts: Record<string, number>; serverNow: number }>('/api/quicky/games/active-players'),
   },
   /** Refactor PRD §25/§26/§80 — friendships. */
   friends: {
@@ -276,6 +279,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ roomId }),
       }),
+    // Games PRD §9 — server-authoritative Change Table: one call leaves the
+    // current table and claims a gender-compatible seat on another one. The
+    // client never decides the assignment (§9/§71).
+    changeTable: (roomId: string) =>
+      jsonFetch<{ ok: boolean; roomId: string; changed: boolean; createdNewRoom: boolean; snapshot: any }>(
+        '/api/quicky/games/spin-bottle/change',
+        { method: 'POST', body: JSON.stringify({ roomId }) }
+      ),
     respond: (roomId: string, choice: 'yes' | 'no') =>
       jsonFetch('/api/quicky/games/spin-bottle/respond', {
         method: 'POST',
@@ -317,6 +328,19 @@ export const api = {
           method: 'POST',
           body: JSON.stringify({ roomId, recipientId, itemId, quantity }),
         }),
+      // Games PRD §23-§26 — bulk send: the SERVER resolves the recipient
+      // list from the room + filter ('all' | 'male' | 'female'), computes
+      // totalCost = price × quantity × recipients, and deducts atomically.
+      sendBulk: (
+        roomId: string,
+        itemId: string,
+        recipientFilter: 'all' | 'male' | 'female',
+        quantity: number
+      ) =>
+        jsonFetch<{ ok: boolean; coinBalance: number; recipientCount: number; quantity: number; totalCost: number }>(
+          '/api/quicky/games/spin-bottle/gifts',
+          { method: 'POST', body: JSON.stringify({ roomId, itemId, recipientFilter, quantity }) }
+        ),
     },
     coins: {
       balance: () =>
@@ -425,6 +449,45 @@ export const api = {
           method: 'DELETE',
           body: JSON.stringify({ id }),
         }),
+    },
+    // Games PRD §64/§65 — Live Tables monitor (read-only room inspection).
+    liveRooms: {
+      list: () =>
+        jsonFetch<{
+          rooms: {
+            id: string
+            status: string
+            playerCount: number
+            maxPlayers: number
+            maleCount: number
+            femaleCount: number
+            canSpin: boolean
+            currentSpin: { status: string; result: string | null } | null
+            createdAt: string
+            lastActivityAt: string
+            players: { userId: string; name: string | null; gender: string | null; seatIndex: number; connection: string; isActive: boolean }[]
+          }[]
+          totals: { rooms: number; players: number }
+        }>('/api/quicky/admin/live-rooms'),
+    },
+    // Games PRD §66 — user management (server-side role checks).
+    users: {
+      list: (params?: { q?: string }) =>
+        jsonFetch<{ users: any[] }>(
+          `/api/quicky/admin/users${params?.q ? `?q=${encodeURIComponent(params.q)}` : ''}`
+        ),
+      setAdmin: (id: string, isAdmin: boolean) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/users', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, isAdmin }),
+        }),
+    },
+    // Games PRD §67 — audit log viewer.
+    audit: {
+      list: (params?: { take?: number }) =>
+        jsonFetch<{ entries: any[] }>(
+          `/api/quicky/admin/audit${params?.take ? `?take=${params.take}` : ''}`
+        ),
     },
   },
   // ─── GAME CHAT (game-chat PRD §7+) — private player-to-player messaging,

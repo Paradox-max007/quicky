@@ -1,20 +1,29 @@
-// Quicky — Spin the Bottle gifts (v3 PRD §47-§61, §86-§88)
+// Quicky — Spin the Bottle gifts (Games PRD §18-§28 + v3 §47-§61, §86-§88)
 // GET  → DB-DRIVEN gift catalog (GiftCategory + GameItem rows — the admin
 //        panel owns this data, nothing is hardcoded) + the viewer's balance.
-// POST → send a gift inside a room. Server validates EVERYTHING (§86): gift
-//        active, recipient in-room, price from the DB (never the client,
-//        §71), balance ≥ cost enforced RACE-SAFELY inside the transaction
-//        (conditional updateMany, §87/§88: no negative balance is possible).
-//        The transaction also writes the CoinLedger rows, the SpinRoomGift
-//        transaction (with the transaction-time price snapshot, §52) and the
-//        gift chat message, then wakes the room SSE stream so every member's
-//        HUD updates instantly (§59/§60).
+// POST → send a gift inside a room, SINGLE recipient or BULK:
+//
+//   { roomId, itemId, recipientId?, quantity?, recipientFilter? }
+//     · recipientId       → legacy single-recipient send
+//     · recipientFilter   → 'all' | 'male' | 'female'  (§18/§23/§24):
+//                           the SERVER resolves the recipient list from the
+//                           room's active players (sender always excluded);
+//                           the client never sends recipientCount/totalPrice
+//                           (§25 — those are computed here).
+//     · quantity          → 1 | 10 | 50 | 100 | 1000 (§21), capped at 1000.
+//
+// totalCost = unitPrice × quantity × recipientCount (§22), deducted RACE-SAFELY
+// in ONE transaction (conditional `coinBalance >= totalCost` decrement — no
+// negative balance, no partial bulk send, §26/§87/§88). Balance < cost → 402
+// `insufficient_coins` and the CLIENT opens the existing coin-purchase modal
+// (§27 — never a broken flow).
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { touchMemberActivity } from '@/lib/quicky/room-activity'
 import { getClient } from '@/lib/quicky/realtime'
 import { emitRoomUpdate } from '@/lib/quicky/spin-events'
+import { effectiveSeatGender, normalizeGender } from '@/lib/quicky/room-assignment'
 
 export async function GET(_req: NextRequest) {
   const me = await getCurrentUser()
@@ -68,15 +77,22 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null)
   const { roomId, recipientId, itemId } = body ?? {}
+  const recipientFilter = typeof body?.recipientFilter === 'string' ? body.recipientFilter : null
   const quantity = Math.floor(Number(body?.quantity ?? 1))
-  if (!roomId || !recipientId || !itemId) return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
-  if (!Number.isFinite(quantity) || quantity < 1 || quantity > 12) {
+
+  if (!roomId || !itemId) return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
+  if (!recipientId && !recipientFilter) return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
+  // §21 — quantity selector: 1/10/50/100/1000 chips (any integer 1..1000 is
+  // accepted server-side; the UI exposes exactly the five chips).
+  if (!Number.isFinite(quantity) || quantity < 1 || quantity > 1000) {
     return NextResponse.json({ error: 'invalid_quantity' }, { status: 400 })
   }
-  if (me.id === recipientId) return NextResponse.json({ error: 'cannot_gift_yourself' }, { status: 400 })
+  if (recipientId && me.id === recipientId) {
+    return NextResponse.json({ error: 'cannot_gift_yourself' }, { status: 400 })
+  }
 
   // Price + activation come from the DB — the client's number is NEVER
-  // trusted (v3 §71/§86).
+  // trusted (v3 §71/§86). Max quantity is admin-configurable per gift (§62).
   const giftDef = await db.gameItem.findFirst({
     where: { id: itemId, isActive: true, category: 'gift' },
   })
@@ -85,56 +101,128 @@ export async function POST(req: NextRequest) {
   if (!Number.isInteger(unitPrice) || unitPrice < 0) {
     return NextResponse.json({ error: 'invalid_item' }, { status: 400 })
   }
-  const totalCost = unitPrice * quantity
+  const maxQty = Number.isInteger(giftDef.maxQuantity) && giftDef.maxQuantity! > 0 ? giftDef.maxQuantity! : 1000
+  if (quantity > maxQty) return NextResponse.json({ error: 'invalid_quantity' }, { status: 400 })
 
-  const [senderMembership, recipientMembership, recipient] = await Promise.all([
-    db.spinRoomPlayer.findFirst({ where: { roomId, userId: me.id, isActive: true } }),
-    db.spinRoomPlayer.findFirst({ where: { roomId, userId: recipientId, isActive: true } }),
-    db.user.findUnique({ where: { id: recipientId }, select: { name: true } }),
-  ])
+  const senderMembership = await db.spinRoomPlayer.findFirst({
+    where: { roomId, userId: me.id, isActive: true },
+  })
   if (!senderMembership) return NextResponse.json({ error: 'not_in_room' }, { status: 403 })
-  if (!recipientMembership) return NextResponse.json({ error: 'recipient_not_in_room' }, { status: 400 })
 
+  // ── Resolve recipients SERVER-side (§23/§24/§25) ──────────────────────────
+  let recipients: { userId: string; name: string }[]
+  if (recipientId) {
+    const inRoom = await db.spinRoomPlayer.findFirst({
+      where: { roomId, userId: recipientId, isActive: true },
+    })
+    if (!inRoom) return NextResponse.json({ error: 'recipient_not_in_room' }, { status: 400 })
+    const u = await db.user.findUnique({ where: { id: recipientId }, select: { name: true } })
+    recipients = [{ userId: recipientId, name: u?.name ?? 'Someone' }]
+  } else {
+    // 'all' → every eligible player in the room except the sender (§23);
+    // 'male'/'female' → gender filter (§24). Effective seat gender comes
+    // from the profile, falling back to the seat's gender slot.
+    const members = await db.spinRoomPlayer.findMany({
+      where: { roomId, isActive: true, leftAt: null, userId: { not: me.id } },
+      select: { userId: true, seatIndex: true },
+    })
+    const users = await db.user.findMany({
+      where: { id: { in: members.map((m) => m.userId) } },
+      select: { id: true, name: true, gender: true },
+    })
+    const byId = new Map(users.map((u) => [u.id, u]))
+    const wanted = recipientFilter === 'male' ? 'male' : recipientFilter === 'female' ? 'female' : null
+    if (recipientFilter && recipientFilter !== 'all' && !wanted) {
+      return NextResponse.json({ error: 'invalid_filter' }, { status: 400 })
+    }
+    recipients = members
+      .map((m) => {
+        const u = byId.get(m.userId)
+        if (!u) return null
+        if (wanted) {
+          const g = effectiveSeatGender(u.gender, m.seatIndex)
+          if (g !== wanted) return null
+        }
+        return { userId: m.userId, name: u.name ?? 'Someone' }
+      })
+      .filter((r): r is { userId: string; name: string } => r !== null)
+    if (recipients.length === 0) {
+      return NextResponse.json({ error: 'no_recipients' }, { status: 400 })
+    }
+  }
+
+  const recipientCount = recipients.length
+  // §22 — totalCost = giftPrice × quantity × recipientCount
+  const totalCost = unitPrice * quantity * recipientCount
+  const recipientReward = Math.floor((unitPrice * quantity * recipientCount * 0.5) / recipientCount)
+  const perRecipientCost = unitPrice * quantity
+
+  const firstName = recipients[0]?.name ?? 'you'
   const metadata = JSON.stringify({
     itemId: giftDef.id,
     itemName: giftDef.name,
     itemEmoji: giftDef.emoji,
-    recipientId,
-    recipientName: recipient?.name ?? 'Someone',
+    recipientId: recipients.length === 1 ? recipients[0].userId : null,
+    recipientName: recipients.length === 1 ? firstName : null,
+    recipientCount,
+    recipientIds: recipients.map((r) => r.userId),
     quantity,
+    bulk: recipientCount > 1 || quantity > 1,
   })
 
-  // Recipient keeps earning half the spend back as coins (existing behavior).
-  const recipientReward = Math.floor(totalCost * 0.5)
-
-  // ATOMIC send (§54): a single interactive transaction. The balance
-  // decrement is a CONDITIONAL update (`coinBalance >= totalCost`) so two
-  // concurrent sends can never drive the balance negative (§87).
+  // ATOMIC bulk send (§26): ONE interactive transaction — verify balance,
+  // deduct coins, credit recipients, write ledger + gift transactions + the
+  // aggregated chat message. Any failure rolls EVERYTHING back (§26: no
+  // partial bulk gifts; §111: no negative balance).
   const newBalance = await db.$transaction(async (tx) => {
     const debited = await tx.user.updateMany({
       where: { id: me.id, coinBalance: { gte: totalCost } },
       data: { coinBalance: { decrement: totalCost } },
     })
     if (debited.count === 0) {
-      // Throws → whole transaction rolls back → API maps to 402 below.
       throw new Error('insufficient_coins')
     }
-    await tx.user.update({ where: { id: recipientId }, data: { coinBalance: { increment: recipientReward }, giftsReceivedCount: { increment: quantity } } })
-    // Lifecycle PRD §20/§21: lifetime gift counters live on the USER rows —
-    // SpinRoomGift rows are temporary room data and cascade away with the
-    // room, but these counters (like the CoinLedger) are permanent.
-    await tx.user.update({ where: { id: me.id }, data: { giftsSentCount: { increment: quantity } } })
-    await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
-    if (recipientReward > 0) {
-      await tx.coinLedger.create({ data: { userId: recipientId, delta: recipientReward, reason: 'gift_received', meta: metadata } })
+    for (const r of recipients) {
+      await tx.user.update({
+        where: { id: r.userId },
+        data: { coinBalance: { increment: recipientReward }, giftsReceivedCount: { increment: quantity } },
+      })
+      if (recipientReward > 0) {
+        await tx.coinLedger.create({
+          data: { userId: r.userId, delta: recipientReward, reason: 'gift_received', meta: metadata },
+        })
+      }
+      // Gift transaction row per recipient — `coinsSpent` snapshots the
+      // transaction-time price (v3 §52).
+      await tx.spinRoomGift.create({
+        data: {
+          roomId,
+          senderId: me.id,
+          recipientId: r.userId,
+          itemId: giftDef.id,
+          quantity,
+          coinsSpent: perRecipientCost,
+        },
+      })
     }
-    // Gift transaction row — `coinsSpent` snapshots the transaction-time
-    // price (v3 §52: a later price change never rewrites history).
-    await tx.spinRoomGift.create({
-      data: { roomId, senderId: me.id, recipientId, itemId: giftDef.id, quantity, coinsSpent: totalCost },
+    // Lifetime counters live on the USER rows (lifecycle §20/§21).
+    await tx.user.update({
+      where: { id: me.id },
+      data: { giftsSentCount: { increment: quantity * recipientCount } },
     })
+    await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
+    // §28 — aggregated chat entry (never 1000 separate messages/animations).
     await tx.spinRoomMessage.create({
-      data: { roomId, userId: me.id, text: `${giftDef.emoji} For ${recipient?.name ?? 'you'} x${quantity}`, kind: 'gift', metadata },
+      data: {
+        roomId,
+        userId: me.id,
+        text:
+          recipientCount === 1
+            ? `${giftDef.emoji} For ${firstName} x${quantity}`
+            : `${giftDef.emoji} ${quantity}× ${giftDef.name} for ${recipientCount} players`,
+        kind: 'gift',
+        metadata,
+      },
     })
     const fresh = await tx.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } })
     return fresh?.coinBalance ?? 0
@@ -145,6 +233,9 @@ export async function POST(req: NextRequest) {
 
   if (newBalance === null) {
     const bal = (await db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } }))?.coinBalance ?? 0
+    // §27 — the client reacts to `insufficient_coins` by opening the
+    // existing coin-purchase modal (Cancel / Buy Coins). The gift drawer
+    // stays open; nothing is partially sent.
     return NextResponse.json({ error: 'insufficient_coins', coinBalance: bal }, { status: 402 })
   }
 
@@ -155,17 +246,41 @@ export async function POST(req: NextRequest) {
   // (coins, gifts received) update without a refresh (§59/§60).
   emitRoomUpdate(roomId)
 
-  const recipientCoins = (await db.user.findUnique({ where: { id: recipientId }, select: { coinBalance: true } }))?.coinBalance ?? 0
-
-  // Supabase broadcast stays as the instant cosmetic push (toast/animation);
-  // the SSE snapshot above is the authoritative sync path.
+  // Supabase broadcast stays the instant cosmetic push (toast/animation);
+  // the SSE snapshot above is the authoritative sync path. §28: one
+  // AGGREGATED gift event — recipients only bump their own counter.
   const supabase = getClient()
   if (supabase) {
     const ch = supabase.channel(`room:${roomId}`)
-    void ch.send({ type: 'broadcast', event: 'gift', payload: { senderId: me.id, senderName: (await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name, recipientId, recipientName: recipient?.name, itemId: giftDef.id, itemName: giftDef.name, itemEmoji: giftDef.emoji, quantity } })
+    void ch.send({
+      type: 'broadcast',
+      event: 'gift',
+      payload: {
+        senderId: me.id,
+        senderName: (await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name,
+        recipientIds: recipients.map((r) => r.userId),
+        recipientNames: recipients.map((r) => r.name),
+        recipientId: recipients.length === 1 ? recipients[0].userId : null,
+        recipientName: recipients.length === 1 ? firstName : null,
+        itemId: giftDef.id,
+        itemName: giftDef.name,
+        itemEmoji: giftDef.emoji,
+        quantity,
+        recipientCount,
+      },
+    })
     void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: me.id, coinBalance: newBalance } })
-    void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: recipientId, coinBalance: recipientCoins } })
+    for (const r of recipients) {
+      const bal = (await db.user.findUnique({ where: { id: r.userId }, select: { coinBalance: true } }))?.coinBalance ?? 0
+      void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: r.userId, coinBalance: bal } })
+    }
   }
 
-  return NextResponse.json({ ok: true, coinBalance: newBalance })
+  return NextResponse.json({
+    ok: true,
+    coinBalance: newBalance,
+    recipientCount,
+    quantity,
+    totalCost,
+  })
 }

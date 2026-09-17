@@ -10,7 +10,7 @@
 // The bus is cached on globalThis so Next.js dev-mode hot reloads (which
 // re-evaluate module graphs) never split publishers from subscribers.
 
-type RoomListener = () => void
+type RoomListener = (event: string, payload?: unknown) => void
 
 const g = globalThis as unknown as {
   __quickySpinBus?: Map<string, Set<RoomListener>>
@@ -18,13 +18,18 @@ const g = globalThis as unknown as {
 
 const bus: Map<string, Set<RoomListener>> = (g.__quickySpinBus ??= new Map())
 
-/** Announce that something about this room changed (round, players, lock). */
-export function emitRoomUpdate(roomId: string) {
+/**
+ * Announce that something about this room changed (round, players, lock).
+ * PRD §16/§70 — discrete event names ride along (PLAYER_LEFT,
+ * ROUND_CANCELLED, …) so the SSE layer can forward typed signals while the
+ * snapshot remains the authoritative state sync.
+ */
+export function emitRoomUpdate(roomId: string, event = 'ROOM_UPDATED', payload?: unknown) {
   const set = bus.get(roomId)
   if (!set) return
   for (const fn of set) {
     try {
-      fn()
+      fn(event, payload)
     } catch {
       // a dead SSE subscriber must never break the game loop
     }

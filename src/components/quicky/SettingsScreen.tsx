@@ -69,6 +69,13 @@ export function SettingsScreen() {
             title: 'Admin',
             rows: [
               {
+                id: 'admin-console',
+                label: 'Open Admin Console',
+                icon: Shield,
+                chevron: true,
+                onClick: () => window.open('/admin', '_blank'),
+              },
+              {
                 id: 'admin-gifts',
                 label: 'Gift Catalog',
                 icon: Gift,

@@ -509,6 +509,11 @@ model SpinRoom {
   status          String   @default("WAITING") // WAITING | STARTING | PLAYING | CLOSING
   maxPlayers      Int      @default(12)
   minPlayers      Int      @default(2)
+  // PRD §3-§6 — gender-balanced seating: 6 male-weighted + 6 female-weighted
+  // seats. seatIndex parity IS the server-defined gender slot (even = male,
+  // odd = female, alternating around the table) — see room-assignment.ts.
+  maleCapacity    Int      @default(6)
+  femaleCapacity  Int      @default(6)
   currentTurnIdx  Int      @default(0)
   // ID of the active spin row (kept here for fast polling lookup)
   currentSpinId   String?
@@ -704,6 +709,9 @@ model GameItem {
   assetKey    String?
   // "default" | "premium" | "seasonal"
   tier        String   @default("default")
+  // Games PRD §62 — per-gift send rules (admin-managed): max quantity per
+  // bulk send (null = platform default 1000).
+  maxQuantity Int?
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
@@ -960,8 +968,13 @@ model GameStickerBundle {
   name                String
   description         String?
   icon                String   @default("✨")
+  // PRD §32 — acquisition mechanism: "free" | "coins" | "league" | "season"
+  // | "event" | "subscription". The claim/purchase routes verify it SERVER-side.
+  unlockType          String   @default("coins")
   leagueId            String?
   seasonId            String?
+  // PRD §32 — event-based unlock (GameEvent the bundle belongs to)
+  eventId             String?
   priceCoins          Int      @default(0)
   minimumLeaguePoints Int      @default(0)
   purchaseEnabled     Boolean  @default(true)
@@ -973,10 +986,27 @@ model GameStickerBundle {
 
   league   GameLeague?  @relation(fields: [leagueId], references: [id], onDelete: SetNull)
   season   GameSeason?  @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  event    GameEvent?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
   stickers GameSticker[]
   owners   UserGameStickerBundle[]
 
   @@index([isActive, sortOrder])
+}
+
+// Games PRD §32 — platform events (e.g. "Summer Event") that can gate a
+// sticker set's unlock. Admin-managed; the claim route verifies the event is
+// active and inside its window SERVER-side.
+model GameEvent {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  bundles GameStickerBundle[]
 }
 
 // Sticker assets are REFERENCES (asset_url), never binaries in the row (§73).

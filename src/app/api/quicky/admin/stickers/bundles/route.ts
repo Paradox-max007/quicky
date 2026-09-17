@@ -29,26 +29,34 @@ const cleanRef = (v: unknown): string | null | undefined => {
   const s = String(v ?? '').trim()
   return s ? s : null
 }
+// Games PRD §32 — valid acquisition mechanisms
+const UNLOCK_TYPES = ['free', 'coins', 'league', 'season', 'event', 'subscription']
+const cleanUnlockType = (v: unknown): string | undefined => {
+  const s = String(v ?? '').trim()
+  return UNLOCK_TYPES.includes(s) ? s : undefined
+}
 
 export async function GET() {
   const gate = await requireAdmin()
   if (gate.error) return gate.error
 
-  const [bundles, leagues, seasons] = await Promise.all([
+  const [bundles, leagues, seasons, events] = await Promise.all([
     db.gameStickerBundle.findMany({
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: {
         stickers: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
         league: { select: { name: true } },
         season: { select: { name: true } },
+        event: { select: { name: true } },
         _count: { select: { stickers: true, owners: true } },
       },
     }),
     db.gameLeague.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }] }),
     db.gameSeason.findMany({ where: { isActive: true }, orderBy: [{ createdAt: 'asc' }] }),
+    db.gameEvent.findMany({ where: { isActive: true }, orderBy: [{ createdAt: 'asc' }] }),
   ])
 
-  return NextResponse.json({ bundles, leagues, seasons })
+  return NextResponse.json({ bundles, leagues, seasons, events })
 }
 
 export async function POST(req: NextRequest) {
@@ -59,13 +67,21 @@ export async function POST(req: NextRequest) {
   const name = clean(body?.name, 60)
   if (!name) return NextResponse.json({ error: 'name_required' }, { status: 400 })
 
-  // §117: at least one acquisition route should be configured
+  // §117: at least one acquisition route should be configured — unless the
+  // bundle uses a non-purchasable/non-league unlock (event, season,
+  // subscription, free), which carries its own requirement field.
   const priceCoins = cleanInt(body?.priceCoins) ?? 0
   const minimumLeaguePoints = cleanInt(body?.minimumLeaguePoints) ?? 0
   const purchaseEnabled = cleanBool(body?.purchaseEnabled) ?? priceCoins > 0
   const rewardEnabled = cleanBool(body?.rewardEnabled) ?? minimumLeaguePoints > 0
-  if (!purchaseEnabled && !rewardEnabled) {
+  const unlockType = cleanUnlockType(body?.unlockType) ?? 'coins'
+  const selfSufficient = ['event', 'season', 'subscription', 'free'].includes(unlockType)
+  if (!purchaseEnabled && !rewardEnabled && !selfSufficient) {
     return NextResponse.json({ error: 'acquisition_route_required' }, { status: 400 })
+  }
+  // §32: an event/season unlock must point at its requirement.
+  if (unlockType === 'event' && !cleanRef(body?.eventId)) {
+    return NextResponse.json({ error: 'event_required' }, { status: 400 })
   }
 
   const created = await db.gameStickerBundle.create({
@@ -73,8 +89,10 @@ export async function POST(req: NextRequest) {
       name,
       description: clean(body?.description, 200) ?? null,
       icon: clean(body?.icon, 8) ?? '✨',
+      unlockType: cleanUnlockType(body?.unlockType) ?? 'coins',
       leagueId: cleanRef(body?.leagueId) ?? null,
       seasonId: cleanRef(body?.seasonId) ?? null,
+      eventId: cleanRef(body?.eventId) ?? null,
       priceCoins,
       minimumLeaguePoints,
       purchaseEnabled,
@@ -109,6 +127,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (data?.leagueId !== undefined) patch.leagueId = cleanRef(data.leagueId)
   if (data?.seasonId !== undefined) patch.seasonId = cleanRef(data.seasonId)
+  const unlockType = cleanUnlockType(data?.unlockType)
+  if (unlockType !== undefined) patch.unlockType = unlockType
+  if (data?.eventId !== undefined) patch.eventId = cleanRef(data.eventId)
   const priceCoins = cleanInt(data?.priceCoins)
   if (priceCoins !== undefined) patch.priceCoins = priceCoins
   const minimumLeaguePoints = cleanInt(data?.minimumLeaguePoints)

@@ -42,7 +42,7 @@ const MODES = ['GROUP', 'TWO_PLAYER', 'BOTH']
 const inputCls =
   'w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]/50'
 
-export function AdminGamesScreen() {
+export function AdminGamesScreen({ onBack }: { onBack?: () => void } = {}) {
   const [games, setGames] = useState<GameRow[]>([])
   const [items, setItems] = useState<DescRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -166,12 +166,22 @@ export function AdminGamesScreen() {
           <h1 className="text-xl font-black">Game Configuration</h1>
           <p className="text-xs text-white/45 mt-0.5">Card content, availability, ordering and rotating landing texts.</p>
         </div>
-        <button
-          onClick={newGame}
-          className="flex items-center gap-1.5 rounded-full bg-coral-gradient px-4 py-2 text-xs font-bold active:scale-95 transition-transform"
-        >
-          <Plus className="w-4 h-4" /> New game
-        </button>
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-xs font-bold text-white/70 hover:bg-white/10"
+            >
+              Back to Dashboard
+            </button>
+          )}
+          <button
+            onClick={newGame}
+            className="flex items-center gap-1.5 rounded-full bg-coral-gradient px-4 py-2 text-xs font-bold active:scale-95 transition-transform"
+          >
+            <Plus className="w-4 h-4" /> New game
+          </button>
+        </div>
       </div>
 
       {loading ? (

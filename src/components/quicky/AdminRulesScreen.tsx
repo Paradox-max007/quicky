@@ -40,7 +40,7 @@ type RuleForm = {
 
 const EMPTY_RULE: RuleForm = { title: '', description: '', icon: '🎲', sortOrder: '99', isActive: true }
 
-export function AdminRulesScreen() {
+export function AdminRulesScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
   const [rules, setRules] = useState<AdminRule[]>([])
   const [loading, setLoading] = useState(true)
@@ -112,7 +112,7 @@ export function AdminRulesScreen() {
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white">
       <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2 flex items-center gap-2">
-        <button onClick={() => setView('settings')} className="p-2 rounded-full hover:bg-white/10" aria-label="Back to Settings">
+        <button onClick={() => (onBack ? onBack() : setView('settings'))} className="p-2 rounded-full hover:bg-white/10" aria-label="Back to Settings">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>

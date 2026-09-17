@@ -167,7 +167,7 @@ export async function GET() {
     activity.push({
       id: `kiss-${k.id}`,
       kind: 'kiss',
-      text: actor ? `${actor.name ?? 'Someone'} gave you a Game Point` : `You received ${k.points} Kiss Point${k.points === 1 ? '' : 's'}`,
+      text: actor ? `${actor.name ?? 'Someone'} gave you a Game Point` : `You received ${k.points} Game Point${k.points === 1 ? '' : 's'}`,
       actorName: actor?.name ?? null,
       actorPhoto: actor?.photos[0]?.url ?? null,
       createdAt: k.createdAt.toISOString(),

@@ -659,6 +659,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Games PRD §13 — optional secondary waiting hint under the status pill. */
+.sbr-bs-sub {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  color: rgba(255, 248, 235, 0.75);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
 
 /* ── Duel spotlight panel (question + result) ──────────────
    DuelZone (v2.1 §26-§30): the anchor's TOP edge is dynamically placed
