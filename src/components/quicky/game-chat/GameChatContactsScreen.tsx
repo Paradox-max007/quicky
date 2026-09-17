@@ -69,12 +69,13 @@ export function GameChatContactsScreen() {
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white" data-testid="cap-contacts-screen">
-      {/* header (§54): back → the live Game Room */}
+      {/* header (§54): back → the live Game Room. Unified Game Primary PRD
+          §13: the screen is presented as "Game Chat" in the game flow. */}
       <header className="shrink-0 safe-area-top px-2 pt-2.5 pb-2 flex items-center gap-2 border-b border-white/10 bg-[var(--qk-bg)]/80 backdrop-blur">
         <button onClick={back} className="p-2 rounded-full hover:bg-white/10" aria-label="Back to game">
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <p className="font-black text-sm text-white">Contacts</p>
+        <p className="font-black text-sm text-white">Game Chat</p>
       </header>
 
       {/* §38: Game Chats | Dating Chats tabs on the in-game contacts screen */}

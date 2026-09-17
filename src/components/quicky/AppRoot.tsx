@@ -40,6 +40,7 @@ import { AdminStickersScreen } from './AdminStickersScreen'
 import { AdminGamesScreen } from './AdminGamesScreen'
 import { GameChatScreen } from './game-chat/GameChatScreen'
 import { GameChatContactsScreen } from './game-chat/GameChatContactsScreen'
+import { GameFriendsScreen } from './game-primary/GameFriendsScreen'
 import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import { GameDecisionDrawer } from './game-chat/GameDecisionDrawer'
 import { MatchCelebration } from './MatchCelebration'
@@ -85,6 +86,7 @@ function shellFor(view: AppView): string {
       return 'md:max-w-2xl'
     case 'game-chat':
     case 'game-chat-contacts':
+    case 'game-friends':
       // §81: phone-style chat column on web
       return 'md:max-w-lg'
     default:
@@ -145,6 +147,12 @@ export function AppRoot() {
           useLudoRoomStore.getState().detach()
           useQuickyStore.getState().setLudoRoomId(null)
           sv('games')
+        } else if (v === 'game-friends') {
+          // Unified Game Primary Screen PRD §17/§18/§40: hardware back on the
+          // dedicated Friends screen returns to the Game Primary Screen that
+          // opened it — never the Games list.
+          const qk = useQuickyStore.getState()
+          sv(qk.gameFriendsReturnView || 'games')
         } else if (v === 'game-chat-contacts') {
           // Mentions PRD §82: the contacts screen's back → its OWN return
           // view (the live room) — the runtime never stopped. Distinct from
@@ -244,10 +252,14 @@ export function AppRoot() {
 
   // ─── GAME CHAT stream lifecycle (game-chat PRD §91) ──────────────────────
   // ONE lightweight stream serves every conversation. It lives while the
-  // user is anywhere in the Spin the Bottle section (landing, table, chat,
-  // profile popped from the room) — and ends when they leave the section.
+  // user is anywhere in the game section (game primary screens, landing,
+  // table, chat, friends, profile popped from the room) — and ends when they
+  // leave the section. The game primary screens are included so the Chat
+  // icon's unread badge stays live (Unified Game Primary PRD §47).
   const gameSectionActive =
     view === 'spin-bottle' ||
+    view === 'game-landing' ||
+    view === 'game-friends' ||
     view === 'spin-bottle-room' ||
     view === 'ludo-room' ||
     view === 'game-chat' ||
@@ -255,7 +267,8 @@ export function AppRoot() {
     view === 'chats' ||
     (view === 'profile-view' &&
       (useQuickyStore.getState().profileReturnView === 'spin-bottle-room' ||
-        useQuickyStore.getState().profileReturnView === 'ludo-room'))
+        useQuickyStore.getState().profileReturnView === 'ludo-room' ||
+        useQuickyStore.getState().profileReturnView === 'game-friends'))
   useEffect(() => {
     if (gameSectionActive) useGameChatStore.getState().connectStream()
     else useGameChatStore.getState().disconnectStream()
@@ -455,6 +468,9 @@ export function AppRoot() {
           {view === 'admin-games' && <AdminGamesScreen />}
           {view === 'game-chat-contacts' && <GameChatContactsScreen />}
           {view === 'game-chat' && <GameChatScreen />}
+          {/* Unified Game Primary Screen PRD §15: dedicated Capacitor Friends
+              screen (Game Primary → 👥 → Friends → Profile/Chat). */}
+          {view === 'game-friends' && <GameFriendsScreen />}
           {/* Web Premium §39/§9: mobile fallbacks — on the desktop shell the
               pages render inside DesktopHome (Games hub / Chats shell). */}
           {view === 'games' && !useDesk && <GamesScreen />}
