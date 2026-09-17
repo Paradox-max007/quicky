@@ -49,14 +49,22 @@ ok('seed covers 8 party games incl. Truth or Dare/Ludo (§91)', (() => {
 })())
 
 // ── Game landing (§12-§27/§59-§62) ──────────────────────────────────────────
-ok('GameLanding exists + spin-bottle dispatch to rich landing (§12)', has('src/components/quicky/game-hub/GameLanding.tsx', 'SpinBottleLanding', 'Your records', 'Your progress', 'Game information'))
-ok('landing shows records/progress/chemistry (§59/§60/§74)', has('src/components/quicky/game-hub/GameLanding.tsx', 'Game Points', 'Streak', 'Quicky Points', 'League', 'ChemistryIndicator'))
-ok('landing: honest coming-soon state (§70)', src('src/components/quicky/game-hub/GameLanding.tsx').includes('COMING SOON'))
-ok('mode selector UI for supported modes (§25)', src('src/components/quicky/game-hub/GameLanding.tsx').includes('How do you want to play?'))
-ok('spin landing: Play Now + mode chip + progress block (§91)', has('src/components/quicky/SpinBottleLanding.tsx', 'spin-play-now', 'Group · 2–12 players', 'spin-landing-progress'))
-ok('matchmaking MODAL with animated progress kept (§7: no loading page)', has('src/components/quicky/SpinBottleLanding.tsx', 'matchmaking-modal', 'matchmaking-progress', "width: ['0%', '94%']"))
+ok('GameLanding dispatches spin/ludo + generic GamePrimaryScreen (§12/§55)', has('src/components/quicky/game-hub/GameLanding.tsx', 'SpinBottleLanding', 'LudoLanding', 'GamePrimaryScreen'))
+ok('unified primary screen: dynamic config, no hardcoded game logic (§4/§42)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'config: GamePrimaryConfig', 'config.name', 'config.gameStats', 'config.rotatingTexts'))
+ok('primary screen: Chat icon top-left + Friends icon top-right (§9/§10)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'aria-label="Open game chats"', 'aria-label="Open friends"', 'game-primary-chat-icon', 'game-primary-friends-icon'))
+ok('primary screen: combined overall stats + selected game stats (§6/§7)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'config.overallStats', 'All Quicky'))
+ok('primary screen: honest coming-soon state (§70)', src('src/components/quicky/game-primary/GamePrimaryScreen.tsx').includes('COMING SOON'))
+ok('web interaction panel: chat|personalChat|friends|friendProfile stack (§20/§37)', has('src/components/quicky/game-primary/GameInteractionPanel.tsx', "'chat'", "'personalChat'", "'friends'", "'friendProfile'", 'friendProfile:'))
+ok('web panel: personal chat embeds the EXISTING GameChatScreen (§23/§34)', has('src/components/quicky/game-primary/GameInteractionPanel.tsx', '<GameChatScreen', 'closeConversation'))
+ok('web panel: friends list reuses the EXISTING friends API (§35)', has('src/components/quicky/game-primary/GameFriendsList.tsx', 'api.friends.list()'))
+ok('bottom Game Chats section REMOVED from the primary screen (§11)', !src('src/components/quicky/SpinBottleLanding.tsx').includes('<GameChatList />'))
+ok('Capacitor: dedicated Friends screen with safe area + back stacks (§15-§18/§45)', has('src/components/quicky/game-primary/GameFriendsScreen.tsx', 'gameFriendsReturnView', 'safe-area-top', "openProfile(f.id, 'game-friends')", "'game-friends'"))
+ok('store: game-friends view + openGameFriends return target', has('src/store/quicky.ts', "| 'game-friends'", 'openGameFriends', 'gameFriendsReturnView'))
+ok('spin landing: Play Now + matchmaking modal kept (§7/§91)', has('src/components/quicky/SpinBottleLanding.tsx', 'spin-play-now', 'matchmaking-modal', 'matchmaking-progress', "width: ['0%', '94%']"))
+ok('spin config: stats + rotating texts + how-it-works (§6/§42/§43)', has('src/components/quicky/game-primary/game-configs.ts', 'Games Played', 'Kisses', 'SPIN_DEFAULT_TAGLINES', 'combinedOverallStats'))
+ok('ludo config: Games/Wins/Tokens/Captures + taglines (§6/§43)', has('src/components/quicky/game-primary/game-configs.ts', 'Tokens Home', 'Captures', 'Roll the dice', 'LUDO_RULES'))
 
-// ── Navigation (§7/§29) ─────────────────────────────────────────────────────
+// ── Navigation (§7/§29) ──────────────────────────────────────────────────────
 ok("store: 'game-landing' view + openGameLanding + chatReturnView", has('src/store/quicky.ts', "| 'game-landing'", 'openGameLanding', 'chatReturnView'))
 ok('AppRoot renders GameLanding + UnifiedChatsScreen', has('src/components/quicky/AppRoot.tsx', 'view === \'game-landing\' && <GameLanding />', 'view === \'chats\' && !useDesk && <UnifiedChatsScreen />'))
 ok('BottomNav Chats tab opens the unified center', has('src/components/quicky/BottomNav.tsx', "id: 'chats', label: 'Chats'"))

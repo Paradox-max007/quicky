@@ -34,6 +34,7 @@ export type AppView =
   | 'ludo-room'
   | 'game-chat'
   | 'game-chat-contacts'
+  | 'game-friends'
   | 'admin-gifts'
   | 'admin-rules'
   | 'admin-stickers'
@@ -210,6 +211,12 @@ type State = {
   // field is where the contacts screen's back arrow (and the Android hardware
   // back) goes: Game Contacts → Game Room.
   gameChatContactsReturnView: AppView
+  // Unified Game Primary Screen PRD §15/§17/§18: the dedicated Capacitor
+  // FRIENDS screen's back target — the Game Primary Screen that opened it
+  // ('game-landing' / 'spin-bottle'). Profile and chat opened from a friend
+  // row return HERE first (openProfile/openGameChat store this view),
+  // then Friends returns to gameFriendsReturnView.
+  gameFriendsReturnView: AppView
   // Task 8: where the mobile Games hub's back arrow returns — the surface
   // that opened it (community page, …). null → defaults to 'community'.
   gamesReturnView: AppView | null
@@ -261,6 +268,9 @@ type State = {
   // Layout PRD §8: the dedicated Capacitor CONTACT LIST screen (Game Room →
   // Game Contact List → Personal Game Chat). Back returns to `returnView`.
   openGameChatContacts: (returnView?: AppView) => void
+  /** Unified Game Primary Screen PRD §15: open the dedicated Friends screen
+   * (Capacitor). Back returns to `returnView` (the Game Primary Screen). */
+  openGameFriends: (returnView?: AppView) => void
   pinGameChatPeer: (
     peer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
   ) => void
@@ -300,6 +310,7 @@ export const useQuickyStore = create<State>((set) => ({
   roomChatPanel: 'room',
   gameChatPinnedPeer: null,
   gameChatContactsReturnView: 'spin-bottle-room',
+  gameFriendsReturnView: 'games',
   gamesReturnView: null,
   roomChatMentionDraft: null,
   chatsSection: 'game',
@@ -372,6 +383,13 @@ export const useQuickyStore = create<State>((set) => ({
       // personal chat was opened straight from "Message".
       ...(returnView ? { gameChatContactsReturnView: returnView } : {}),
     }),
+  openGameFriends: (returnView) =>
+    set({
+      view: 'game-friends',
+      // §17/§18: profile + chat opened from a friend row return here first;
+      // Friends' own back goes to gameFriendsReturnView (the Game Primary).
+      ...(returnView ? { gameFriendsReturnView: returnView } : {}),
+    }),
   pinGameChatPeer: (peer) => set({ gameChatPinnedPeer: peer }),
   setRoomChatPanel: (p) =>
     set((prev) => ({
@@ -387,5 +405,5 @@ export const useQuickyStore = create<State>((set) => ({
   setGamesReturnView: (v) => set({ gamesReturnView: v }),
   setChatsSection: (s) => set({ chatsSection: s }),
   setActiveMatchId: (id) => set({ activeMatchId: id }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, ludoRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
+  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, ludoRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', gameFriendsReturnView: 'games', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
 }))
