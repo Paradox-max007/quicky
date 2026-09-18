@@ -75,7 +75,7 @@ export function useDashboard(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return
     void refresh()
-    const iv = setInterval(() => void refresh(), 30_000)
+    const iv = setInterval(() => void refresh(), 60_000)
     return () => clearInterval(iv)
   }, [enabled, refresh])
 

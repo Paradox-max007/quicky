@@ -7,16 +7,34 @@
 // forbids fake precision (§9) and empty stat cards (§48), so anything without
 // a backend source is simply omitted and the UI turns 0s into actions.
 import { NextResponse } from 'next/server'
+import { unstable_cache } from 'next/cache'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { computeOverallChemistry } from '@/lib/quicky/chemistry'
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000
 
+// ── Per-user cache (20 s TTL) ─────────────────────────────────────────────
+// Dashboard fires ~20 Prisma queries per call and is polled every 60 s.
+// Wrapping in unstable_cache means concurrent browser tabs / rapid retries
+// for the same user share ONE result set instead of thundering the pool.
+function buildDashboardFetcher(uid: string) {
+  return unstable_cache(
+    () => fetchDashboardData(uid),
+    [`dashboard-${uid}`],
+    { revalidate: 20 },
+  )
+}
+
 export async function GET() {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const uid = me.id
+  const fetcher = buildDashboardFetcher(me.id)
+  const result = await fetcher()
+  return NextResponse.json(result)
+}
+
+async function fetchDashboardData(uid: string) {
   // Economy fields live on the full User row (AuthUser stays a narrow type)
   const econ = await db.user.findUnique({
     where: { id: uid },
@@ -210,7 +228,7 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({
+  return {
     stats: {
       points: econ?.quickyScore ?? 0,
       coins: econ?.coinBalance ?? 0,
@@ -234,5 +252,5 @@ export async function GET() {
       online: onlineNow,
       postsToday,
     },
-  })
+  }
 }

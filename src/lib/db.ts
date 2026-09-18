@@ -19,8 +19,8 @@ function withBoundedPool(url: string | undefined): string | undefined {
   if (url.includes('connection_limit')) return url // explicit wins — never override the operator
   try {
     const u = new URL(url)
-    u.searchParams.set('connection_limit', '5')
-    u.searchParams.set('pool_timeout', '20') // queue up to 20s instead of failing fast
+    u.searchParams.set('connection_limit', '10')
+    u.searchParams.set('pool_timeout', '30') // queue up to 30s — dashboard fires ~20 queries per request
     u.searchParams.set('connect_timeout', '10')
     return u.toString()
   } catch {
