@@ -39,15 +39,18 @@
 }
 .ldo-board {
   position: relative;
-  width: var(--ldo-board, min(92%, 420px));
+  width: var(--ldo-board, min(97%, 560px));
   aspect-ratio: 1 / 1;
   pointer-events: auto;
-  border-radius: 14px;
-  background: linear-gradient(160deg, #fdf6ec 0%, #f3e7d3 100%);
+  border-radius: 12px;
+  background:
+    radial-gradient(120% 120% at 20% 12%, rgba(255, 255, 255, 0.55), transparent 55%),
+    linear-gradient(160deg, #fdf6ec 0%, #f3e7d3 100%);
   box-shadow:
     inset 0 2px 6px rgba(255, 255, 255, 0.8),
     inset 0 -3px 8px rgba(97, 61, 18, 0.25),
-    0 10px 26px rgba(20, 8, 0, 0.45);
+    0 12px 30px rgba(20, 8, 0, 0.5),
+    0 2px 6px rgba(20, 8, 0, 0.4);
   overflow: hidden;
   touch-action: manipulation;
 }
@@ -78,45 +81,110 @@
   font-size: calc(var(--ldo-cell) * 0.5);
   opacity: 0.5;
 }
-.ldo-cell-home { background: var(--cell-color); opacity: 0.85; }
+/* start cells carry a direction chevron pointing along the travel path */
+.ldo-cell-start::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: 42%;
+  transform: translate(-50%, -50%) rotate(var(--ldo-arr, 0deg));
+  background:
+    linear-gradient(45deg, transparent 46%, rgba(255, 255, 255, 0.95) 46%, rgba(255, 255, 255, 0.95) 54%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, rgba(255, 255, 255, 0.95) 46%, rgba(255, 255, 255, 0.95) 54%, transparent 54%);
+  background-size: 60% 60%;
+  background-position: 78% 50%;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+.ldo-cell-home { background: linear-gradient(145deg, var(--cell-color), color-mix(in srgb, var(--cell-color) 78%, #000)); opacity: 0.9; }
+.ldo-cell-home::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34%;
+  height: 34%;
+  transform: translate(-50%, -50%) rotate(var(--ldo-arr, 0deg));
+  background: linear-gradient(45deg, transparent 46%, rgba(255, 255, 255, 0.8) 46%, rgba(255, 255, 255, 0.8) 54%, transparent 54%);
+  background-size: 58% 58%;
+  background-position: 80% 50%;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+}
 
-/* yard blocks (6×6) */
+/* yard blocks (6×6 corner HOME BASES — each player's home is the corner
+   of the table: colored base, inner plate, 4 circular token pads) */
 .ldo-yard {
   position: absolute;
-  border-radius: 12%;
+  border-radius: 10%;
   background: var(--yard-color);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35), inset 0 0 22px rgba(0, 0, 0, 0.18);
 }
 .ldo-yard-inner {
   position: absolute;
-  inset: 18%;
-  border-radius: 14%;
-  background: rgba(255, 251, 244, 0.92);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.15);
+  inset: 13%;
+  border-radius: 12%;
+  background:
+    radial-gradient(100% 100% at 30% 20%, rgba(255, 255, 255, 0.95), rgba(252, 247, 238, 0.88)),
+    #fffbf4;
+  box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255, 255, 255, 0.5);
 }
+/* the 4 circular pads the tokens rest on (2×2, real-board look) */
+.ldo-yard-pad {
+  position: absolute;
+  width: 17.5%;
+  height: 17.5%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.65);
+  border: 2px dashed var(--yard-color);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+/* owner chip on the corner base (player name / Open Seat) */
+.ldo-yard-owner {
+  position: absolute;
+  left: 50%;
+  bottom: 4.5%;
+  transform: translateX(-50%);
+  max-width: 84%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(17, 16, 24, 0.82);
+  color: #fff;
+  font-size: calc(var(--ldo-cell) * 0.34);
+  font-weight: 800;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.ldo-yard-owner.ldo-owner-me { background: var(--yard-color); box-shadow: 0 0 8px -1px var(--yard-color); }
 
-/* center finish (3×3 diamond) */
+/* center finish — 4 triangles pointing at the middle (classic board) */
 .ldo-center {
   position: absolute;
   left: 40%;
   top: 40%;
   width: 20%;
   height: 20%;
-  transform: rotate(45deg);
-  background: conic-gradient(
-    var(--ldo-red) 0 25%,
-    var(--ldo-green) 0 50%,
-    var(--ldo-yellow) 0 75%,
-    var(--ldo-blue) 0 100%
-  );
   box-shadow: 0 0 14px rgba(0, 0, 0, 0.35);
+  background: #17161d;
+}
+.ldo-center-tri {
+  position: absolute;
+  inset: 0;
+  clip-path: var(--tri);
+  background: linear-gradient(145deg, var(--tri-color), color-mix(in srgb, var(--tri-color) 72%, #000));
 }
 
-/* ── Tokens (§11/§19/§20/§23) ────────────────────────────── */
+/* ── Tokens (§11/§19/§20/§23 — real-world coin feel) ─────── */
 .ldo-token {
   position: absolute;
-  width: calc(var(--ldo-cell) * 0.78);
-  height: calc(var(--ldo-cell) * 0.78);
+  width: calc(var(--ldo-cell) * 0.8);
+  height: calc(var(--ldo-cell) * 0.8);
   margin: 0;
   padding: 0;
   border: none;
@@ -134,10 +202,33 @@
   border-radius: 50%;
   background: radial-gradient(circle at 32% 28%, var(--tk-light), var(--tk-color) 58%, var(--tk-dark));
   border: 2px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.42), inset 0 -2px 3px rgba(0, 0, 0, 0.25), inset 0 2px 2px rgba(255, 255, 255, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+/* glossy highlight — the light source of the physical coin */
+.ldo-token-dot::before {
+  content: '';
+  position: absolute;
+  left: 16%;
+  top: 12%;
+  width: 34%;
+  height: 24%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  filter: blur(0.5px);
+}
+/* mid-hop while stepping through the path — the coin LIFTS off the
+   board every square and lands with a squash (real board-game feel) */
+.ldo-token-moving .ldo-token-dot {
+  animation: ldo-token-hop 0.18s ease-in-out infinite;
+}
+@keyframes ldo-token-hop {
+  0% { transform: translateY(0) scale(1, 1); }
+  40% { transform: translateY(-34%) scale(1.06, 1.06); }
+  90% { transform: translateY(2%) scale(1.08, 0.92); }
+  100% { transform: translateY(0) scale(1, 1); }
 }
 .ldo-token-selectable { cursor: pointer; }
 .ldo-token-selectable .ldo-token-dot {
@@ -257,7 +348,7 @@
 .ldo-hud-sub { font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
 .ldo-hud-turn { color: var(--chip-color); }
 
-/* ── Dice + turn control (§31/§32) ───────────────────────── */
+/* ── Dice — REAL-WORLD 3D cube (§31/§32 revised) ─────────── */
 .ldo-controls {
   display: flex;
   align-items: center;
@@ -265,26 +356,75 @@
   gap: 14px;
   padding: 6px 10px 8px;
 }
-.ldo-dice {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: linear-gradient(160deg, #ffffff, #e8ddc8);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), inset 0 -3px 6px rgba(97, 61, 18, 0.2);
+.ldo-dice-scene {
+  --ldo-dice-half: 27px;
+  position: relative;
+  width: 54px;
+  height: 54px;
+  perspective: 340px;
+  flex-shrink: 0;
+}
+.ldo-dice-cube {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.18, 1.25, 0.32, 1);
+  will-change: transform;
+}
+.ldo-dice-scene.ldo-rolling .ldo-dice-cube {
+  animation: ldo-dice-tumble 0.6s cubic-bezier(0.3, 0, 0.6, 1) infinite;
+}
+/* the tumble: two-axis spin with a bouncing hop — a die shaken in a cup */
+@keyframes ldo-dice-tumble {
+  0% { transform: rotateX(8deg) rotateY(0deg) translateY(0); }
+  20% { transform: rotateX(120deg) rotateY(96deg) translateY(-26%); }
+  45% { transform: rotateX(250deg) rotateY(210deg) translateY(0); }
+  65% { transform: rotateX(380deg) rotateY(320deg) translateY(-16%); }
+  85% { transform: rotateX(480deg) rotateY(410deg) translateY(0); }
+  100% { transform: rotateX(528deg) rotateY(440deg) translateY(0); }
+}
+.ldo-dice-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: linear-gradient(155deg, #fffdf5 0%, #f4ead2 62%, #e6d7b6 100%);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(97, 61, 18, 0.28),
+    inset 0 -4px 8px rgba(97, 61, 18, 0.2),
+    inset 0 3px 5px rgba(255, 255, 255, 0.85);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  padding: 8px;
+  padding: 15%;
   gap: 2px;
-  flex-shrink: 0;
+  backface-visibility: hidden;
 }
-.ldo-dice.ldo-rolling { animation: ldo-dice-roll 0.65s ease-in-out infinite; }
-@keyframes ldo-dice-roll {
-  0% { transform: rotate(0) scale(1); }
-  25% { transform: rotate(-14deg) scale(1.06); }
-  50% { transform: rotate(9deg) scale(0.97); }
-  75% { transform: rotate(-7deg) scale(1.04); }
-  100% { transform: rotate(0) scale(1); }
+/* resting accent ring in the current player's color */
+.ldo-dice-scene:not(.ldo-rolling) .ldo-dice-face {
+  box-shadow:
+    inset 0 0 0 1.5px rgba(97, 61, 18, 0.28),
+    inset 0 -4px 8px rgba(97, 61, 18, 0.2),
+    inset 0 3px 5px rgba(255, 255, 255, 0.85),
+    0 0 0 2px var(--ldo-dice-ring, transparent);
+}
+/* ground shadow — squashes while the die is in the air */
+.ldo-dice-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 74%;
+  height: 10px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(15, 8, 2, 0.5), transparent 70%);
+}
+.ldo-dice-scene.ldo-rolling .ldo-dice-shadow {
+  animation: ldo-dice-shadow 0.6s ease-in-out infinite;
+}
+@keyframes ldo-dice-shadow {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.9; }
+  20% { transform: translateX(-50%) scale(0.62); opacity: 0.45; }
+  65% { transform: translateX(-50%) scale(0.78); opacity: 0.6; }
 }
 .ldo-pip {
   width: 100%;
@@ -294,6 +434,7 @@
   align-self: center;
   justify-self: center;
   aspect-ratio: 1;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8), inset 0 -1px 1px rgba(255, 255, 255, 0.18);
 }
 .ldo-pip.off { visibility: hidden; }
 
@@ -455,7 +596,7 @@
   .ldo-hud { padding: 8px 12px 4px; gap: 10px; }
   .ldo-hud-name { max-width: 120px; font-size: 13px; }
   .ldo-controls { gap: 20px; padding: 10px 14px 12px; }
-  .ldo-dice { width: 64px; height: 64px; }
+  .ldo-dice-scene { --ldo-dice-half: 30px; width: 60px; height: 60px; }
 }
 
 /* ── Reduced motion (§104) ───────────────────────────────── */
@@ -463,13 +604,16 @@
   .ldo-token,
   .ldo-token-animating { transition: none; }
   .ldo-token-selectable .ldo-token-dot,
+  .ldo-token-moving .ldo-token-dot,
   .ldo-board.ldo-turn-pulse,
-  .ldo-dice.ldo-rolling,
+  .ldo-dice-scene.ldo-rolling .ldo-dice-cube,
+  .ldo-dice-scene.ldo-rolling .ldo-dice-shadow,
   .ldo-countdown-num,
   .ldo-confetti i { animation: none !important; }
   .ldo-token-shake .ldo-token-dot,
   .ldo-token-captured .ldo-token-dot,
   .ldo-token-finished .ldo-token-dot { animation: none !important; }
+  .ldo-dice-cube { transition: none; }
 }
 
 /* ── Game area column (HUD → stage → dice → giftbar) ─────── */

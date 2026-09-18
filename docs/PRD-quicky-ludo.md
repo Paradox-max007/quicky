@@ -227,25 +227,31 @@ Full game.
 
 # 6. ROOM ASSIGNMENT
 
-Ludo does **not** use the Spin Bottle gender balancing requirement.
-
-That requirement belongs to Spin Bottle.
-
-For Ludo:
+REVISED (unified entry-screen update): Ludo NOW uses gender weighting —
+**exactly 2 male + 2 female seats per table**, mirroring the Spin Bottle
+seat architecture at Ludo's 4-seat scale:
 
 ```text
-Any eligible player can occupy any available Ludo seat.
+seat 0 (RED)    → male slot
+seat 1 (GREEN)  → female slot
+seat 2 (YELLOW) → male slot
+seat 3 (BLUE)   → female slot
 ```
 
-Do not apply:
+seatIndex parity IS the gender slot (even = male, odd = female), so the two
+male seats (RED/YELLOW) and the two female seats (GREEN/BLUE) sit on opposite
+DIAGONALS of the board — neither gender ever clusters on one side. Profiles
+whose gender maps cleanly (male/female) can only claim their own slots;
+nonbinary/other/unset profiles are treated as "either" and may take ANY open
+seat. The gender-capacity recheck runs INSIDE the seat-claim transaction
+(`ludo-assignment.ts`) so a 2-seat gender quota can never be overfilled by a
+race. Fresh rooms are created with `maleCapacity: 2, femaleCapacity: 2`.
+
+Do not apply the Spin Bottle 6/6 scale to Ludo:
 
 ```text
 6 male / 6 female
-opposite gender
-gender-weighted room assignment
 ```
-
-to Ludo.
 
 ### Ludo room capacity
 
@@ -265,6 +271,27 @@ seat 3 → BLUE
 ```
 
 The color is determined by seat, not by user gender.
+
+### REVISED — board presentation & physical animation
+
+The Ludo UI was re-worked to feel like a REAL-WORLD board game:
+
+* **The whole table is the board** — the 15×15 board fills the measured
+  stage edge to edge (thin breathing margin), never a small centered tile.
+* **Each player's home is the CORNER of the table**: a colored corner base
+  with an inner plate, 4 circular token pads and an owner chip (player name,
+  or an honest "Open Seat").
+* **The path is laid through the table**: the classic 52-cell cross ring,
+  4 colored home columns with direction chevrons, start cells marked with a
+  travel-direction arrow, safe cells starred, and the center finish built
+  from four colored triangles pointing at the middle.
+* **Coins hop like real pieces** — while a token travels square by square
+  (~180 ms per square, server-transition driven) its coin LIFTS off the
+  board, scales up mid-air and lands with a squash every square.
+* **The dice is a REAL 3D cube** (CSS `preserve-3d`, six pip faces,
+  opposite faces sum to 7): it tumbles on two axes with a bouncing hop while
+  rolling and settles on the SERVER's value with a physical overshoot ease
+  plus an extra full turn per roll — every roll animates, even repeats.
 
 ---
 

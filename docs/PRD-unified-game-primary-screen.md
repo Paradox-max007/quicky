@@ -114,7 +114,7 @@ The order is EXACTLY:
      ↓
 You / Level
      ↓
-Statistics          (selected game stats + combined All Quicky stats + coin balance)
+Statistics          (COMMON stats — identical for every game + coin balance)
      ↓
 Play Now
      ↓
@@ -126,6 +126,16 @@ How It Works
 ```
 
 **Play Now, Progress, and How It Works are NOT separate desktop columns.** They remain part of the same vertical content flow underneath the profile/statistics. Game information and the honest coming-soon state for non-playable games follow at the bottom of the same column.
+
+### 4.1 REVISED — ONE entry screen for every game, COMMON statistics
+
+The same `GamePrimaryScreen` serves EVERY game. Across games only THREE things ever change:
+
+1. the top bar game **name** and **icon**,
+2. the **room** a [Play Now] tap leads to (Spin the Bottle → Spin the Bottle room via matchmaking; Ludo → Ludo room via the server's table-availability + gender-weighted check),
+3. the How-It-Works copy / rotating taglines that describe the game itself.
+
+**The Statistics grid is COMMON**: every game shows the identical set — Total Games · Total Wins · Total Coins · Interactions — computed from the shared landing payloads (`commonGameStats`). The old per-game stat sets (kisses, tokens home, captures…) are retired; the separate "All Quicky" combined block stays empty and is hidden by the screen. The matchmaking modal is likewise SHARED (`MatchmakingModal`) — one join flow for every game, only the status copy differs.
 
 ## 5. Game identity
 
@@ -204,7 +214,7 @@ Full Screen Friends List        (dedicated GameFriendsScreen)
 ## 8. Acceptance criteria
 
 1. Desktop (≥1024px, web): the primary screen renders **three columns** — a substantially wider main profile column plus GAME CHATS and MY FRIENDS social columns on the same row.
-2. The main column contains, in order: Profile Image → You/Level → Statistics (selected game + All Quicky) → Play Now → Group/Meet someone new → Your Progress → How It Works.
+2. The main column contains, in order: Profile Image → You/Level → Statistics (COMMON stats, §6 revised) → Play Now → Group/Meet someone new → Your Progress → How It Works.
 3. The social columns are persistent: opening a personal chat from the GAME CHATS column keeps it inside that column; Back restores the contact list. Opening a friend profile from MY FRIENDS keeps it inside that column; Back restores the friends list.
 4. Mobile (web <1024px and Capacitor): NO social columns; the 💬/👥 icons sit INSIDE the profile card flanking the profile image circle — hidden on desktop web (lg+) where the columns take over; the profile content flows vertically in the §4 order.
 5. Capacitor AND small-screen web flows: 💬 → Contact List screen (fresh page) → Chat Screen; 👥 → Friends screen (fresh page) → [View Profile]/[Chat]; Back always returns to the logical previous screen and never the Games list. The in-page overlay panel is gone.

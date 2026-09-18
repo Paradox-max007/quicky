@@ -56,7 +56,7 @@ ok('primary screen: desktop 3-column layout — full-width cards, wider social c
 ok('primary screen: main column ONE vertical flow — Profile Image→You/Level→Statistics→Play Now→Group/Meet→Progress→How It Works (v2 §4)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'game-primary-profile-card', 'game-primary-tagline', 'game-primary-progress', 'game-primary-how-it-works'))
 ok('social columns: persistent, root list never closes, Back restores the list (v2 §3)', has('src/components/quicky/game-primary/GameInteractionPanel.tsx', "variant = 'overlay'", "variant === 'column'", 'rootView', 'root view is PERMANENT'))
 ok('small-screen web = Capacitor flow: icons open dedicated screens as a fresh page, overlay panel removed (v2 §6)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'openGameChatContacts', 'openGameFriends', 'pulseColumn') && !src('src/components/quicky/game-primary/GamePrimaryScreen.tsx').includes('panelRef'))
-ok('primary screen: combined overall stats + selected game stats (§6/§7)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'config.overallStats', 'All Quicky'))
+ok('primary screen: COMMON stats grid + hidden empty combined block (§6/§7 revised)', has('src/components/quicky/game-primary/GamePrimaryScreen.tsx', 'config.overallStats', 'All Quicky', 'config.gameStats'))
 ok('primary screen: honest coming-soon state (§70)', src('src/components/quicky/game-primary/GamePrimaryScreen.tsx').includes('COMING SOON'))
 ok('web interaction panel: chat|personalChat|friends|friendProfile stack (§20/§37)', has('src/components/quicky/game-primary/GameInteractionPanel.tsx', "'chat'", "'personalChat'", "'friends'", "'friendProfile'", 'friendProfile:'))
 ok('web panel: personal chat embeds the EXISTING GameChatScreen (§23/§34)', has('src/components/quicky/game-primary/GameInteractionPanel.tsx', '<GameChatScreen', 'closeConversation'))
@@ -64,9 +64,18 @@ ok('web panel: friends list reuses the EXISTING friends API (§35)', has('src/co
 ok('bottom Game Chats section REMOVED from the primary screen (§11)', !src('src/components/quicky/SpinBottleLanding.tsx').includes('<GameChatList />'))
 ok('Capacitor: dedicated Friends screen with safe area + back stacks (§15-§18/§45)', has('src/components/quicky/game-primary/GameFriendsScreen.tsx', 'gameFriendsReturnView', 'safe-area-top', "openProfile(f.id, 'game-friends')", "'game-friends'"))
 ok('store: game-friends view + openGameFriends return target', has('src/store/quicky.ts', "| 'game-friends'", 'openGameFriends', 'gameFriendsReturnView'))
-ok('spin landing: Play Now + matchmaking modal kept (§7/§91)', has('src/components/quicky/SpinBottleLanding.tsx', 'spin-play-now', 'matchmaking-modal', 'matchmaking-progress', "width: ['0%', '94%']"))
-ok('spin config: stats + rotating texts + how-it-works (§6/§42/§43)', has('src/components/quicky/game-primary/game-configs.ts', 'Games Played', 'Kisses', 'SPIN_DEFAULT_TAGLINES', 'combinedOverallStats'))
-ok('ludo config: Games/Wins/Tokens/Captures + taglines (§6/§43)', has('src/components/quicky/game-primary/game-configs.ts', 'Tokens Home', 'Captures', 'Roll the dice', 'LUDO_RULES'))
+ok('ONE entry screen for every game: shared matchmaking modal kept (§7/§91 revised)', has('src/components/quicky/game-primary/MatchmakingModal.tsx', 'matchmaking-modal', 'matchmaking-progress', 'matchmaking-cancel', "width: ['0%', '94%']") && has('src/components/quicky/SpinBottleLanding.tsx', 'spin-play-now', 'MatchmakingModal') && has('src/components/quicky/ludo/LudoLanding.tsx', 'ludo-play-now', 'MatchmakingModal'))
+ok('COMMON stats for ALL games: Total Games/Wins/Coins/Interactions in every config (§6/§7 revised)', has('src/components/quicky/game-primary/game-configs.ts', 'commonGameStats', 'Total Games', 'Total Wins', 'Total Coins', 'Interactions', 'SPIN_DEFAULT_TAGLINES', 'combinedOverallStats') && (src('src/components/quicky/game-primary/game-configs.ts').match(/commonGameStats\(/g) ?? []).length >= 3)
+ok('ludo config: taglines + how-it-works kept (§6/§43 revised)', has('src/components/quicky/game-primary/game-configs.ts', 'Roll the dice', 'LUDO_RULES', 'overallStats: []'))
+
+// ── Ludo room: availability + gender weighting (2 male + 2 female) ─────────
+ok('ludo join: server checks table availability + gender weighting (2M+2F)', has('src/lib/quicky/ludo-assignment.ts', 'ludoSeatsOfGender', 'maleCapacity: 2', 'femaleCapacity: 2', 'gender_full', 'normalizeGender') && has('src/app/api/quicky/games/ludo/join/route.ts', 'gender: true', 'assignLudoRoomAndSeat(me.id, profile?.gender ?? null)'))
+
+// ── Ludo board rework: full table, corner homes, real-world animations ──────
+ok('ludo board: corner HOME BASES (pads + owner chips) + cross path + center triangles', has('src/components/quicky/ludo/LudoBoard.tsx', 'ldo-yard-pad', 'ldo-yard-owner', 'Open Seat', 'ldo-center-tri', 'YARD_SLOTS', 'ldo-cell-start'))
+ok('ludo board fills the ENTIRE table (measured stage, thin breathing margin)', has('src/components/quicky/ludo/LudoGameArea.tsx', 'Math.min(r.width, r.height)) - 8', 'yardOwners') && src('src/components/quicky/ludo/ludo-room.css').includes('min(97%, 560px)'))
+ok('ludo coins hop like real pieces (lift + squash every square)', has('src/components/quicky/ludo/ludo-room.css', '@keyframes ldo-token-hop', 'ldo-token-moving') && src('src/components/quicky/ludo/LudoBoard.tsx').includes("' ldo-token-moving'"))
+ok('ludo dice: REAL 3D cube — two-axis tumble, settles on the server value', has('src/components/quicky/ludo/LudoDice.tsx', 'ldo-dice-cube', 'ldo-dice-face', 'FACE_ORIENTATION', 'data-testid="ludo-dice"') && has('src/components/quicky/ludo/ludo-room.css', 'preserve-3d', '@keyframes ldo-dice-tumble', '@keyframes ldo-dice-shadow', 'perspective'))
 
 // ── Navigation (§7/§29) ──────────────────────────────────────────────────────
 ok("store: 'game-landing' view + openGameLanding + chatReturnView", has('src/store/quicky.ts', "| 'game-landing'", 'openGameLanding', 'chatReturnView'))

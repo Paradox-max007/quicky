@@ -522,7 +522,8 @@ model SpinRoom {
   // Ludo PRD §76 — the room table is SHARED by every room game ("the room is
   // the platform, the game is a plug-in"): gameType picks the engine that
   // owns this room. "spin_bottle" (default) | "ludo". Ludo rooms are created
-  // with maxPlayers=4 / minPlayers=2 and NO gender balancing (Ludo PRD §6).
+  // with maxPlayers=4 / minPlayers=2 and a REVISED gender weighting: 2 male
+  // + 2 female seats (ludo-assignment.ts — even seats = male, odd = female).
   gameType        String   @default("spin_bottle")
   // Ludo PRD §77 — authoritative LudoGameState JSON (players, turn, dice,
   // tokens, winner, stateVersion, sixStreak). Animations are client-side and

@@ -26,7 +26,7 @@ import { getLegalMoves } from '@/lib/quicky/ludo/rules'
 import type { LudoGameState, LudoToken } from '@/lib/quicky/ludo/types'
 import type { LudoRoomSnapshot } from '@/lib/quicky/ludo-snapshot'
 import { hapticImpact, hapticNotification } from '@/lib/capacitor'
-import { LudoBoard, withStackOffsets, type DisplayToken } from './LudoBoard'
+import { LudoBoard, withStackOffsets, type DisplayToken, type YardOwner } from './LudoBoard'
 import { LudoPlayerHud } from './LudoPlayerHud'
 import { LudoTurnIndicator, type TurnPhase } from './LudoTurnIndicator'
 import { LudoCountdown } from './LudoCountdown'
@@ -82,6 +82,7 @@ export function LudoGameArea({
   const [display, setDisplay] = useState<Record<string, DisplayEntry>>({})
   const [fx, setFx] = useState<Record<string, 'none' | 'shake' | 'captured' | 'finished'>>({})
   const [captureChip, setCaptureChip] = useState<string | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
   const [diceRolling, setDiceRolling] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const prevVersionRef = useRef<number>(0)
@@ -94,7 +95,8 @@ export function LudoGameArea({
   useEffect(() => clearTimers, [clearTimers])
 
   // ── Board sizing (Ludo PRD §9 — measured, never hardcoded): the square
-  // board fits the measured stage box on every device (§68/§91/§92). ────────
+  // board FILLS the measured stage box on every device (§68/§91/§92 — the
+  // whole table is the board, edge to edge with a thin breathing margin). ─
   const wrapRef = useRef<HTMLDivElement>(null)
   const [boardPx, setBoardPx] = useState(0)
   useEffect(() => {
@@ -102,7 +104,7 @@ export function LudoGameArea({
     if (!el) return
     const measure = () => {
       const r = el.getBoundingClientRect()
-      const size = Math.max(160, Math.floor(Math.min(r.width, r.height)) - 24)
+      const size = Math.max(160, Math.floor(Math.min(r.width, r.height)) - 8)
       if (size > 0) setBoardPx(size)
     }
     measure()
@@ -169,6 +171,7 @@ export function LudoGameArea({
       const t = setTimeout(() => {
         setDisplay(next)
         setFx({})
+        setMovingId(null)
         if (game.status === 'playing' && game.currentPlayerId === meId) void hapticImpact('light')
       }, 0)
       timersRef.current.push(t)
@@ -182,6 +185,10 @@ export function LudoGameArea({
     })
 
     const path = movementPath(mover.color, mover.index, moverFrom, mover.position)
+    // The coin LIFTS and hops square by square (real board-game feel):
+    // the moving flag drives the continuous hop cycle on the token dot.
+    const startHop = setTimeout(() => setMovingId(mover!.id), 0)
+    timersRef.current.push(startHop)
     path.forEach((placement, i) => {
       const timer = setTimeout(() => {
         setDisplay((d) => ({
@@ -194,7 +201,8 @@ export function LudoGameArea({
           },
         }))
         if (i < path.length - 1) return
-        // Landing — impact effects (§21/§26/§103)
+        // Landing — the hop cycle ends with a settle, then impact effects
+        setMovingId(null)
         if (victims.length > 0) {
           setFx(Object.fromEntries(victims.map((v) => [v.id, 'captured' as const])))
           setCaptureChip(`⚡ Captured${victims.length > 1 ? ` ×${victims.length}` : ''}!`)
@@ -258,10 +266,23 @@ export function LudoGameArea({
         fx: (fx[t.id] ?? 'none') as DisplayToken['fx'],
         stackIndex: 0,
         stackCount: 1,
+        moving: t.id === movingId,
       }
     })
     return withStackOffsets(raw)
-  }, [game, display, fx, legalIds])
+  }, [game, display, fx, legalIds, movingId])
+
+  // Corner home-base owner chips (real-board feel: every yard names its
+  // player; unclaimed corners honestly say Open Seat).
+  const yardOwners: YardOwner[] = useMemo(
+    () =>
+      snapshot.players.map((p) => ({
+        color: p.color as YardOwner['color'],
+        name: p.displayName,
+        isMe: p.userId === meId,
+      })),
+    [snapshot.players, meId]
+  )
 
   const onTokenTap = useCallback(
     (tokenId: string) => {
@@ -300,8 +321,8 @@ export function LudoGameArea({
 
       <div className="sbr-stage" style={{ '--ldo-turn-color': turnColorVar } as React.CSSProperties}>
         <div className="ldo-board-wrap" ref={wrapRef}>
-          <div style={{ width: boardPx > 0 ? boardPx : 'min(92%, 420px)' }}>
-            <LudoBoard tokens={displayTokens} turnColor={currentColor} onTokenTap={onTokenTap} />
+          <div style={{ width: boardPx > 0 ? boardPx : 'min(97%, 560px)' }}>
+            <LudoBoard tokens={displayTokens} turnColor={currentColor} onTokenTap={onTokenTap} yardOwners={yardOwners} />
           </div>
         </div>
 

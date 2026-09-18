@@ -1,6 +1,8 @@
 'use client'
 
-// Quicky — GAME PRIMARY CONFIG (Unified Game Primary Screen PRD §4/§6/§7/§42)
+// Quicky — GAME PRIMARY CONFIG (Unified Game Primary Screen PRD §4/§6/§7/§42,
+// revised: ONE entry screen for EVERY game — only the top-bar name + icon and
+// the room a [Play Now] leads to ever change per game)
 //
 // The GamePrimaryScreen is game-AGNOSTIC: every piece of game-specific
 // content (name, stats, how-it-works, rotating texts, progress) arrives
@@ -9,9 +11,10 @@
 // landing API. Adding a future game means adding a config builder, NEVER
 // touching the screen itself (§4: no hardcoded Spin-the-Bottle UI logic).
 //
-// §7: `gameStats` (selected game) is kept strictly separate from
-// `overallStats` (combined across games) so future games can add their own
-// statistics without changing the page structure.
+// §7 REVISED — COMMON STATS: the statistics grid is now THE SAME for every
+// game (Total Games · Total Wins · Total Coins · Interactions). The per-game
+// stat sets (kisses, tokens home, captures…) are gone — one common set keeps
+// the entry screen truly identical across games.
 
 import { artworkGradient, modeLabel, type GameDef } from '../game-hub/types'
 
@@ -46,9 +49,10 @@ export type GamePrimaryConfig = {
   playable: boolean
   shortDescription: string
   description: string
-  /** §6 — the SELECTED game's statistics. */
+  /** §6 REVISED — the COMMON statistics, identical for every game. */
   gameStats: GameStat[]
-  /** §7 — COMBINED Quicky statistics across games. */
+  /** §7 — kept for backward compatibility; always EMPTY under the common-
+   * stats model (the screen hides the second grid when it is empty). */
   overallStats: GameStat[]
   /** §42 — Your Progress (league progression bar). */
   progress?: { label: string; value: number; max: number }
@@ -144,15 +148,10 @@ export function buildSpinPrimaryConfig(
     playable: game?.isPlayable ?? true,
     shortDescription: game?.shortDescription ?? 'Spin the bottle, meet someone new.',
     description: game?.description ?? '',
-    // §6 Spin the Bottle: Games Played · Kisses · Given · Received (Gifts)
-    gameStats: [
-      { key: 'games', label: 'Games Played', icon: '🎮', value: stats?.gamesPlayed ?? 0, tint: 'var(--qk-purple)' },
-      { key: 'kisses', label: 'Kisses', icon: '💋', value: stats?.kissesReceived ?? 0, tint: 'var(--qk-accent)' },
-      { key: 'given', label: 'Given', icon: '✨', value: stats?.kissesGiven ?? 0, tint: 'var(--qk-gold)' },
-      { key: 'gifts', label: 'Gifts', icon: '🎁', value: (stats?.giftsSent ?? 0) + (stats?.giftsReceived ?? 0), tint: '#f472b6' },
-    ],
-    // §7 combined Quicky statistics (real totals across spin + ludo)
-    overallStats: combinedOverallStats(stats, ludo ?? null),
+    // §6 REVISED — COMMON stats for every game (no per-game stat sets).
+    gameStats: commonGameStats(stats, ludo ?? null),
+    // §7 — single common grid: the separate combined block stays empty.
+    overallStats: [],
     league: stats?.league
       ? {
           name: stats.league.name,
@@ -201,15 +200,10 @@ export function buildLudoPrimaryConfig(game: GameDef | null, stats: LudoLandingS
     description:
       game?.description ??
       'The classic board game inside the Quicky game room. Up to 4 players per table, server-authoritative dice and moves, real-time tokens, chat, gifts and mentions.',
-    // §6 Ludo: Games Played · Wins · Tokens Home · (Captures)
-    gameStats: [
-      { key: 'games', label: 'Games Played', icon: '🎮', value: stats?.ludoGames ?? 0, tint: 'var(--qk-purple)' },
-      { key: 'wins', label: 'Wins', icon: '🏆', value: stats?.ludoWins ?? 0, tint: 'var(--qk-gold)' },
-      { key: 'tokens', label: 'Tokens Home', icon: '🏠', value: stats?.tokensFinished ?? 0, tint: '#30D158' },
-      { key: 'captures', label: 'Captures', icon: '⚔️', value: stats?.captures ?? 0, tint: '#f472b6' },
-    ],
-    // §7 combined Quicky statistics
-    overallStats: combinedOverallStats(null, stats),
+    // §6 REVISED — COMMON stats for every game (no per-game stat sets).
+    gameStats: commonGameStats(null, stats),
+    // §7 — single common grid: the separate combined block stays empty.
+    overallStats: [],
     chemistry: undefined,
     streak: null,
     quickyPoints: stats?.quickyPoints ?? 0,
@@ -237,10 +231,9 @@ export function buildGenericPrimaryConfig(game: GameDef | null, overall: SpinLan
     playable: game?.isPlayable ?? false,
     shortDescription: game?.shortDescription ?? 'Details are on the way.',
     description: game?.description ?? '',
-    // Future games have no per-game stats yet — honest empty list; the screen
-    // renders only the combined overall block for them (§7).
-    gameStats: [],
-    overallStats: combinedOverallStats(overall, null),
+    // §6 REVISED — future games show the SAME common statistics grid.
+    gameStats: commonGameStats(overall, null),
+    overallStats: [],
     league: overall?.league
       ? {
           name: overall.league.name,
@@ -259,12 +252,16 @@ export function buildGenericPrimaryConfig(game: GameDef | null, overall: SpinLan
   }
 }
 
-// ─── §7 combined stats helper (shared by every config) ──────────────────────
+// ── §6/§7 REVISED — COMMON stats helper (the ONE stat set for every game) ───
 
-/** Combined Quicky statistics across games: Total Games · Total Wins ·
- * Total Coins · Total Interactions. Takes whichever game-stat payloads are
- * available and sums across them — future games extend the sum, the page
- * structure never changes. */
+/** The COMMON statistics grid rendered on every game's entry screen:
+ * Total Games · Total Wins · Total Coins · Interactions. Takes whichever
+ * game-stat payloads are available and sums across them — adding a future
+ * game extends the sum, the page structure never changes. (This replaces
+ * the old per-game `gameStats` sets — one common set for all games.) */
+export function commonGameStats(spin: SpinLandingStats | null, ludo: LudoLandingStats | null): GameStat[] {
+  return combinedOverallStats(spin, ludo)
+}
 export function combinedOverallStats(spin: SpinLandingStats | null, ludo: LudoLandingStats | null): GameStat[] {
   const totalGames = (spin?.gamesPlayed ?? 0) + (ludo?.ludoGames ?? 0)
   const totalWins = ludo?.ludoWins ?? 0

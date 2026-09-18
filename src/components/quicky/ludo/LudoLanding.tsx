@@ -5,20 +5,22 @@
 // A thin GAME ADAPTER around the reusable GamePrimaryScreen: it fetches the
 // Ludo landing stats + catalog entry, builds the GamePrimaryConfig and wires
 // the REAL server-authoritative [Play Now] CTA (§5/§6: the server assigns the
-// room+seat). The screen itself — hero, profile/stat card with 💬/👥 icons,
-// combined stats, rotating texts, how-it-works — is rendered by
-// GamePrimaryScreen for EVERY game (Unified PRD §3/§55).
+// room+seat, checking table availability AND the 2-male/2-female gender
+// weighting). The screen itself — hero, profile/stat card with 💬/👥 icons,
+// COMMON stats (same grid as every game), rotating texts, how-it-works — is
+// rendered by GamePrimaryScreen for EVERY game (Unified PRD §3/§55).
 //
-// Stats use the generic records structure (§74): Ludo Games, Ludo Wins,
-// Tokens Finished, Captures + the shared Quicky Points/coins. No Kiss
-// Points anywhere (§74).
+// The statistics grid is the COMMON Quicky set (§6/§7 revised) — identical
+// across games. No Kiss Points anywhere (§74).
 
 import { useEffect, useState } from 'react'
 import { Dice5 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
+import { useQuickyStore } from '@/store/quicky'
 import { CoinStoreSheet } from '../CoinStoreSheet'
 import { GamePrimaryScreen } from '../game-primary/GamePrimaryScreen'
+import { MatchmakingModal } from '../game-primary/MatchmakingModal'
 import {
   buildLudoPrimaryConfig,
   type GameDef,
@@ -32,6 +34,7 @@ export function LudoLanding({
   onClose: () => void
   onJoined: (roomId: string) => void
 }) {
+  const user = useQuickyStore((s) => s.user)
   const [game, setGame] = useState<GameDef | null>(null)
   const [stats, setStats] = useState<LudoLandingStats | null>(null)
   const [failed, setFailed] = useState(false)
@@ -64,7 +67,9 @@ export function LudoLanding({
     setJoining(true)
     try {
       // Server-authoritative matchmaking (Ludo PRD §6/§117): the client
-      // never decides which room or seat it gets.
+      // never decides which room or seat it gets — the server checks table
+      // availability AND the 2-male/2-female gender weighting before
+      // assigning a seat.
       const res = await api.ludo.join()
       if (res?.ok && res.roomId) {
         onJoined(res.roomId)
@@ -78,6 +83,7 @@ export function LudoLanding({
     }
   }
 
+  const avatar = user?.photos?.find((p: any) => p.isPrimary)?.url ?? user?.photos?.[0]?.url
   const config = buildLudoPrimaryConfig(game, stats)
 
   return (
@@ -96,6 +102,30 @@ export function LudoLanding({
         onBuyCoins={() => setCoinStoreOpen(true)}
         failed={failed}
         failHint="Couldn't load your stats — you can still play."
+      />
+
+      {/* Matchmaking MODAL — the SHARED one-for-all-games modal, shown while
+          the server checks Ludo table availability (gender-weighted seats). */}
+      <MatchmakingModal
+        open={joining}
+        userName={user?.name}
+        userAvatar={avatar}
+        level={Math.max(1, Math.floor((stats?.quickyPoints ?? 0) / 50) + 1)}
+        messages={[
+          'Finding a Ludo table…',
+          'Checking seat availability…',
+          'Balancing the table…',
+          'Looking for players…',
+          'Rolling out the board…',
+          'Almost ready…',
+          'The dice are waiting…',
+        ]}
+        onCancel={() => {
+          // The join request is one round-trip — a cancel just closes the
+          // modal; the membership ends server-side via leave/cleanup if the
+          // request still lands.
+          setJoining(false)
+        }}
       />
 
       <CoinStoreSheet

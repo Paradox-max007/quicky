@@ -1,13 +1,16 @@
-// Quicky — LUDO JOIN (Ludo PRD §5/§6/§56/§71/§93/§97/§98)
+// Quicky — LUDO JOIN (Ludo PRD §5/§6/§56/§71/§93/§97/§98 — REVISED: the
+// join checks table availability AND the 2-male/2-female gender weighting)
 // POST /api/quicky/games/ludo/join
 //
 // Games → Quicky Ludo landing → [Play Now] → THIS route → LudoRoom.
 // The SERVER is the sole authority on room + seat assignment (§6/§117):
 //   Step 1  lifecycle: reclaim abandoned rooms BEFORE hunting for a table
 //   Step 2  end any other room membership (single-room invariant)
-//   Step 3  find a joinable Ludo room (WAITING/STARTING only — §98) and
-//           claim a seat race-safely (seat 0=RED 1=GREEN 2=YELLOW 3=BLUE)
-//   Step 4  no candidate → fresh 4-seat room
+//   Step 3  find a joinable Ludo room (WAITING/STARTING only — §98) with a
+//           FREE seat in the user's GENDER SLOT (2 male + 2 female per
+//           table — even seats = male, odd = female) and claim it
+//           race-safely (seat 0=RED 1=GREEN 2=YELLOW 3=BLUE)
+//   Step 4  no candidate → fresh gender-weighted 4-seat room
 //   Step 5  ≥ 2 players → clear the singleton timer + arm the 3s countdown
 //           (STARTING → PLAYING via ensureLudoRuntime, §56/§97)
 //   Step 6  answer with the authoritative snapshot (§93: never a black
@@ -31,14 +34,15 @@ export async function POST(_req: NextRequest) {
 
   const profile = await db.user.findUnique({
     where: { id: me.id },
-    select: { name: true },
+    select: { name: true, gender: true },
   })
 
   // 1. End any other active membership for this user (single-room rule).
   await endOtherMemberships(me.id)
 
-  // 2-4. Race-safe Ludo room assignment (no gender logic — Ludo PRD §6).
-  const claim = await assignLudoRoomAndSeat(me.id)
+  // 2-4. Race-safe, gender-weighted Ludo room assignment (2 male + 2 female
+  // seats per table; "either" profiles may take any open seat).
+  const claim = await assignLudoRoomAndSeat(me.id, profile?.gender ?? null)
   const roomId = claim.roomId
 
   // Join chip — the SAME room-chat architecture Spin Bottle uses (§35).
