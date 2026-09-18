@@ -26,36 +26,25 @@ export async function GET() {
   const onlineSince = new Date(now.getTime() - ONLINE_WINDOW_MS)
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
-  const [
-    streak,
-    likesReceived,
-    likesSent,
-    matchesCount,
-    gamesPlayed,
-    giftsSent,
-    giftsReceived,
-    leagues,
-    onlineNow,
-    postsToday,
-    roomsActive,
-    roomPlayers,
-    activeGames,
-    likeRows,
-    matchRows,
-    giftRows,
-    kissRows,
-    myMatchIds,
-  ] = await Promise.all([
+  // ── Connection-pool friendly: wave the reads in batches of ≤5 instead of
+  // one 18-query Promise.all. Each wave keeps full tuple typing and identical
+  // results — the pooler never sees this request grab the whole pool at once
+  // (see src/lib/db.ts for the bounded-pool rationale).
+  const [streak, likesReceived, likesSent, matchesCount, gamesPlayed] = await Promise.all([
     db.gameQuickyStreak.findUnique({ where: { userId: uid } }),
     db.swipe.count({ where: { toUserId: uid, type: { in: ['like', 'superlike'] } } }),
     db.swipe.count({ where: { fromUserId: uid, type: { in: ['like', 'superlike'] } } }),
     db.match.count({ where: { OR: [{ userAId: uid }, { userBId: uid }], status: 'active' } }),
     db.gameSession.count({ where: { OR: [{ userAId: uid }, { userBId: uid }] } }),
+  ])
+  const [giftsSent, giftsReceived, leagues, onlineNow, postsToday] = await Promise.all([
     db.spinRoomGift.count({ where: { senderId: uid } }),
     db.spinRoomGift.count({ where: { recipientId: uid } }),
     db.gameLeague.findMany({ where: { isActive: true }, orderBy: { minimumPoints: 'asc' } }),
     db.user.count({ where: { lastActiveAt: { gte: onlineSince } } }),
     db.communityPost.count({ where: { createdAt: { gte: dayAgo } } }),
+  ])
+  const [roomsActive, roomPlayers, activeGames, likeRows, matchRows] = await Promise.all([
     db.spinRoom.count({ where: { status: { in: ['WAITING', 'STARTING', 'PLAYING'] } } }),
     db.spinRoomPlayer.count({
       where: { isActive: true, leftAt: null, room: { status: { in: ['WAITING', 'STARTING', 'PLAYING'] } } },
@@ -79,6 +68,8 @@ export async function GET() {
         userB: { select: { id: true, name: true, photos: { orderBy: { position: 'asc' }, take: 1, select: { url: true } } } },
       },
     }),
+  ])
+  const [giftRows, kissRows, myMatchIds] = await Promise.all([
     db.spinRoomGift.findMany({
       where: { recipientId: uid },
       orderBy: { createdAt: 'desc' },
