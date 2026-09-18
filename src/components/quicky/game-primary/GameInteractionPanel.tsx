@@ -1,6 +1,7 @@
 'use client'
 
-// Quicky — GAME INTERACTION PANEL (Unified Game Primary Screen PRD §19-§30)
+// Quicky — GAME INTERACTION PANEL (Unified Game Primary Screen PRD §19-§30,
+// revised §v2 desktop architecture: 3-column layout)
 //
 // The WEB multi-purpose interaction area that REPLACES the old bottom Game
 // Chats section (§11). It behaves like a small application inside the Game
@@ -9,11 +10,18 @@
 //   CHAT  ──────────→ CONTACTS ──→ PERSONAL CHAT
 //   FRIENDS ────────→ FRIEND LIST ──→ FRIEND PROFILE ──→ (chat)
 //
+// TWO presentation variants (v2 §3):
+// · variant="overlay" (default) — narrow web viewports. Closed until the user
+//   taps 💬 / 👥 (§21); opens as a floating panel in the content flow.
+// · variant="column" — DESKTOP (lg+). Rendered persistently inside one of the
+//   TWO social columns beside the main profile column (GAME CHATS | MY
+//   FRIENDS). The root view is PERMANENT: Back from a personal chat returns
+//   to the contact list, Back from a friend profile returns to the friends
+//   list — the column never closes (there is no close button).
+//
 // ── Key contracts ────────────────────────────────────────────────────────────
 // · §19/§22: on web this is NOT a page — the Game Primary Screen stays
-//   mounted and visible; only this panel's content transitions.
-// · §21: default state is CLOSED — no large panel occupies the screen until
-//   the user taps 💬 or 👥.
+//   mounted and visible; only the panel/column content transitions.
 // · §37: interaction views closed | chat | personalChat | friends |
 //   friendProfile, driven by a lightweight LOCAL stack (§39) so nested back
 //   navigation is predictable (§38: Friends→Profile→Back returns to Friends,
@@ -55,14 +63,32 @@ export type GameInteractionPanelHandle = {
   open: (view: 'chat' | 'friends') => void
 }
 
-export const GameInteractionPanel = forwardRef<GameInteractionPanelHandle>(function GameInteractionPanel(_props, ref) {
+type GameInteractionPanelProps = {
+  /** v2 §3 — `overlay` (default): narrow viewports, closed until opened via
+   * the 💬 / 👥 icons. `column`: persistent desktop social column with a
+   * pinned root view that never closes. */
+  variant?: 'overlay' | 'column'
+  /** Required for `column` — the permanent root view of the column. */
+  rootView?: 'chat' | 'friends'
+}
+
+export const GameInteractionPanel = forwardRef<GameInteractionPanelHandle, GameInteractionPanelProps>(
+function GameInteractionPanel({ variant = 'overlay', rootView }, ref) {
+  // v2 §3 — column variant pins a permanent root view (chat | friends).
+  const isColumn = variant === 'column' && !!rootView
   // §39 — lightweight internal navigation stack; back = history.pop()
-  const [stack, setStack] = useState<InteractionState[]>([])
+  const [stack, setStack] = useState<InteractionState[]>(() =>
+    isColumn ? [rootView === 'friends' ? { view: 'friends' } : { view: 'chat' }] : []
+  )
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const inPersonalChatRef = useRef(false)
 
   const current: InteractionState | null = stack.length > 0 ? stack[stack.length - 1] : null
   const view: GameInteractionView = current?.view ?? 'closed'
+
+  // v2 §5 — the GAME CHATS column header carries the shared unread badge.
+  const chatList = useGameChatStore((s) => s.list)
+  const totalUnread = chatList.reduce((s, c) => s + (c.unread || 0), 0)
 
   useImperativeHandle(ref, () => ({
     open: (root: 'chat' | 'friends') => {
@@ -82,8 +108,17 @@ export const GameInteractionPanel = forwardRef<GameInteractionPanelHandle>(funct
 
   const pop = useCallback(() => {
     setDirection('back')
-    setStack((prev) => prev.slice(0, -1))
-  }, [])
+    setStack((prev) => {
+      const next = prev.slice(0, -1)
+      // v2 §3 — column variant: the root view is PERMANENT. Back from a
+      // personal chat restores the contact list; back from a friend profile
+      // restores the friends list — the column itself never closes.
+      if (next.length === 0 && rootView) {
+        return [rootView === 'friends' ? { view: 'friends' } : { view: 'chat' }]
+      }
+      return next
+    })
+  }, [rootView])
 
   const close = useCallback(() => {
     setDirection('back')
@@ -115,31 +150,51 @@ export const GameInteractionPanel = forwardRef<GameInteractionPanelHandle>(funct
   const exit = direction === 'forward' ? -26 : 26
 
   return (
-    <div className="w-full flex justify-center" data-testid="game-interaction-panel">
+    <div
+      className={isColumn ? 'w-full h-full min-h-0' : 'w-full flex justify-center'}
+      data-testid={isColumn ? `game-primary-${rootView}-column` : 'game-interaction-panel'}
+    >
       <AnimatePresence mode="wait">
-        {/* §21: closed → nothing occupies the screen */}
+        {/* §21: closed → nothing occupies the screen (overlay variant only —
+            the column variant pins its root, so current is never null). */}
         {current && (
           <motion.div
             key="panel-shell"
-            initial={{ opacity: 0, y: 14, scale: 0.985 }}
+            initial={{ opacity: 0, y: isColumn ? 0 : 14, scale: isColumn ? 1 : 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.985 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
-            className="w-full max-w-md h-[500px] max-h-[68vh] rounded-3xl border border-white/10 bg-[var(--qk-card)]/70 backdrop-blur overflow-hidden flex flex-col shadow-2xl"
+            className={
+              isColumn
+                ? 'w-full h-full rounded-3xl border border-white/10 bg-[var(--qk-card)]/70 backdrop-blur overflow-hidden flex flex-col shadow-2xl'
+                : 'w-full max-w-md h-[500px] max-h-[68vh] rounded-3xl border border-white/10 bg-[var(--qk-card)]/70 backdrop-blur overflow-hidden flex flex-col shadow-2xl'
+            }
           >
             {/* Panel header — hidden for personalChat (GameChatScreen has its
-                own §33 header with back). */}
+                own §33 header with back). The column variant has NO close
+                button: the social columns are permanent desktop furniture. */}
             {current.view !== 'personalChat' && (
               <div className="shrink-0 flex items-center gap-2 px-4 pt-3.5 pb-2.5 border-b border-white/10">
                 <p className="font-black text-sm text-white">{VIEW_LABEL[current.view]}</p>
-                <button
-                  onClick={close}
-                  className="ml-auto w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center"
-                  aria-label="Close panel"
-                  data-testid="panel-close"
-                >
-                  <X className="w-4 h-4 text-white/70" />
-                </button>
+                {isColumn && rootView === 'chat' && totalUnread > 0 && (
+                  <span
+                    className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-coral-gradient text-[10px] font-black text-white flex items-center justify-center"
+                    aria-label={`${totalUnread} unread messages`}
+                    data-testid="game-primary-chat-column-unread"
+                  >
+                    {totalUnread > 9 ? '9+' : totalUnread}
+                  </span>
+                )}
+                {!isColumn && (
+                  <button
+                    onClick={close}
+                    className="ml-auto w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center"
+                    aria-label="Close panel"
+                    data-testid="panel-close"
+                  >
+                    <X className="w-4 h-4 text-white/70" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -203,7 +258,8 @@ export const GameInteractionPanel = forwardRef<GameInteractionPanelHandle>(funct
       </AnimatePresence>
     </div>
   )
-})
+}
+)
 
 function stackKey(state: InteractionState): string {
   switch (state.view) {
