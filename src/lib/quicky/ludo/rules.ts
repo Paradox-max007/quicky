@@ -23,8 +23,8 @@ import {
   SIX_STREAK_LIMIT,
   START_COUNTDOWN_MS,
   TOKENS_PER_PLAYER,
+  TURN_AUTOROLL_DELAY_MS,
   TURN_MOVE_TIMEOUT_MS,
-  TURN_ROLL_TIMEOUT_MS,
   colorForSeat,
   isSafeRingCell,
 } from './constants'
@@ -121,7 +121,9 @@ function armTurn(state: LudoGameState, playerId: string | null, now: number) {
   state.currentPlayerId = playerId
   state.dice = { value: null, rolledBy: null, rolledAt: null }
   state.moveDeadlineAt = null
-  state.turnDeadlineAt = playerId ? now + TURN_ROLL_TIMEOUT_MS : null
+  // §14 revised — the deadline is the SERVER'S OWN auto-roll beat: the user
+  // never rolls, the server throws the dice for them after this delay.
+  state.turnDeadlineAt = playerId ? now + TURN_AUTOROLL_DELAY_MS : null
 }
 
 /**
@@ -234,10 +236,11 @@ export function rollDice(
   const legal = getLegalMoves(state, playerId, value)
   if (legal.length === 0) {
     if (value === 6) {
-      // §16 — no legal move after a 6 → the player rolls again.
+      // §16 — no legal move after a 6 → the player rolls again (server
+      // auto-rolls after the short beat — still no user action required).
       state.dice = { value: null, rolledBy: null, rolledAt: null }
       state.moveDeadlineAt = null
-      state.turnDeadlineAt = now + TURN_ROLL_TIMEOUT_MS
+      state.turnDeadlineAt = now + TURN_AUTOROLL_DELAY_MS
       events.push({ type: 'extra_turn', playerId })
     } else {
       // No legal move, no 6 → the turn passes automatically.
@@ -340,11 +343,12 @@ export function moveToken(
     return { ok: true, state, events }
   }
 
-  // §16 — a 6 grants another roll to the SAME player.
+  // §16 — a 6 grants another roll to the SAME player (server auto-rolls —
+  // the user only ever picks a token).
   if (dice === 6) {
     state.dice = { value: null, rolledBy: null, rolledAt: null }
     state.moveDeadlineAt = null
-    state.turnDeadlineAt = now + TURN_ROLL_TIMEOUT_MS
+    state.turnDeadlineAt = now + TURN_AUTOROLL_DELAY_MS
     events.push({ type: 'extra_turn', playerId })
   } else {
     const next = nextPlayerAfter(state, seatOf(state, playerId))

@@ -968,8 +968,16 @@ The board should subtly pulse around the active player's color.
 
 ---
 
-# 31. DICE POSITION
+# 31. DICE POSITION — FLOATING OVER THE BOARD (revision)
 
+The 3D die floats OVER the table while it rolls (pointer-events: none — it
+can never block a coin tap), settles on the server's number, then fades
+away when not in use — the same lifecycle as the Spin the Bottle bottle.
+The rolled number remains readable at the bottom of the table in the slim
+round-bar hint ("{name}: rolled 6") until the round moves on, which frees
+the entire stage for a larger board on mobile screens.
+
+Original §31:
 The dice belongs visually to the current player.
 
 Recommended:
@@ -1000,9 +1008,19 @@ must remain easily reachable.
 
 ---
 
-# 32. ROLL BUTTON
+# 32. ROLL BUTTON — REPLACED BY THE SERVER-ACTION DICE (revision)
 
-Large touch target:
+REMOVED. The user NEVER taps a roll button: the dice are a SERVER action.
+After the turn arms, the server auto-rolls for the active player after a short
+beat (TURN_AUTOROLL_DELAY_MS = 1.5s). The 3D die FLOATS over the board while it
+rolls, settles on the server's number, then fades away — the number stays
+visible in the slim bottom round-bar hint ("Alex: rolled 6") until the round
+moves on. The move window is a 45s VISIBLE timer (TURN_MOVE_TIMEOUT_MS = 45s):
+tap a coin and it moves immediately (no cooldown); if the window expires the
+chance is skipped server-side and the skipped player's device shows a small
+center popup "CHANCE MISSED" WITHOUT a backdrop while the game continues.
+
+(Original spec — Large touch target:
 
 ```text
 ROLL DICE
@@ -1174,8 +1192,22 @@ Do not create another coin system.
 
 ---
 
-# 38. PLAYER PROFILE INTERACTION
+# 38. PLAYER PROFILE INTERACTION — THE REUSABLE ROOM TOOLBOX (revision)
 
+Every player surface in EVERY room game is one template: a user id comes
+in, tapping it (by another user) opens the TOOL BOX — Mention, Message
+(personal chat), Gift, Add/Remove Friend, Profile. Implemented ONCE as the
+game-agnostic hook useRoomPlayerToolbox (room-toolbox/) and consumed by the
+Spin the Bottle room AND the Ludo room; a future game wires any surface
+with toolbox.open({ userId, displayName, avatar }) — nothing per-game.
+
+LUDO SURFACES (revision): NO player chips above the table on mobile /
+Capacitor / mobile web — each player is their PROFILE PICTURE at the outer
+corner of their yard base (the name already lives there); tapping the
+avatar opens the shared toolbox. Desktop web (lg+) keeps the chip row, and
+its chips open the same toolbox.
+
+Original §38:
 Clicking/tapping a Ludo player should open the same existing interaction UI.
 
 Existing options remain:

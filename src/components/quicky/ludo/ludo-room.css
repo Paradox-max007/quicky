@@ -163,6 +163,62 @@
 }
 .ldo-yard-owner.ldo-owner-me { background: var(--yard-color); box-shadow: 0 0 8px -1px var(--yard-color); }
 
+/* §38 REVISED — the player's PROFILE PICTURE at the OUTER corner of their
+   yard (mobile's only player surface above the table). Tapping it opens
+   the SHARED player toolbox (mention/chat/gift/friend/profile). */
+.ldo-yard-avatar {
+  position: absolute;
+  width: calc(var(--ldo-cell) * 1.55);
+  height: calc(var(--ldo-cell) * 1.55);
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2.5px solid var(--yard-color);
+  background: #26232f;
+  box-shadow: 0 2px 6px rgba(20, 8, 0, 0.45), inset 0 0 0 2px rgba(255, 255, 255, 0.65);
+  padding: 0;
+  cursor: pointer;
+  z-index: 6;
+  transition: transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.ldo-yard-avatar:active { transform: scale(0.92); }
+.ldo-yard-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ldo-yard-avatar span {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: #fff;
+  font-size: calc(var(--ldo-cell) * 0.8);
+}
+.ldo-ya-tl { left: 3.5%; top: 3.5%; }
+.ldo-ya-tr { right: 3.5%; top: 3.5%; }
+.ldo-ya-bl { left: 3.5%; bottom: 3.5%; }
+.ldo-ya-br { right: 3.5%; bottom: 3.5%; }
+/* active player's avatar carries the turn ring + a pulsing halo */
+.ldo-yard-avatar.ldo-ya-active {
+  box-shadow: 0 0 0 3px var(--yard-color), 0 0 14px 2px var(--yard-color), inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+  animation: ldo-ya-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ldo-ya-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+/* tiny countdown clock badge on the ACTIVE avatar (45s move window) */
+.ldo-ya-clock {
+  position: absolute;
+  right: -4%;
+  bottom: -4%;
+  width: 38%;
+  height: 38%;
+  border-radius: 50%;
+  background: var(--yard-color);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
 /* center finish — 4 triangles pointing at the middle (classic board) */
 .ldo-center {
   position: absolute;
@@ -183,8 +239,10 @@
 /* ── Tokens (§11/§19/§20/§23 — real-world coin feel) ─────── */
 .ldo-token {
   position: absolute;
-  width: calc(var(--ldo-cell) * 0.8);
-  height: calc(var(--ldo-cell) * 0.8);
+  /* the BUTTON is a full cell — a generous hit target on every screen;
+     the visible dot sits inside at 82% */
+  width: calc(var(--ldo-cell) * 1.02);
+  height: calc(var(--ldo-cell) * 1.02);
   margin: 0;
   padding: 0;
   border: none;
@@ -194,11 +252,13 @@
   will-change: left, top;
   z-index: 5;
   cursor: default;
+  -webkit-tap-highlight-color: transparent;
 }
 .ldo-token-animating { transition: left 0.16s ease-out, top 0.16s ease-out; z-index: 8; }
 .ldo-token-dot {
-  width: 100%;
-  height: 100%;
+  width: 82%;
+  height: 82%;
+  margin: 9%;
   border-radius: 50%;
   background: radial-gradient(circle at 32% 28%, var(--tk-light), var(--tk-color) 58%, var(--tk-dark));
   border: 2px solid rgba(255, 255, 255, 0.85);
@@ -288,7 +348,10 @@
   100% { opacity: 0; transform: translate(-50%, -80%) scale(0.95); }
 }
 
-/* ── Player HUD strip (§29/§30) ──────────────────────────── */
+/* ── Player HUD strip (§29/§30 — DESKTOP ONLY since §38 revised) ──
+   Mobile/Capacitor drops the chip row above the table (congested): the
+   players live IN their yard corners as tappable profile pictures. */
+.ldo-hud-slot { display: none; }
 .ldo-hud {
   display: flex;
   align-items: stretch;
@@ -297,6 +360,8 @@
   padding: 6px 8px 2px;
   flex-wrap: wrap;
 }
+.ldo-hud-chip.ldo-hud-chip-tap { cursor: pointer; }
+.ldo-hud-chip.ldo-hud-chip-tap:hover { border-color: var(--chip-color); }
 .ldo-hud-chip {
   display: flex;
   align-items: center;
@@ -372,16 +437,19 @@
   will-change: transform;
 }
 .ldo-dice-scene.ldo-rolling .ldo-dice-cube {
-  animation: ldo-dice-tumble 0.6s cubic-bezier(0.3, 0, 0.6, 1) infinite;
+  animation: ldo-dice-tumble 0.9s cubic-bezier(0.32, 0, 0.55, 1) infinite;
 }
-/* the tumble: two-axis spin with a bouncing hop — a die shaken in a cup */
+/* the tumble: a real die shaken in a cup — two-axis spin, three bouncing
+   hops, ~0.9s of energy, then the settle transform takes over */
 @keyframes ldo-dice-tumble {
   0% { transform: rotateX(8deg) rotateY(0deg) translateY(0); }
-  20% { transform: rotateX(120deg) rotateY(96deg) translateY(-26%); }
-  45% { transform: rotateX(250deg) rotateY(210deg) translateY(0); }
-  65% { transform: rotateX(380deg) rotateY(320deg) translateY(-16%); }
-  85% { transform: rotateX(480deg) rotateY(410deg) translateY(0); }
-  100% { transform: rotateX(528deg) rotateY(440deg) translateY(0); }
+  14% { transform: rotateX(96deg) rotateY(72deg) translateY(-30%); }
+  32% { transform: rotateX(196deg) rotateY(160deg) translateY(0); }
+  46% { transform: rotateX(288deg) rotateY(244deg) translateY(-20%); }
+  62% { transform: rotateX(384deg) rotateY(330deg) translateY(0); }
+  74% { transform: rotateX(452deg) rotateY(392deg) translateY(-11%); }
+  88% { transform: rotateX(508deg) rotateY(428deg) translateY(0); }
+  100% { transform: rotateX(540deg) rotateY(450deg) translateY(0); }
 }
 .ldo-dice-face {
   position: absolute;
@@ -419,12 +487,14 @@
   background: radial-gradient(50% 50% at 50% 50%, rgba(15, 8, 2, 0.5), transparent 70%);
 }
 .ldo-dice-scene.ldo-rolling .ldo-dice-shadow {
-  animation: ldo-dice-shadow 0.6s ease-in-out infinite;
+  animation: ldo-dice-shadow 0.9s ease-in-out infinite;
 }
 @keyframes ldo-dice-shadow {
   0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.9; }
-  20% { transform: translateX(-50%) scale(0.62); opacity: 0.45; }
-  65% { transform: translateX(-50%) scale(0.78); opacity: 0.6; }
+  14% { transform: translateX(-50%) scale(0.55); opacity: 0.4; }
+  32% { transform: translateX(-50%) scale(0.95); opacity: 0.8; }
+  46% { transform: translateX(-50%) scale(0.62); opacity: 0.5; }
+  74% { transform: translateX(-50%) scale(0.78); opacity: 0.62; }
 }
 .ldo-pip {
   width: 100%;
@@ -438,39 +508,85 @@
 }
 .ldo-pip.off { visibility: hidden; }
 
-.ldo-roll-btn {
+/* ── §14/§31 REVISED — the die FLOATS over the table ───────── */
+.ldo-dice-float {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  pointer-events: none; /* never blocks a coin tap */
+  filter: drop-shadow(0 14px 14px rgba(20, 8, 0, 0.45));
+}
+
+/* ── §44 REVISED — "CHANCE MISSED": small center popup, NO backdrop ── */
+.ldo-missed {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  z-index: 55;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(20, 18, 28, 0.94), rgba(38, 30, 48, 0.94));
+  border: 1.5px solid rgba(244, 63, 94, 0.55);
+  color: #fff;
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  padding: 12px 22px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(20, 8, 0, 0.5), 0 0 22px rgba(244, 63, 94, 0.28);
+  white-space: nowrap;
+}
+
+/* ── §44 REVISED — the slim ROUND BAR (bottom hint under the table) ── */
+.ldo-roundbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 48px;
-  min-width: 168px;
-  padding: 10px 22px;
-  border: none;
-  border-radius: 999px;
-  font-weight: 900;
-  font-size: 14.5px;
-  letter-spacing: 0.02em;
-  color: #fff;
-  background: linear-gradient(90deg, #e11d48 0%, #f43f5e 100%);
-  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.45);
-  cursor: pointer;
-  transition: transform 0.15s, opacity 0.15s, filter 0.2s;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 12px 6px;
+  min-height: 34px;
 }
-.ldo-roll-btn:active { transform: scale(0.96); }
-.ldo-roll-btn:disabled {
-  cursor: default;
-  filter: saturate(0.35) brightness(0.75);
-  box-shadow: none;
-}
-.ldo-status-line {
+.ldo-roundbar-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 12.5px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.75);
-  text-align: center;
-  padding: 0 12px 6px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(21, 20, 30, 0.8);
+  border: 1px solid var(--ldo-line);
+  border-radius: 999px;
+  padding: 5px 13px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ldo-status-line b { color: #fff; }
+.ldo-roundbar-dice { font-style: normal; font-size: 14px; }
+.ldo-roundbar-timer {
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgba(21, 20, 30, 0.8);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-radius: 999px;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+.ldo-roundbar-timer.ldo-roundbar-urgent {
+  border-color: rgba(244, 63, 94, 0.7);
+  color: #fda4af;
+  animation: ldo-urgent 0.9s ease-in-out infinite;
+}
+@keyframes ldo-urgent {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.12); }
+}
+.ldo-roundbar-status { font-size: 11.5px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
 
 /* ── Countdown overlay (§56/§93) ─────────────────────────── */
 .ldo-countdown {
@@ -593,10 +709,11 @@
 
 /* ── Desktop layout (≥1024px, matches the sbr split) ─────── */
 @media (min-width: 1024px) {
+  .ldo-hud-slot { display: block; } /* the chip row is a desktop surface */
   .ldo-hud { padding: 8px 12px 4px; gap: 10px; }
   .ldo-hud-name { max-width: 120px; font-size: 13px; }
-  .ldo-controls { gap: 20px; padding: 10px 14px 12px; }
   .ldo-dice-scene { --ldo-dice-half: 30px; width: 60px; height: 60px; }
+  .ldo-roundbar { padding: 10px 14px 12px; }
 }
 
 /* ── Reduced motion (§104) ───────────────────────────────── */
@@ -612,7 +729,9 @@
   .ldo-confetti i { animation: none !important; }
   .ldo-token-shake .ldo-token-dot,
   .ldo-token-captured .ldo-token-dot,
-  .ldo-token-finished .ldo-token-dot { animation: none !important; }
+  .ldo-token-finished .ldo-token-dot,
+  .ldo-yard-avatar.ldo-ya-active,
+  .ldo-roundbar-timer.ldo-roundbar-urgent { animation: none !important; }
   .ldo-dice-cube { transition: none; }
 }
 

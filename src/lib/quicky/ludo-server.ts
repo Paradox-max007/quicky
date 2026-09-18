@@ -183,20 +183,39 @@ export async function ensureLudoRuntime(roomId: string): Promise<void> {
   }
 
   // PLAYING — lazy watchdog (covers process restarts / lost timers):
-  // roll deadline passed with no dice → pass; move deadline passed with a
-  // pending dice → discard it and pass (§44: never execute a departed
-  // player's pending move).
+  // the auto-roll beat elapsed with no dice → the SERVER rolls for the
+  // player (§14 revised); a move deadline passed with a pending dice →
+  // discard it and skip the chance (§44 — the game always moves forward).
   if (room.status === 'PLAYING' && state?.status === 'playing' && state.currentPlayerId) {
     const now = Date.now()
     const rollLate = state.dice.value == null && state.turnDeadlineAt != null && now >= state.turnDeadlineAt + WATCHDOG_GRACE_MS
     const moveLate = state.dice.value != null && state.moveDeadlineAt != null && now >= state.moveDeadlineAt + WATCHDOG_GRACE_MS
-    if (rollLate || moveLate) {
+    if (rollLate) {
+      await autoRollFor(roomId, state, state.currentPlayerId)
+    } else if (moveLate) {
       await passTurnFor(roomId, state, state.currentPlayerId, 'timeout')
     }
   }
 }
 
 // ── Watchdog (Ludo PRD §42-§44 — disconnect/idle can never freeze a turn) ──
+
+/**
+ * §14 REVISED — the dice are a SERVER ACTION: when the auto-roll beat
+ * elapses the server throws the dice FOR the active player. The user never
+ * rolls — they only pick a token inside the 45s move window.
+ */
+async function autoRollFor(roomId: string, state: LudoGameState, playerId: string) {
+  const actionId = `auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const res = engineRollDice(state, playerId, actionId, Math.random)
+  if (!res.ok) return
+  if (!(await writeGameStateCas(roomId, res.state, state.version))) return
+  for (const ev of res.events) {
+    if (ev.type === 'dice_rolled') emitRoomUpdate(roomId, 'LUDO_DICE_ROLLED', { roomId, playerId, dice: ev.dice })
+  }
+  emitRoomUpdate(roomId)
+  scheduleWatchdog(roomId, res.state)
+}
 
 function scheduleWatchdog(roomId: string, state: LudoGameState) {
   const deadlines = [state.turnDeadlineAt, state.moveDeadlineAt].filter((d): d is number => d != null)
@@ -212,7 +231,19 @@ function scheduleWatchdog(roomId: string, state: LudoGameState) {
       const now = Date.now()
       const rollLate = st.dice.value == null && st.turnDeadlineAt != null && now >= st.turnDeadlineAt + WATCHDOG_GRACE_MS
       const moveLate = st.dice.value != null && st.moveDeadlineAt != null && now >= st.moveDeadlineAt + WATCHDOG_GRACE_MS
-      if (rollLate || moveLate) await passTurnFor(roomId, st, st.currentPlayerId, 'timeout')
+      if (rollLate) {
+        // Server throws the dice for the (idle) active player — the turn
+        // NEVER waits for a roll.
+        await autoRollFor(roomId, st, st.currentPlayerId)
+        return
+      }
+      if (moveLate) {
+        await passTurnFor(roomId, st, st.currentPlayerId, 'timeout')
+        return
+      }
+      // Nothing due yet (a roll/move landed in between) — re-arm on the
+      // NEXT deadline so the chain of watchdogs never dies mid-game.
+      scheduleWatchdog(roomId, st)
     })().catch(() => {})
   }, delay)
   pushTimer(roomId, t)

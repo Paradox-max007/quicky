@@ -25,10 +25,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion'
-import { DoorOpen } from 'lucide-react'
-import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
+import { DoorOpen } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { useLudoRoomStore } from '@/store/ludo-room'
@@ -42,7 +41,7 @@ import { GameContactsPanel } from '../game-chat/GameContactsPanel'
 import { ChatView } from '../ChatView'
 import { useDatingUnread } from '../game-hub/useDatingUnread'
 import { CoinStoreSheet } from '../CoinStoreSheet'
-import { PlayerInteractionSheet, type CatalogGift, type InteractionPlayer } from '../PlayerInteractionSheet'
+import { useRoomPlayerToolbox } from '../room-toolbox/useRoomPlayerToolbox'
 import { GiftSheet } from '../GiftSheet'
 import { LudoGameArea } from './LudoGameArea'
 import '../spin-bottle-room.css'
@@ -65,8 +64,6 @@ export function LudoRoom({
   const closure = useLudoRoomStore((s) => s.closure)
   const mentionFlashId = useLudoRoomStore((s) => s.mentionFlashId)
   const setCoinBalance = useLudoRoomStore((s) => s.setCoinBalance)
-  const bumpEconomy = useLudoRoomStore((s) => s.bumpEconomy)
-  const getSkew = useLudoRoomStore((s) => s.getSkew)
 
   const roomChatPanel = useQuickyStore((s) => s.roomChatPanel)
   const setRoomChatPanel = useQuickyStore((s) => s.setRoomChatPanel)
@@ -77,8 +74,6 @@ export function LudoRoom({
   const [kbHeight, setKbHeight] = useState(0)
   const [gamesPlayed, setGamesPlayed] = useState(0)
   const [showCoinStore, setShowCoinStore] = useState(false)
-  const [showGiftSheet, setShowGiftSheet] = useState(false)
-  const [interaction, setInteraction] = useState<{ player: InteractionPlayer } | null>(null)
   const [isDesktop, setIsDesktop] = useState(false)
   const isNativeCapacitor = Capacitor.isNativePlatform()
   const isDeskShell = useIsDesktopShell() === true
@@ -183,117 +178,36 @@ export function LudoRoom({
     }
   }
 
-  // ── Player interaction (§38/§40) — the SHARED interaction sheet ─────────
-  const openInteraction = (p: InteractionPlayer) => {
-    if (p.userId === meId) {
-      toast("That's you! Tap someone else to interact.")
-      return
-    }
-    setInteraction({ player: p })
-  }
-  useEffect(() => {
-    if (!interaction) return
-    const stillHere = (snapshot?.players ?? []).some((pl) => pl.userId === interaction.player.userId)
-    if (!stillHere) setInteraction(null) // §41: no ghost popups
-  }, [snapshot?.players, interaction])
+  // ── THE SHARED PLAYER TOOLBOX (§38/§40 REVISED — game-agnostic template).
+  // "A user id comes in → tapping it opens the tool box": yard avatars on
+  // the board, HUD chips, ANY surface — one hook, zero per-game logic.
+  // Owns mention / personal chat / gift / add-friend / profile + the gift
+  // sheet, ghost cleanup and the optimistic gift economy.
+  const chatPlayers: ChatPlayer[] = (snapshot?.players ?? []).map((p) => ({
+    userId: p.userId,
+    displayName: p.displayName,
+    avatar: p.avatar,
+    gender: p.gender as string | null | undefined,
+    seatIndex: p.seatIndex as number | undefined,
+  }))
+  const toolbox = useRoomPlayerToolbox({
+    roomId,
+    meId,
+    members: chatPlayers,
+    coinBalance: economy.coinBalance,
+    mode: isDesktop ? 'popover' : 'sheet',
+    returnView: 'ludo-room',
+    broadcastGift: (p) => useLudoRoomStore.getState().broadcastGift(p),
+    onCoinBalance: setCoinBalance,
+    onReconcile: () => void useLudoRoomStore.getState().reconcile(),
+    onOpenCoinStore: () => setShowCoinStore(true),
+    resolveAnchor: (el) => {
+      const card = el?.getBoundingClientRect() ?? null
+      const stage = stageRef.current?.getBoundingClientRect() ?? null
+      return card && stage ? { card, stage } : null
+    },
+  })
 
-  const handleMessage = (p: InteractionPlayer) => {
-    setInteraction(null)
-    const qk = useQuickyStore.getState()
-    const peer = { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar }
-    qk.pinGameChatPeer(peer)
-    if (isNativeCapacitor) {
-      qk.openGameChat(peer, 'game-chat-contacts')
-    } else if (isDeskShell) {
-      useGameChatStore.getState().openConversation(peer)
-      qk.openChats('game')
-    } else {
-      useGameChatStore.getState().openConversation(peer)
-      qk.setRoomChatPanel('personal')
-    }
-  }
-  const handleMention = (p: InteractionPlayer) => {
-    setInteraction(null)
-    useQuickyStore.getState().insertRoomChatMention({ userId: p.userId, displayName: p.displayName })
-  }
-  const handleProfile = (p: InteractionPlayer) => {
-    setInteraction(null)
-    useQuickyStore.getState().openProfile(p.userId, 'ludo-room')
-  }
-
-  // ── Friends (refactor PRD §25 — same toolbox as the Spin Bottle room) ────
-  const [friendIds, setFriendIds] = useState<Set<string>>(() => new Set())
-  const [friendBusy, setFriendBusy] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    api.friends
-      .list()
-      .then((res) => {
-        if (cancelled) return
-        setFriendIds(new Set((res.friends ?? []).map((f: { id: string }) => f.id)))
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
-  const handleToggleFriend = async (p: InteractionPlayer) => {
-    if (friendBusy) return
-    setFriendBusy(p.userId)
-    const wasFriend = friendIds.has(p.userId)
-    try {
-      if (wasFriend) {
-        await api.friends.remove(p.userId)
-        setFriendIds((prev) => {
-          const next = new Set(prev)
-          next.delete(p.userId)
-          return next
-        })
-        toast.success(`${p.displayName} removed from friends`)
-      } else {
-        await api.friends.add(p.userId)
-        setFriendIds((prev) => new Set(prev).add(p.userId))
-        toast.success(`${p.displayName} is now your friend`)
-      }
-    } catch (e: any) {
-      toast.error(e?.status === 409 ? 'Already friends' : e?.status === 403 ? 'Not available' : (e?.message ?? 'Failed'))
-    } finally {
-      setFriendBusy(null)
-    }
-  }
-
-  // ── Gifts (§37/§100) — the existing economy, optimistic at the HUD ───────
-  const sendGift = async (recipientId: string, gift: CatalogGift): Promise<boolean> => {
-    if (!roomId) return false
-    bumpEconomy({ coinBalance: -gift.priceCoins })
-    try {
-      const res = await api.ludo.gifts.send(roomId, recipientId, gift.id)
-      if (res?.ok) {
-        setCoinBalance(res.coinBalance)
-        const me2 = useQuickyStore.getState().user
-        const recipientName = snapshot?.players.find((p) => p.userId === recipientId)?.displayName
-        useLudoRoomStore.getState().broadcastGift({
-          senderId: me2?.id ?? '',
-          senderName: me2?.name ?? 'Someone',
-          recipientId,
-          recipientName: recipientName ?? 'Someone',
-          itemId: gift.id,
-          itemName: gift.name,
-          itemEmoji: gift.icon,
-          quantity: 1,
-        })
-        return true
-      }
-      return false
-    } catch (e: any) {
-      if (e?.body?.coinBalance !== undefined) setCoinBalance(Number(e.body.coinBalance))
-      else void useLudoRoomStore.getState().reconcile()
-      toast.error(e?.body?.error === 'insufficient_coins' ? 'Not enough coins — top up in the coin store.' : e?.message ?? 'Failed to send gift')
-      return false
-    }
-  }
-
-  // ── Leave (§41) — always works; the server cleans everything up ──────────
   const leave = useCallback(async () => {
     if (!roomId) return
     try {
@@ -302,14 +216,6 @@ export function LudoRoom({
     useLudoRoomStore.getState().detach()
     onClose()
   }, [roomId, onClose])
-
-  const chatPlayers: ChatPlayer[] = (snapshot?.players ?? []).map((p) => ({
-    userId: p.userId,
-    displayName: p.displayName,
-    avatar: p.avatar,
-    gender: p.gender as string | null | undefined,
-    seatIndex: p.seatIndex as number | undefined,
-  }))
 
   const roomLabel = `Board #${roomId.slice(-5).toUpperCase()}`
 
@@ -415,10 +321,10 @@ export function LudoRoom({
                 <LudoGameArea
                   snapshot={snapshot}
                   meId={meId}
-                  onRoll={() => void useLudoRoomStore.getState().roll()}
                   onMove={(tokenId) => void useLudoRoomStore.getState().move(tokenId)}
                   onLeave={() => void leave()}
-                  onOpenGifts={() => setShowGiftSheet(true)}
+                  onOpenGifts={toolbox.openGiftSheet}
+                  onPlayerTap={(p, el) => toolbox.open(p, el)}
                 />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-white/70">
@@ -438,7 +344,7 @@ export function LudoRoom({
             onSend={sendChat}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
-            onOpenGifts={() => setShowGiftSheet(true)}
+            onOpenGifts={toolbox.openGiftSheet}
             onOpenGameChats={
               isNativeCapacitor
                 ? () => useQuickyStore.getState().openGameChatContacts('ludo-room')
@@ -557,39 +463,10 @@ export function LudoRoom({
           onPurchased={(newBalance) => setCoinBalance(newBalance)}
         />
 
-        <PlayerInteractionSheet
-          player={interaction?.player ?? null}
-          mode={isDesktop ? 'popover' : 'sheet'}
-          anchor={null}
-          coinBalance={economy.coinBalance}
-          onClose={() => setInteraction(null)}
-          onTag={() => setInteraction(null)}
-          onMessage={handleMessage}
-          onMention={handleMention}
-          onProfile={handleProfile}
-          isFriend={interaction ? friendIds.has(interaction.player.userId) : false}
-          friendBusy={!!interaction && friendBusy === interaction.player.userId}
-          onToggleFriend={handleToggleFriend}
-          onBuyCoins={() => {
-            setInteraction(null)
-            setShowCoinStore(true)
-          }}
-          onSendGift={sendGift}
-        />
-
-        <GiftSheet
-          open={showGiftSheet}
-          onClose={() => setShowGiftSheet(false)}
-          roomId={roomId}
-          players={chatPlayers}
-          meId={meId}
-          coinBalance={economy.coinBalance}
-          onGiftSent={(newBalance) => setCoinBalance(newBalance)}
-          onBuyCoins={() => {
-            setShowGiftSheet(false)
-            setShowCoinStore(true)
-          }}
-        />
+        {/* ═══ THE SHARED PLAYER TOOLBOX surfaces — sheet | popover + gifts.
+            Every player surface in this room (yard avatars, HUD chips)
+            opens THIS through toolbox.open(player). ═══ */}
+        {toolbox.surfaces}
       </div>
     </MotionConfig>
   )

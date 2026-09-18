@@ -57,8 +57,7 @@ import { useDatingUnread } from './game-hub/useDatingUnread'
 import { GameContactsPanel } from './game-chat/GameContactsPanel'
 import { useGameChatStore } from '@/store/game-chat'
 import { CoinStoreSheet } from './CoinStoreSheet'
-import { PlayerInteractionSheet, type CatalogGift, type InteractionPlayer } from './PlayerInteractionSheet'
-import { GiftSheet } from './GiftSheet'
+import { useRoomPlayerToolbox } from './room-toolbox/useRoomPlayerToolbox'
 import './spin-bottle-room.css'
 
 // The 12-seat ring + duel spotlight are derived per-measure from the shared
@@ -137,11 +136,6 @@ export function SpinBottleRoom({
   // each isolated so a gift arriving never rebuilds the table.
   const [gamesPlayed, setGamesPlayed] = useState(0) // HUD 🏆 (DB-driven)
   const [showCoinStore, setShowCoinStore] = useState(false)
-  const [showGiftSheet, setShowGiftSheet] = useState(false)
-  const [interaction, setInteraction] = useState<{
-    player: InteractionPlayer
-    anchor: { card: DOMRect; stage: DOMRect } | null
-  } | null>(null)
   // Web breakpoint (≥1024px) → popover interaction; below → bottom sheet (§82/§83)
   const [isDesktop, setIsDesktop] = useState(false)
   // Layout PRD §76: ONE platform check drives the chat-navigation split —
@@ -391,176 +385,51 @@ export function SpinBottleRoom({
     }
   }
 
-  // ─── Player interaction (v3 §40-§46) ────────────────────────────────────
-  // §85: while a duel is on stage the interaction stays disabled — it must
-  // never interfere with the round or cover the center cards.
-  const openInteraction = (p: SeatPlayer, cardEl: HTMLElement | null) => {
-    if (duelPhaseRef.current !== 'table') {
-      toast('Wait for the round to finish — the spotlight is busy ✨')
-      return
-    }
-    if (p.isMe) {
-      toast("That's you! Tap someone else to interact.")
-      return
-    }
-    const card = cardEl?.getBoundingClientRect() ?? null
-    const stage = stageRef.current?.getBoundingClientRect() ?? null
-    setInteraction({
-      player: { userId: p.userId, displayName: p.displayName, avatar: p.avatar },
-      anchor: card && stage ? { card, stage } : null,
-    })
-  }
-  // duelPhase in a ref so the seat click handler never goes stale
+  // duelPhase in a ref so the seat click handler never goes stale (§85)
   const duelPhaseRef = useRef<'table' | 'duel' | 'result'>('table')
 
-  // ── Mentions PRD §68/§72: a departed player can never keep a ghost popup.
-  // The players array IS the authoritative membership (§19/§66) — the moment
-  // a leaving player disappears from the snapshot, close the profile popup,
-  // and they vanish from the @ picker too (same source, §87).
-  useEffect(() => {
-    if (!interaction) return
-    const stillHere = (snapshot?.players ?? []).some((pl) => pl.userId === interaction.player.userId)
-    if (!stillHere) setInteraction(null)
-  }, [snapshot?.players, interaction])
+  // Room members as the toolbox sees them (§19/§66: the snapshot IS the
+  // authoritative membership — gifts, ghost cleanup, @ picker all read this).
+  const chatPlayers = (snapshot?.players ?? []).map((p) => ({
+    userId: p.userId,
+    displayName: p.displayName,
+    avatar: p.avatar,
+    gender: p.gender as string | null | undefined,
+    seatIndex: p.seatIndex as number | undefined,
+  }))
 
-  const handleTag = (p: InteractionPlayer) => {
-    // §43: the tag action/state layer exists; the tagging feature itself is
-    // intentionally not invented here.
-    toast(`Tag — coming soon. You picked ${p.displayName}.`)
-    setInteraction(null)
-  }
-  const handleMessage = (p: InteractionPlayer) => {
-    // Mentions PRD §6/§7/§8/§76/§104: "Message" opens THAT PLAYER'S personal
-    // chat DIRECTLY — there is NO contact-list step. The interaction popup
-    // closes first (never lingers behind the chat surface). Platform split
-    // (§10): the room RUNTIME is untouched either way (§11).
-    //   · WEB: get-or-create the conversation + load messages (openGamePerso-
-    //     nalChat steps §8) and swap the right-side panel to 'personal' — a
-    //     normal child of the ONE chat shell; the table never moves (§5).
-    //   · CAPACITOR: the dedicated full-screen personal chat. The logical
-    //     back stack stays personal → contacts → room (§10/§82): returnView
-    //     is the contacts screen, and the pinned peer sits on top of it.
-    setInteraction(null)
-    const qk = useQuickyStore.getState()
-    const peer = { peerUserId: p.userId, peerName: p.displayName, peerAvatar: p.avatar }
-    qk.pinGameChatPeer(peer)
-    if (isNativeCapacitor) {
-      qk.openGameChat(peer, 'game-chat-contacts')
-    } else if (isDeskShell) {
-      // §15/§16: Chats page, that player's conversation already open, the
-      // contact list stays visible on the left. Room runtime untouched (§18).
-      useGameChatStore.getState().openConversation(peer)
-      qk.openChats('game')
-    } else {
-      useGameChatStore.getState().openConversation(peer)
-      qk.setRoomChatPanel('personal')
-    }
-  }
-  const handleMention = (p: InteractionPlayer) => {
-    // Mentions PRD §28/§29/§77: Mention → Room Chat opens/activates, the
-    // composer receives the structured "@DisplayName" token and focus. The
-    // user still types and sends the message THEMSELVES (§29) — nothing is
-    // auto-sent.
-    setInteraction(null)
-    useQuickyStore.getState().insertRoomChatMention({ userId: p.userId, displayName: p.displayName })
-  }
-  const handleProfile = (p: InteractionPlayer) => {
-    // §45: the app's real profile route
-    setInteraction(null)
-    useQuickyStore.getState().openProfile(p.userId, 'spin-bottle-room')
-  }
+  // ─── THE SHARED PLAYER TOOLBOX (v3 §40-§46 REVISED — game-agnostic) ─────
+  // One hook for EVERY room game: mention / personal chat / gift / add
+  // friend / profile + the gift sheet, relationship layer, ghost cleanup
+  // and the optimistic gift economy. The Spin room only contributes its own
+  // specifics: the duel-spotlight guard and the seat-anchored popover.
+  const toolbox = useRoomPlayerToolbox({
+    roomId,
+    meId,
+    members: chatPlayers,
+    coinBalance: economy.coinBalance,
+    mode: isDesktop ? 'popover' : 'sheet',
+    returnView: 'spin-bottle-room',
+    broadcastGift: (p) => useGameRoomStore.getState().broadcastGift(p),
+    onCoinBalance: setCoinBalance,
+    onReconcile: () => void useGameRoomStore.getState().reconcile(),
+    onOpenCoinStore: () => setShowCoinStore(true),
+    // §85: while a duel is on stage the interaction stays disabled — it must
+    // never interfere with the round or cover the center cards.
+    beforeOpen: () =>
+      duelPhaseRef.current !== 'table'
+        ? 'Wait for the round to finish — the spotlight is busy ✨'
+        : null,
+    resolveAnchor: (el) => {
+      const card = el?.getBoundingClientRect() ?? null
+      const stage = stageRef.current?.getBoundingClientRect() ?? null
+      return card && stage ? { card, stage } : null
+    },
+  })
 
-  // ─── Friends (refactor PRD §25/§96) ─────────────────────────────────────
-  // The toolbox's Add/Remove Friend is generated from the real relationship
-  // table; the server validates not-self / not-blocked / not-duplicate (§25).
-  const [friendIds, setFriendIds] = useState<Set<string>>(() => new Set())
-  const [friendBusy, setFriendBusy] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    api.friends
-      .list()
-      .then((res) => {
-        if (cancelled) return
-        setFriendIds(new Set((res.friends ?? []).map((f: { id: string }) => f.id)))
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const handleToggleFriend = async (p: InteractionPlayer) => {
-    if (friendBusy) return
-    setFriendBusy(p.userId)
-    const wasFriend = friendIds.has(p.userId)
-    try {
-      if (wasFriend) {
-        await api.friends.remove(p.userId)
-        setFriendIds((prev) => {
-          const next = new Set(prev)
-          next.delete(p.userId)
-          return next
-        })
-        toast.success(`${p.displayName} removed from friends`)
-      } else {
-        await api.friends.add(p.userId)
-        setFriendIds((prev) => new Set(prev).add(p.userId))
-        toast.success(`${p.displayName} is now your friend`)
-      }
-    } catch (e: any) {
-      const msg =
-        e?.status === 409
-          ? 'Already friends'
-          : e?.status === 403
-            ? 'Not available'
-            : (e?.message ?? 'Failed')
-      toast.error(msg)
-    } finally {
-      setFriendBusy(null)
-    }
-  }
-
-  // ─── Gift send (v3 §53-§59) ─────────────────────────────────────────────
-  // Optimistic coin move at the HUD (§59), server transaction is the truth,
-  // the returned balance reconciles instantly.
-  const sendGift = async (recipientId: string, gift: CatalogGift): Promise<boolean> => {
-    if (!roomId) return false
-    bumpEconomy({ coinBalance: -gift.priceCoins })
-    try {
-      const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id)
-      if (res?.ok) {
-        setCoinBalance(res.coinBalance)
-        // Supabase cosmetic push for the rest of the table (toast path)
-        const me2 = useQuickyStore.getState().user
-        const recipientName = snapshot?.players.find((p) => p.userId === recipientId)?.displayName
-        useGameRoomStore.getState().broadcastGift({
-          senderId: me2?.id ?? '',
-          senderName: me2?.name ?? 'Someone',
-          recipientId,
-          recipientName: recipientName ?? 'Someone',
-          itemId: gift.id,
-          itemName: gift.name,
-          itemEmoji: gift.icon,
-          quantity: 1,
-        })
-        return true
-      }
-      return false
-    } catch (e: any) {
-      // Revert the optimistic spend (server value wins if provided)
-      if (e?.body?.coinBalance !== undefined) {
-        setCoinBalance(Number(e.body.coinBalance))
-      } else {
-        void useGameRoomStore.getState().reconcile()
-      }
-      if (e?.body?.error === 'insufficient_coins') {
-        toast.error('Not enough coins — top up in the coin store.')
-      } else {
-        toast.error(e?.message ?? 'Failed to send gift')
-      }
-      return false
-    }
+  // Seat tap → toolbox (§84 popover anchor from the tapped card's real rect).
+  const openInteraction = (p: SeatPlayer, cardEl: HTMLElement | null) => {
+    toolbox.open({ userId: p.userId, displayName: p.displayName, avatar: p.avatar }, cardEl)
   }
 
   const leave = async () => {
@@ -726,14 +595,6 @@ export function SpinBottleRoom({
   // same geometric centers as occupied seats (PRD §54).
   const takenSeats = new Set(seatPlayers.map((p) => p.seatIndex))
   const openSeats = Array.from({ length: MAX_SEATS }, (_, i) => i).filter((i) => !takenSeats.has(i))
-
-  const chatPlayers = (snapshot?.players ?? []).map((p) => ({
-    userId: p.userId,
-    displayName: p.displayName,
-    avatar: p.avatar,
-    gender: p.gender as string | null | undefined,
-    seatIndex: p.seatIndex as number | undefined,
-  }))
 
   return (
     <MotionConfig reducedMotion="user">
@@ -1102,7 +963,7 @@ export function SpinBottleRoom({
                   <span className="text-white/50"> · closes in {singletonCloseLabel}</span>
                 )}
               </div>
-              <button className="sbr-tablebar-btn sbr-tablebar-gift" onClick={() => setShowGiftSheet(true)}>
+              <button className="sbr-tablebar-btn sbr-tablebar-gift" onClick={toolbox.openGiftSheet}>
                 <span aria-hidden>🎁</span> Send a Gift
               </button>
             </div>
@@ -1124,7 +985,7 @@ export function SpinBottleRoom({
             onSend={sendChat}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
-            onOpenGifts={() => setShowGiftSheet(true)}
+            onOpenGifts={toolbox.openGiftSheet}
             onOpenGameChats={
               isNativeCapacitor
                 ? () => useQuickyStore.getState().openGameChatContacts('spin-bottle-room')
@@ -1262,46 +1123,11 @@ export function SpinBottleRoom({
           onPurchased={(newBalance) => setCoinBalance(newBalance)}
         />
 
-        {/* ═══ v3 §40-§46 — player interaction (mobile sheet / desktop popover) */}
-        <PlayerInteractionSheet
-          player={interaction?.player ?? null}
-          mode={isDesktop ? 'popover' : 'sheet'}
-          anchor={interaction?.anchor ?? null}
-          coinBalance={economy.coinBalance}
-          onClose={() => setInteraction(null)}
-          onTag={handleTag}
-          onMessage={handleMessage}
-          onMention={handleMention}
-          onProfile={handleProfile}
-          isFriend={interaction ? friendIds.has(interaction.player.userId) : false}
-          friendBusy={!!interaction && friendBusy === interaction.player.userId}
-          onToggleFriend={handleToggleFriend}
-          onBuyCoins={() => {
-            setInteraction(null)
-            setShowCoinStore(true)
-          }}
-          onSendGift={sendGift}
-        />
-
-        {/* ═══ v3 — chat composer 🎁 gift sheet (recipient picker + catalog) */}
-        <GiftSheet
-          open={showGiftSheet}
-          onClose={() => setShowGiftSheet(false)}
-          roomId={roomId}
-          players={chatPlayers}
-          meId={meId}
-          coinBalance={economy.coinBalance}
-          onGiftSent={(newBalance) => {
-            setCoinBalance(newBalance)
-            // My sent total also moves — the next snapshot reconciles fully.
-          }}
-          onBuyCoins={() => {
-            // Games PRD §27 — insufficient coins opens the EXISTING
-            // coin-purchase modal (identical on Web / Capacitor).
-            setShowGiftSheet(false)
-            setShowCoinStore(true)
-          }}
-        />
+        {/* ═══ THE SHARED PLAYER TOOLBOX surfaces (v3 §40-§46 revised) —
+            interaction sheet (mobile sheet / desktop popover anchored to the
+            tapped seat) + the bulk gift sheet + the friend layer — all owned
+            by the game-agnostic hook. ═══ */}
+        {toolbox.surfaces}
       </div>
     </MotionConfig>
   )

@@ -15,10 +15,14 @@ export const LudoPlayerHud = memo(function LudoPlayerHud({
   players,
   currentPlayerId,
   meId,
+  onPlayerTap,
 }: {
   players: LudoPlayerSummary[]
   currentPlayerId: string | null
   meId: string
+  /** §38 REVISED — a tapped chip opens the SHARED player toolbox (the same
+   * entry the yard avatars use). Optional; chips stay display-only without. */
+  onPlayerTap?: (p: { userId: string; displayName: string; avatar?: string | null }, el: HTMLElement | null) => void
 }) {
   // Always show all four seats so the table reads as a Ludo board (empty
   // seats render as placeholders).
@@ -33,9 +37,13 @@ export const LudoPlayerHud = memo(function LudoPlayerHud({
             key={p.userId}
             className={`ldo-hud-chip${p.userId === currentPlayerId ? ' ldo-active' : ''}${
               p.connection === 'offline' ? ' ldo-offline' : ''
-            }`}
+            }${onPlayerTap && p.userId !== meId ? ' ldo-hud-chip-tap' : ''}`}
             style={{ '--chip-color': chipColor(p.color) } as React.CSSProperties}
             data-testid={`ludo-hud-${p.color}`}
+            onClick={(e) => {
+              if (onPlayerTap && p.userId !== meId) onPlayerTap({ userId: p.userId, displayName: p.displayName, avatar: p.avatar }, e.currentTarget)
+            }}
+            role={onPlayerTap && p.userId !== meId ? 'button' : undefined}
           >
             <span className="ldo-hud-avatar">
               {p.avatar ? (

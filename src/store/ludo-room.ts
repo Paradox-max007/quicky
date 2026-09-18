@@ -115,6 +115,19 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       })
     }
     set((prev) => {
+      // ⛔ VERSION-REGRESSION GUARD — the mobile/Capacitor token-tap fix.
+      // An SSE/poll snapshot that was READ before the last local commit (a
+      // coalesced push or an in-flight recovery poll landing after a
+      // roll/move response) must never drag the board BACKWARDS: a regressed
+      // game drops the pending dice, empties the legal-move set and makes
+      // every coin unselectable ("I rolled a 6 and tapping does nothing").
+      // The engine's monotonic version is the tiebreaker — an older game
+      // state is always discarded in favour of the locally known newer one.
+      const prevGame = prev.snapshot?.game ?? null
+      const incomingGame = s.game ?? null
+      const staleGame =
+        !!incomingGame && !!prevGame && (incomingGame.version ?? 0) < (prevGame.version ?? 0)
+      const snap: LudoSnapshot = staleGame ? { ...s, game: prevGame } : s
       const prevMap = new Map(prev.chat.map((m) => [m.id, m]))
       const merged = s.recentMessages.map((m) => ({
         ...m,
@@ -122,7 +135,7 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
         replyTo: prevMap.get(m.id)?.replyTo ?? null,
       }))
       const pending = prev.chat.filter((m) => m.id.startsWith('tmp_'))
-      return { snapshot: s, chat: [...merged, ...pending] }
+      return { snapshot: snap, chat: [...merged, ...pending] }
     })
   }
 

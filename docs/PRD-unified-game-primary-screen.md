@@ -224,6 +224,8 @@ Full Screen Friends List        (dedicated GameFriendsScreen)
 
 ## 7. Reuse constraints (unchanged from v1)
 
+- The per-player TOOLBOX (mention / personal chat / gift / add friend / profile) is ONE game-agnostic kit — `room-toolbox/useRoomPlayerToolbox`. Any surface in any room game opens it with just a user id (`toolbox.open(player)`); the Ludo room's yard-corner avatars and the Spin the Bottle seats consume the SAME kit. Never duplicate it per game.
+
 - Chat, friends, realtime messages, unread counts and keyboard/safe-area handling reuse the EXISTING systems. No parallel systems (`NewGameChatService`, `game_friends` tables) are created.
 - The shared game-chat store stream is the single source of truth for unread badges.
 - The EXISTING `GameChatScreen`, `GameChatContactRow`, GET /friends and `/profile/[id]` are composed into the columns/screens — composition/refactor, never rewrite.

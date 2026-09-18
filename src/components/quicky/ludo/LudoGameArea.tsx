@@ -1,25 +1,39 @@
 'use client'
 
-// Quicky — LUDO GAME AREA (Ludo PRD §8/§18-§26/§29-§34/§53/§62/§65/§100-§104)
+// Quicky — LUDO GAME AREA (Ludo PRD §8/§14/§18-§26/§29-§34/§38/§44/§53/§62/
+// §65/§100-§104 — REVISED: server rolls the dice, floating die, 45s move
+// window, yard-avatar players, bigger mobile table)
 //
 // Presentation + animation orchestrator over the shared runtime
 // (store/ludo-room.ts). Architecture contract (§53/§113):
 //   SERVER transition (snapshot) → THIS component animates it.
 //   Animation NEVER determines state — every render snaps back to the
-//   authoritative game state and the step-by-step movement is pure display
-//   (§18: tokens hop through every square, ~180ms each with ease-out).
+//   authoritative game state and the step-by-step movement is pure display.
 //
-// Animation source of truth = a diff between the previously displayed
-// positions and the new authoritative tokens:
-//   · forward-moving token → hop-by-hop path (movement.ts)
-//   · tokens that went to the yard → capture FX on landing (§21)
-//   · token reaching the center → finish bounce (§26)
-//   · game finished → winner celebration overlay (§28)
+// REVISED mechanics (Unified PRD + Ludo PRD revisions):
+//   · §14 REVISED — THE DICE ARE A SERVER ACTION: there is NO roll button.
+//     The server throws the dice for every player; this area animates EVERY
+//     fresh roll (mine included) identically for the whole table (§55).
+//   · The 3D die FLOATS OVER the board while it rolls, settles on the
+//     server's number, then FADES AWAY — never parked in a controls bar,
+//     exactly like the bottle in Spin the Bottle. The rolled number stays
+//     readable in the bottom round-bar hint ("Alex: rolled 6") until the
+//     round moves on — mobile keeps the whole stage for the table.
+//   · §44 REVISED — 45s visible move window (LudoRoundBar timer). If it
+//     expires, the server skips the chance and a small center popup
+//     "CHANCE MISSED" (no backdrop) acknowledges it on that player's device.
+//   · §38 REVISED — no player chips above the table on mobile: every player
+//     is their yard-corner avatar; tapping it opens the SHARED player
+//     toolbox (mention / chat / gift / friend / profile). Desktop (lg+)
+//     keeps the chip row.
+//   · --ldo-cell is scaled from the measured board, so coins, pads, dice
+//     and hit targets grow with the table on every device.
 // Haptics on Capacitor only (§65) through the existing lib/capacitor helpers.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Gift } from 'lucide-react'
-import { FINISH_STEP } from '@/lib/quicky/ludo/constants'
+import { CHANCE_MISSED_MS, DICE_ROLL_ANIM_MS, FINISH_STEP } from '@/lib/quicky/ludo/constants'
 import { tokenPlacement } from '@/lib/quicky/ludo/board'
 import { movementPath } from '@/lib/quicky/ludo/movement'
 import { getLegalMoves } from '@/lib/quicky/ludo/rules'
@@ -28,9 +42,10 @@ import type { LudoRoomSnapshot } from '@/lib/quicky/ludo-snapshot'
 import { hapticImpact, hapticNotification } from '@/lib/capacitor'
 import { LudoBoard, withStackOffsets, type DisplayToken, type YardOwner } from './LudoBoard'
 import { LudoPlayerHud } from './LudoPlayerHud'
-import { LudoTurnIndicator, type TurnPhase } from './LudoTurnIndicator'
+import { LudoRoundBar, type TurnPhase } from './LudoRoundBar'
 import { LudoCountdown } from './LudoCountdown'
 import { LudoGameResult } from './LudoGameResult'
+import { LudoDice } from './LudoDice'
 
 type DisplayEntry = { row: number; col: number; position: number; state: LudoToken['state'] }
 
@@ -45,38 +60,35 @@ function snapshotDisplay(game: LudoGameState): Record<string, DisplayEntry> {
   return map
 }
 
-function seatOfColor(c: string): number {
-  return ({ red: 0, green: 1, yellow: 2, blue: 3 } as Record<string, number>)[c] ?? 0
-}
-
 function statusLine(
   phase: TurnPhase,
   currentName: string | undefined,
   game: LudoGameState | null,
   meId: string
 ): string | undefined {
-  if (phase === 'waiting') return 'Open seat — the game starts with 2 players'
-  if (phase === 'my_roll') return 'Your turn — roll the dice'
-  if (phase === 'my_move') return 'Your turn — tap a glowing token to move'
-  if (phase === 'their_turn') return `${currentName ?? 'Player'}'s turn`
   if (phase === 'finished') return game?.winnerId === meId ? 'You won — GG!' : 'Game finished'
   return undefined
 }
 
+// How long the settled die stays on the table before it fades away.
+const DICE_HOLD_MS = 1_500
+
 export function LudoGameArea({
   snapshot,
   meId,
-  onRoll,
   onMove,
   onLeave,
   onOpenGifts,
+  onPlayerTap,
 }: {
   snapshot: LudoRoomSnapshot
   meId: string
-  onRoll: () => void
+  /** §14 REVISED — no roll action exists; moves only. */
   onMove: (tokenId: string) => void
   onLeave: () => void
   onOpenGifts: () => void
+  /** §38 REVISED — yard avatar tapped → the shared player toolbox. */
+  onPlayerTap?: (player: { userId: string; displayName: string; avatar?: string | null }, el: HTMLElement | null) => void
 }) {
   const game = snapshot.game
   const [display, setDisplay] = useState<Record<string, DisplayEntry>>({})
@@ -84,6 +96,9 @@ export function LudoGameArea({
   const [captureChip, setCaptureChip] = useState<string | null>(null)
   const [movingId, setMovingId] = useState<string | null>(null)
   const [diceRolling, setDiceRolling] = useState(false)
+  const [diceVisible, setDiceVisible] = useState(false)
+  const [lastRoll, setLastRoll] = useState<{ name: string; value: number; isMe: boolean } | null>(null)
+  const [chanceMissed, setChanceMissed] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const prevVersionRef = useRef<number>(0)
   const prevDiceRef = useRef<{ value: number | null; rolledBy: string | null }>({ value: null, rolledBy: null })
@@ -95,8 +110,9 @@ export function LudoGameArea({
   useEffect(() => clearTimers, [clearTimers])
 
   // ── Board sizing (Ludo PRD §9 — measured, never hardcoded): the square
-  // board FILLS the measured stage box on every device (§68/§91/§92 — the
-  // whole table is the board, edge to edge with a thin breathing margin). ─
+  // board FILLS the measured stage box on every device, and --ldo-cell is
+  // DERIVED from the measured size so coins/pads/avatars/dice/hit targets
+  // all scale with the table (bigger board on mobile = bigger touch UI). ─
   const wrapRef = useRef<HTMLDivElement>(null)
   const [boardPx, setBoardPx] = useState(0)
   useEffect(() => {
@@ -104,7 +120,7 @@ export function LudoGameArea({
     if (!el) return
     const measure = () => {
       const r = el.getBoundingClientRect()
-      const size = Math.max(160, Math.floor(Math.min(r.width, r.height)) - 8)
+      const size = Math.max(160, Math.floor(Math.min(r.width, r.height)) - 4)
       if (size > 0) setBoardPx(size)
     }
     measure()
@@ -117,21 +133,28 @@ export function LudoGameArea({
     }
   }, [])
 
-  // ── Dice animation: MY roll shakes optimistically via onRoll; here we
-  // animate OTHER players' fresh rolls (§55 — everyone sees the same anim).
+  // ── Dice animation: the SERVER rolls for every player — every fresh
+  // value animates on EVERY device (§55), the die floats over the board,
+  // settles on the server number, then disappears. No optimistic roll —
+  // there is no roll button to be optimistic about. ────────────────────────
   useEffect(() => {
     if (!game) return
     const prev = prevDiceRef.current
     const changed = game.dice.value !== prev.value || game.dice.rolledBy !== prev.rolledBy
     prevDiceRef.current = { value: game.dice.value, rolledBy: game.dice.rolledBy }
     if (!changed || game.dice.value == null) return
-    if (game.dice.rolledBy === meId) return // my roll already animated
-    // Deferred (react-hooks v6: no synchronous setState in effect bodies).
-    const start = setTimeout(() => setDiceRolling(true), 0)
-    const stop = setTimeout(() => setDiceRolling(false), 700)
-    timersRef.current.push(start, stop)
+    const roller = game.players.find((p) => p.userId === game.dice.rolledBy)
+    setLastRoll({
+      name: roller?.displayName ?? 'Player',
+      value: game.dice.value,
+      isMe: game.dice.rolledBy === meId,
+    })
+    setDiceVisible(true)
+    setDiceRolling(true)
     void hapticImpact('light')
-    
+    const stop = setTimeout(() => setDiceRolling(false), DICE_ROLL_ANIM_MS)
+    const hide = setTimeout(() => setDiceVisible(false), DICE_ROLL_ANIM_MS + DICE_HOLD_MS)
+    timersRef.current.push(stop, hide)
   }, [game?.dice?.value, game?.dice?.rolledBy])
 
   // ── Token animation (server transition → client animation, §53) ──────────
@@ -149,6 +172,15 @@ export function LudoGameArea({
     if (prevVersionRef.current === game.version) return
     prevVersionRef.current = game.version
     clearTimers()
+
+    // §44 REVISED — a skipped chance: small center popup, NO backdrop, on
+    // the missed player's device only. The game has already moved forward.
+    if (game.lastEvent?.type === 'turn_skipped' && game.lastEvent.playerId === meId) {
+      setChanceMissed(true)
+      void hapticNotification('warning')
+      const t = setTimeout(() => setChanceMissed(false), CHANCE_MISSED_MS)
+      timersRef.current.push(t)
+    }
 
     const prevDisplay = display
     const next = snapshotDisplay(game)
@@ -272,14 +304,16 @@ export function LudoGameArea({
     return withStackOffsets(raw)
   }, [game, display, fx, legalIds, movingId])
 
-  // Corner home-base owner chips (real-board feel: every yard names its
-  // player; unclaimed corners honestly say Open Seat).
+  // Corner home-base owners: the yard carries the player's NAME + PROFILE
+  // PICTURE (mobile has no chip row above the table — §38 revised).
   const yardOwners: YardOwner[] = useMemo(
     () =>
       snapshot.players.map((p) => ({
         color: p.color as YardOwner['color'],
         name: p.displayName,
         isMe: p.userId === meId,
+        userId: p.userId,
+        avatar: p.avatar,
       })),
     [snapshot.players, meId]
   )
@@ -287,24 +321,18 @@ export function LudoGameArea({
   const onTokenTap = useCallback(
     (tokenId: string) => {
       if (!legalIds.has(tokenId)) {
-        // §20 — illegal tap: small shake, no generic error toast.
+        // §20 — illegal tap: the coin shakes (no dead taps, no error toast).
         setFx((f) => ({ ...f, [tokenId]: 'shake' }))
         const t = setTimeout(() => setFx((f) => ({ ...f, [tokenId]: 'none' })), 340)
         timersRef.current.push(t)
         return
       }
+      // §44 REVISED — the moment the coin is tapped it moves: no cooldown,
+      // the move resolves to the dice-chosen number immediately.
       onMove(tokenId)
     },
     [legalIds, onMove]
   )
-
-  const handleRoll = useCallback(() => {
-    if (phase !== 'my_roll') return
-    setDiceRolling(true)
-    const t = setTimeout(() => setDiceRolling(false), 700)
-    timersRef.current.push(t)
-    onRoll()
-  }, [phase, onRoll])
 
   const winner =
     game?.status === 'finished' ? game.players.find((p) => p.userId === game.winnerId) ?? null : null
@@ -313,18 +341,58 @@ export function LudoGameArea({
 
   return (
     <div className="ldo-area">
-      <LudoPlayerHud
-        players={snapshot.players}
-        currentPlayerId={game?.currentPlayerId ?? null}
-        meId={meId}
-      />
+      {/* Desktop keeps the player chip row; mobile uses the yard avatars */}
+      <div className="ldo-hud-slot">
+        <LudoPlayerHud
+          players={snapshot.players}
+          currentPlayerId={game?.currentPlayerId ?? null}
+          meId={meId}
+          onPlayerTap={onPlayerTap}
+        />
+      </div>
 
       <div className="sbr-stage" style={{ '--ldo-turn-color': turnColorVar } as React.CSSProperties}>
         <div className="ldo-board-wrap" ref={wrapRef}>
-          <div style={{ width: boardPx > 0 ? boardPx : 'min(97%, 560px)' }}>
-            <LudoBoard tokens={displayTokens} turnColor={currentColor} onTokenTap={onTokenTap} yardOwners={yardOwners} />
+          <div
+            style={
+              {
+                width: boardPx > 0 ? boardPx : 'min(97%, 560px)',
+                '--ldo-cell': boardPx > 0 ? `${boardPx / 15}px` : undefined,
+              } as React.CSSProperties
+            }
+          >
+            <LudoBoard
+              tokens={displayTokens}
+              turnColor={currentColor}
+              onTokenTap={onTokenTap}
+              yardOwners={yardOwners}
+              onPlayerTap={(owner, el) => onPlayerTap?.({ userId: owner.userId ?? '', displayName: owner.name, avatar: owner.avatar }, el)}
+            />
           </div>
         </div>
+
+        {/* §14/§31 REVISED — the die FLOATS over the board while it rolls,
+            settles on the server's number, then disappears (pointer-events
+            none — it can never block a coin tap). The rolled number lives
+            on in the round-bar hint below the table. */}
+        <AnimatePresence>
+          {diceVisible && game && (
+            <motion.div
+              className="ldo-dice-float"
+              initial={{ opacity: 0, scale: 0.5, y: -26 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.6, y: 18 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+              data-testid="ludo-dice-float"
+            >
+              <LudoDice
+                value={game.dice.value}
+                rolling={diceRolling}
+                color={turnColorVar ?? 'var(--qk-accent)'}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {game && game.status === 'playing' && game.players.length < 2 && (
           <div className="ldo-waiting" data-testid="ludo-waiting-pill">
@@ -340,6 +408,23 @@ export function LudoGameArea({
         )}
 
         {captureChip && <span className="ldo-capture-chip">{captureChip}</span>}
+
+        {/* §44 REVISED — "CHANCE MISSED": small center popup WITHOUT a
+            backdrop; the game keeps moving behind it. */}
+        <AnimatePresence>
+          {chanceMissed && (
+            <motion.div
+              className="ldo-missed"
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 24 }}
+              data-testid="ludo-chance-missed"
+            >
+              ⌛ CHANCE MISSED
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {roomStatus === 'STARTING' && (
           <LudoCountdown startCountdownAt={startCountdownAt} serverNow={snapshot.serverNow} />
@@ -363,12 +448,13 @@ export function LudoGameArea({
         )}
       </div>
 
-      <LudoTurnIndicator
+      {/* The slim bottom hint: "{name}: rolled 6" + the visible 45s timer */}
+      <LudoRoundBar
         phase={phase}
-        dice={game?.dice.value ?? null}
-        rolling={diceRolling}
+        lastRoll={lastRoll}
+        moveDeadlineAt={game?.moveDeadlineAt ?? null}
+        serverSkewMs={snapshot.serverNow ? snapshot.serverNow - Date.now() : 0}
         currentPlayerName={currentPlayer?.displayName ?? '…'}
-        onRoll={handleRoll}
         statusText={statusLine(phase, currentPlayer?.displayName, game, meId)}
       />
 

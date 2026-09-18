@@ -60,10 +60,13 @@ export function isSafeRingCell(ringIndex: number): boolean {
 }
 
 // ── Tuning (server-authoritative timings; Ludo PRD §42/§103) ────────────────
-/** Roll deadline for the active player (watchdog auto-passes after this). */
-export const TURN_ROLL_TIMEOUT_MS = 20_000
-/** Move deadline once a dice is pending (watchdog discards the dice). */
-export const TURN_MOVE_TIMEOUT_MS = 25_000
+/** §14 REVISED — the dice are a SERVER ACTION: there is no roll button. The
+ * server auto-rolls for the active player this long after the turn arms
+ * (a short beat so the turn change is readable, then the dice fly). */
+export const TURN_AUTOROLL_DELAY_MS = 1_500
+/** §44 REVISED — 45s VISIBLE move window once a dice is pending. When it
+ * expires the chance is cancelled/skipped and the game moves forward. */
+export const TURN_MOVE_TIMEOUT_MS = 45_000
 /** Watchdog fires slightly AFTER the deadline so a last-moment request wins. */
 export const WATCHDOG_GRACE_MS = 900
 /** STARTING → PLAYING countdown (Ludo PRD §56: ~1.5s visual + join window). */
@@ -74,6 +77,8 @@ export const LUDO_MIN_PLAYERS = 2
 export const TOKENS_PER_PLAYER = 4
 /** Three consecutive sixes → third cancelled, turn passes (Ludo PRD §17). */
 export const SIX_STREAK_LIMIT = 3
+/** Missed-chance center popup (no backdrop) — client display window. */
+export const CHANCE_MISSED_MS = 1_900
 
 /** Point awards through the EXISTING Quicky progression (Ludo PRD §75). */
 export const LUDO_POINTS_WIN = 10
@@ -81,7 +86,7 @@ export const LUDO_POINTS_PER_TOKEN = 2
 export const LUDO_POINTS_PER_CAPTURE = 1
 
 /** Client animation timings (Ludo PRD §103) — presentation only. */
-export const DICE_ROLL_ANIM_MS = 650
+export const DICE_ROLL_ANIM_MS = 900
 export const TOKEN_STEP_MS = 180
 export const CAPTURE_FX_MS = 900
 export const FINISH_FX_MS = 800

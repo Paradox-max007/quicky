@@ -57,6 +57,13 @@ const CENTER_TRIS: { tri: string; color: LudoColor }[] = [
   { tri: 'polygon(0 0, 0 100%, 50% 50%)', color: 'red' },
 ]
 
+/** Which OUTER corner of the yard block the avatar sits in. */
+function yardCorner(o: { row: number; col: number }): 'tl' | 'tr' | 'bl' | 'br' {
+  const v = o.row === 0 ? 't' : 'b'
+  const h = o.col === 0 ? 'l' : 'r'
+  return `${v}${h}` as 'tl' | 'tr' | 'bl' | 'br'
+}
+
 export type DisplayToken = {
   id: string
   color: LudoColor
@@ -73,7 +80,14 @@ export type DisplayToken = {
   moving?: boolean
 }
 
-export type YardOwner = { color: LudoColor; name: string; isMe: boolean }
+export type YardOwner = {
+  color: LudoColor
+  name: string
+  isMe: boolean
+  /** Toolbox wiring — a user id on ANY surface opens the shared toolbox. */
+  userId?: string | null
+  avatar?: string | null
+}
 
 type Props = {
   tokens: DisplayToken[]
@@ -81,9 +95,21 @@ type Props = {
   onTokenTap: (tokenId: string) => void
   /** Corner-base owner chips (player names / Open Seat). */
   yardOwners?: YardOwner[]
+  /** §38 REVISED — tap a player's yard avatar → the SHARED player toolbox
+   * (mention / chat / gift / add friend / profile). Game-agnostic: the
+   * board only reports the userId, the room opens the toolbox. */
+  onPlayerTap?: (owner: YardOwner, el: HTMLElement | null) => void
 }
 
-function BoardCells({ yardOwners }: { yardOwners: YardOwner[] }) {
+function BoardCells({
+  yardOwners,
+  onPlayerTap,
+  turnColor,
+}: {
+  yardOwners: YardOwner[]
+  onPlayerTap?: (owner: YardOwner, el: HTMLElement | null) => void
+  turnColor: LudoColor | null
+}) {
   const cells = useMemo(() => {
     const out: React.ReactNode[] = []
     const ownerByColor = new Map(yardOwners.map((o) => [o.color, o]))
@@ -115,6 +141,25 @@ function BoardCells({ yardOwners }: { yardOwners: YardOwner[] }) {
               />
             ))}
           </div>
+          {/* §38 REVISED — the player's PROFILE PICTURE lives IN their yard
+              corner (mobile drops the chip row above the board to give the
+              table the full stage). Tapping it opens the SHARED toolbox. */}
+          {owner?.userId && (
+            <button
+              className={`ldo-yard-avatar ldo-ya-${yardCorner(o)}${turnColor === color ? ' ldo-ya-active' : ''}${owner.isMe ? ' ldo-ya-me' : ''}`}
+              style={{ '--yard-color': COLOR_VARS[color].main } as React.CSSProperties}
+              onClick={(e) => onPlayerTap?.(owner, e.currentTarget)}
+              aria-label={`${owner.name} — open player menu`}
+              data-testid={`ludo-yard-avatar-${color}`}
+            >
+              {owner.avatar ? (
+                <img src={owner.avatar} alt="" referrerPolicy="no-referrer" />
+              ) : (
+                <span>{(owner.name || '?').slice(0, 1).toUpperCase()}</span>
+              )}
+              {turnColor === color && <i className="ldo-ya-clock" aria-hidden />}
+            </button>
+          )}
           <span className={`ldo-yard-owner${owner?.isMe ? ' ldo-owner-me' : ''}`}>
             {owner?.name ?? 'Open Seat'}
           </span>
@@ -176,7 +221,7 @@ function BoardCells({ yardOwners }: { yardOwners: YardOwner[] }) {
       </div>
     )
     return out
-  }, [yardOwners])
+  }, [yardOwners, onPlayerTap, turnColor])
   return <>{cells}</>
 }
 
@@ -184,7 +229,7 @@ function BoardCells({ yardOwners }: { yardOwners: YardOwner[] }) {
 import { HOME_PATHS } from '@/lib/quicky/ludo/board'
 const HOME_PATH_CELLS = HOME_PATHS
 
-export const LudoBoard = memo(function LudoBoard({ tokens, turnColor, onTokenTap, yardOwners = [] }: Props) {
+export const LudoBoard = memo(function LudoBoard({ tokens, turnColor, onTokenTap, yardOwners = [], onPlayerTap }: Props) {
   return (
     <div
       className={`ldo-board${turnColor ? ' ldo-turn-pulse' : ''}`}
@@ -192,7 +237,7 @@ export const LudoBoard = memo(function LudoBoard({ tokens, turnColor, onTokenTap
       role="grid"
       aria-label="Ludo board"
     >
-      <BoardCells yardOwners={yardOwners} />
+      <BoardCells yardOwners={yardOwners} onPlayerTap={onPlayerTap} turnColor={turnColor} />
       {tokens.map((t) => {
         const selectable = t.selectable
         const stackCls = t.stackCount > 1 ? ` ldo-stack-${Math.min(t.stackIndex, 3)}` : ''
@@ -214,8 +259,7 @@ export const LudoBoard = memo(function LudoBoard({ tokens, turnColor, onTokenTap
               top: pct(t.row + 0.5),
               ...(selectable || t.moving ? { zIndex: 9 } : {}),
             }}
-            onClick={selectable ? () => onTokenTap(t.id) : undefined}
-            disabled={!selectable}
+            onClick={() => onTokenTap(t.id)}
             aria-label={tokenAria(t)}
             data-testid={`ludo-token-${t.id}`}
           >
