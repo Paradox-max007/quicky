@@ -34,30 +34,34 @@
 //   (v2 §3): their root list never closes — a personal chat opens inside the
 //   Game Chats column, a friend profile inside the My Friends column, and
 //   Back always restores the list (v2 GameInteractionPanel column variant).
-// · The grid ratio is 2fr : 1fr : 1fr — the main column is substantially
-//   wider than either social column (v2 §3).
+// · The grid ratio is 1.6fr : 1fr : 1fr and all THREE cards occupy the
+//   maximum width of the screen (no max-width cap) — the chats/friends
+//   columns are wider than the earlier 2fr version (v2 §3 revised).
+//
+// ── Profile card social icons (v2 §4a — revised) ──
+// · The 💬 Chat and 👥 Friends icons live INSIDE the profile card, flanking
+//   the profile image circle at BOTH ENDS of the row (standard spacing from
+//   the card border = the card's own padding) — on every platform.
 //
 // ── Mobile / Capacitor (v2 §6) ───────────────────────────────────────────────
-// · No social columns. The two social actions become theme-colored SVG icons
-//   with labels ABOVE the profile:
-//     💬 Chat (accent)          👥 Friends (purple)
-//   → Profile Image → You/Level → Statistics → Play Now → Your Progress →
-//     How It Works — one vertical flow.
-// · WEB (narrow viewport): the icons open the GameInteractionPanel overlay in
-//   this screen (§19-§30) — no page navigation, the screen stays mounted.
-// · CAPACITOR: the icons open the dedicated Game Chat Contacts screen
-//   (existing) / Friends screen — real navigation with back stacks (§12-§18).
+// · No social columns below lg. The 💬/👥 icons are INSIDE the profile card
+//   (flanking the profile image circle).
+// · REVISED v2 — small-screen WEB follows the Capacitor flow: the icons open
+//   the DEDICATED screens (Game Chat Contacts / Friends) as a FRESH PAGE via
+//   the existing store navigation — NOT an in-page overlay. Back returns to
+//   this Game Primary Screen (§13-§18/§40). The in-page overlay panel is
+//   GONE; on desktop web the icons pulse-highlight the matching column.
 //
 // Everything else (matchmaking, join, rooms, chat backends) is REUSED, never
 // duplicated (§2/§34/§35).
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Loader2, Lock, MessageCircle, Plus, Users } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore } from '@/store/game-chat'
 import { isNative } from '@/lib/capacitor'
-import { GameInteractionPanel, type GameInteractionPanelHandle } from './GameInteractionPanel'
+import { GameInteractionPanel } from './GameInteractionPanel'
 import { type GamePrimaryConfig } from './game-configs'
 
 const TAGLINE_VISIBLE_MS = 3200 // refactor PRD §20 cadence — slow, subtle
@@ -99,17 +103,31 @@ export function GamePrimaryScreen({
   const chatList = useGameChatStore((s) => s.list)
   const refreshChatList = useGameChatStore((s) => s.refreshList)
 
-  // Web interaction panel handle (§20/§22/§25) — overlay variant, narrow
-  // viewports only. The desktop social columns are self-contained.
-  const panelRef = useRef<GameInteractionPanelHandle>(null)
+  // The desktop social columns are self-contained — no panel ref needed.
   // Native detection is deferred (async callback, never sync-in-effect) so
   // SSR HTML and the first client paint agree — no hydration mismatch on
-  // Capacitor; the closed panel renders nothing either way.
+  // Capacitor.
   const [native, setNative] = useState(false)
+  // v2 §6: "desktop" = lg+ (1024px — matches the Tailwind lg breakpoint) on
+  // WEB only. Deferred for the same hydration reason; it gates ONLY click
+  // behaviour, never the rendered markup, so there is no mismatch risk.
+  const [desktop, setDesktop] = useState(false)
   useEffect(() => {
-    const t = setTimeout(() => setNative(isNative()), 0)
+    const t = setTimeout(() => {
+      const n = isNative()
+      setNative(n)
+      setDesktop(!n && window.matchMedia('(min-width: 1024px)').matches)
+    }, 0)
     return () => clearTimeout(t)
   }, [])
+  // Keep desktop in sync across viewport resizes (web only).
+  useEffect(() => {
+    if (native) return
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const update = () => setDesktop(mq.matches)
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [native])
 
   // §47: unread badge uses the EXISTING unread state from the shared
   // game-chat store (single source of truth — never a second counter).
@@ -139,32 +157,37 @@ export function GamePrimaryScreen({
   const currentStep = steps.length > 0 ? steps[Math.min(ruleIdx, steps.length - 1)] : null
 
   // ── §9/§12/§19: icon behaviour differs per platform ─────────────────────
+  // v2 §6 — one navigation model: dedicated screens everywhere except
+  // desktop web (where the columns are already on screen → pulse-highlight).
+  const [columnHighlight, setColumnHighlight] = useState<'chat' | 'friends' | null>(null)
+  const pulseColumn = (col: 'chat' | 'friends') => {
+    setColumnHighlight(col)
+    window.setTimeout(() => setColumnHighlight((cur) => (cur === col ? null : cur)), 1400)
+  }
   const openChats = () => {
-    if (native) {
-      // §12: Game Primary → Chat icon → dedicated Game Chat Contacts screen.
-      // Back: Contacts → Personal Chat → Contacts → HERE (§14).
-      useQuickyStore.getState().openGameChatContacts(view)
+    if (desktop) {
+      // lg+ web: GAME CHATS column is already visible — draw the eye to it.
+      pulseColumn('chat')
     } else {
-      // §22: open the interaction area INSIDE this screen — no navigation.
-      panelRef.current?.open('chat')
+      // Narrow web + Capacitor: FRESH PAGE — the dedicated Game Chat
+      // Contacts screen (§12/§13). Back: Contacts → Personal Chat →
+      // Contacts → HERE (§14).
+      useQuickyStore.getState().openGameChatContacts(view)
     }
   }
   const openFriends = () => {
-    if (native) {
-      // §15: Game Primary → Friends icon → dedicated Friends screen.
-      useQuickyStore.getState().openGameFriends(view)
+    if (desktop) {
+      // lg+ web: MY FRIENDS column is already visible — draw the eye to it.
+      pulseColumn('friends')
     } else {
-      // §25: open Friends inside the interaction area.
-      panelRef.current?.open('friends')
+      // Narrow web + Capacitor: FRESH PAGE — the dedicated Friends screen
+      // (§15). Back: Profile/Chat → Friends → HERE (§17/§18/§40).
+      useQuickyStore.getState().openGameFriends(view)
     }
   }
 
   const avatar = user?.photos?.find((p: any) => p.isPrimary)?.url ?? user?.photos?.[0]?.url
   const level = Math.max(1, Math.floor((config.quickyPoints ?? user?.quickyScore ?? 0) / 50) + 1)
-
-  // v2 §6 — Capacitor (any viewport, incl. tablets) always uses the MOBILE
-  // architecture: social columns are web-desktop furniture only.
-  const socialActionsClass = native ? 'flex' : 'flex lg:hidden'
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">
@@ -201,7 +224,9 @@ export function GamePrimaryScreen({
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar relative z-10 px-4 sm:px-5 pb-10">
-        <div className="w-full max-w-6xl mx-auto flex flex-col gap-5">
+        {/* v2 §3 revised: NO max-width cap — all three cards occupy the
+            maximum width of the screen. */}
+        <div className="w-full flex flex-col gap-5">
           {failed ? (
             /* §49: load failure → error + retry path, never a blank screen */
             <div className="flex-1 flex flex-col items-center justify-center gap-3 py-24 text-center">
@@ -216,43 +241,10 @@ export function GamePrimaryScreen({
             </div>
           ) : (
             <>
-              {/* ── v2 §6 MOBILE SOCIAL ACTIONS — theme-colored SVG icons
-                      with labels, ABOVE the profile. On desktop (lg+) these
-                      are replaced by the two persistent social columns. ── */}
-              <div className={`${socialActionsClass} items-start justify-center gap-10 pt-1`} data-testid="game-primary-social-actions">
-                <button
-                  onClick={openChats}
-                  aria-label="Open game chats"
-                  data-testid="game-primary-chat-icon"
-                  className="group flex flex-col items-center gap-1.5"
-                >
-                  <span className="relative w-14 h-14 rounded-2xl bg-[var(--qk-card)] border-2 border-[var(--qk-accent)]/50 shadow-lg flex items-center justify-center group-active:scale-95 transition-transform">
-                    <MessageCircle className="w-6 h-6 text-[var(--qk-accent-light)]" aria-hidden />
-                    {totalUnread > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-coral-gradient text-[10px] font-black text-white flex items-center justify-center border border-[var(--qk-bg)]">
-                        {totalUnread > 9 ? '9+' : totalUnread}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-[11px] font-bold text-white/70">Chat</span>
-                </button>
-                <button
-                  onClick={openFriends}
-                  aria-label="Open friends"
-                  data-testid="game-primary-friends-icon"
-                  className="group flex flex-col items-center gap-1.5"
-                >
-                  <span className="relative w-14 h-14 rounded-2xl bg-[var(--qk-card)] border-2 border-[var(--qk-purple)]/60 shadow-lg flex items-center justify-center group-active:scale-95 transition-transform">
-                    <Users className="w-6 h-6 text-[var(--qk-purple)]" aria-hidden />
-                  </span>
-                  <span className="text-[11px] font-bold text-white/70">Friends</span>
-                </button>
-              </div>
-
               {/* ── v2 §3 DESKTOP 3-COLUMN ARCHITECTURE ─────────────────────
-                  lg+: [ MAIN PROFILE 2fr | GAME CHATS 1fr | MY FRIENDS 1fr ]
+                  lg+: [ MAIN PROFILE 1.6fr | GAME CHATS 1fr | MY FRIENDS 1fr ]
                   below lg: plain block — the main column IS the page. ────── */}
-              <div className="lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-4 lg:items-start">
+              <div className="lg:grid lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] lg:gap-4 lg:items-start">
                 {/* ═══ MAIN PROFILE COLUMN — one vertical content flow (v2 §4):
                         Profile Image → You/Level → Statistics → Play Now →
                         Group/Meet someone new → Your Progress → How It Works ═══ */}
@@ -262,8 +254,27 @@ export function GamePrimaryScreen({
                     className="bg-[var(--qk-card)] border border-white/10 rounded-3xl p-5"
                     data-testid="game-primary-profile-card"
                   >
-                    {/* Profile image */}
-                    <div className="flex flex-col items-center text-center gap-2.5">
+                    {/* §9/§10 + v2 §4a: Chat / Friends icons INSIDE the card,
+                            flanking the profile image circle at BOTH ENDS of
+                            the row — standard spacing from the card border is
+                            provided by the card's own padding. */}
+                    <div className="flex items-center justify-between">
+                      {/* Chat icon — left end (accent), shared unread badge */}
+                      <button
+                        onClick={openChats}
+                        className="relative w-12 h-12 shrink-0 rounded-2xl bg-white/5 border-2 border-[var(--qk-accent)]/50 shadow-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all"
+                        aria-label="Open game chats"
+                        data-testid="game-primary-chat-icon"
+                      >
+                        <MessageCircle className="w-5 h-5 text-[var(--qk-accent-light)]" aria-hidden />
+                        {totalUnread > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-coral-gradient text-[10px] font-black text-white flex items-center justify-center border border-[var(--qk-card)]">
+                            {totalUnread > 9 ? '9+' : totalUnread}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Profile image — centered between the two icons */}
                       <span className="w-20 h-20 rounded-full overflow-hidden border-2 border-[var(--qk-accent)]/50 bg-gradient-to-br from-[var(--qk-accent)] to-[var(--qk-purple)] flex items-center justify-center">
                         {avatar ? (
                           <img src={avatar} alt="" className="w-full h-full object-cover" />
@@ -273,11 +284,22 @@ export function GamePrimaryScreen({
                           </span>
                         )}
                       </span>
-                      {/* You / Level */}
-                      <div className="min-w-0">
-                        <p className="text-lg font-bold truncate">{user?.name ?? 'You'}</p>
-                        <p className="text-xs text-white/50">Level {level}</p>
-                      </div>
+
+                      {/* Friends icon — right end (purple) */}
+                      <button
+                        onClick={openFriends}
+                        className="w-12 h-12 shrink-0 rounded-2xl bg-white/5 border-2 border-[var(--qk-purple)]/60 shadow-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all"
+                        aria-label="Open friends"
+                        data-testid="game-primary-friends-icon"
+                      >
+                        <Users className="w-5 h-5 text-[var(--qk-purple)]" aria-hidden />
+                      </button>
+                    </div>
+
+                    {/* You / Level */}
+                    <div className="min-w-0 text-center mt-2.5">
+                      <p className="text-lg font-bold truncate">{user?.name ?? 'You'}</p>
+                      <p className="text-xs text-white/50">Level {level}</p>
                     </div>
 
                     {/* Statistics — SELECTED game (§6, dynamic per game) */}
@@ -522,13 +544,17 @@ export function GamePrimaryScreen({
                 {!native && (
                   <>
                     <div
-                      className="hidden lg:block lg:sticky lg:top-2 lg:h-[720px] lg:max-h-[calc(100vh-140px)]"
+                      className={`hidden lg:block lg:sticky lg:top-2 lg:h-[720px] lg:max-h-[calc(100vh-140px)] rounded-3xl transition-shadow duration-500 ${
+                        columnHighlight === 'chat' ? 'ring-2 ring-[var(--qk-accent)]/80 shadow-[0_0_28px_rgba(255,90,71,0.35)]' : ''
+                      }`}
                       data-testid="game-primary-chats-column"
                     >
                       <GameInteractionPanel variant="column" rootView="chat" />
                     </div>
                     <div
-                      className="hidden lg:block lg:sticky lg:top-2 lg:h-[720px] lg:max-h-[calc(100vh-140px)]"
+                      className={`hidden lg:block lg:sticky lg:top-2 lg:h-[720px] lg:max-h-[calc(100vh-140px)] rounded-3xl transition-shadow duration-500 ${
+                        columnHighlight === 'friends' ? 'ring-2 ring-[var(--qk-purple)]/80 shadow-[0_0_28px_rgba(149,102,246,0.35)]' : ''
+                      }`}
                       data-testid="game-primary-friends-column"
                     >
                       <GameInteractionPanel variant="column" rootView="friends" />
@@ -537,14 +563,6 @@ export function GamePrimaryScreen({
                 )}
               </div>
 
-              {/* ── §20/§29: WEB overlay interaction panel — narrow viewports
-                      only (below lg). Closed by default (§21); opened by the
-                      💬 / 👥 icon actions above. ──────────────────────────── */}
-              {!native && (
-                <div className="lg:hidden">
-                  <GameInteractionPanel ref={panelRef} />
-                </div>
-              )}
             </>
           )}
         </div>
