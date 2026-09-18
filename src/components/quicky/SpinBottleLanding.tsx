@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { CoinStoreSheet } from './CoinStoreSheet'
+import { AnimatedPlayIcon } from './game-primary/AnimatedPlayIcon'
 import { GamePrimaryScreen } from './game-primary/GamePrimaryScreen'
 import { MatchmakingModal } from './game-primary/MatchmakingModal'
 import {
@@ -128,6 +129,9 @@ export function SpinBottleLanding({
         onBack={onClose}
         onPlay={play}
         playLabel="Play Now"
+        // §54 revised — the bottle icon INSIDE the button SPINS, rests, and
+        // spins again (the game's own physics teasing from the CTA).
+        playIcon={<AnimatedPlayIcon kind="bottle" />}
         playDisabled={finding}
         playTestId="spin-play-now"
         coinBalance={coinBalance}

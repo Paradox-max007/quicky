@@ -70,7 +70,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore } from '@/store/game-chat'
 import { isNative } from '@/lib/capacitor'
 import { GameInteractionPanel } from './GameInteractionPanel'
-import { type GamePrimaryConfig } from './game-configs'
+import { formatCoinCount, type GamePrimaryConfig } from './game-configs'
 
 const TAGLINE_VISIBLE_MS = 3200 // refactor PRD §20 cadence — slow, subtle
 const RULE_VISIBLE_MS = 4200 // lifecycle PRD §41 — readable pause
@@ -316,21 +316,55 @@ export function GamePrimaryScreen({
                       <p className="text-xs text-white/50">Level {level}</p>
                     </div>
 
-                    {/* Statistics — SELECTED game (§6, dynamic per game) */}
+                    {/* Statistics — SELECTED game (§6, dynamic per game).
+                        §8 REVISED — the COIN CHIP is the FIRST coin display:
+                        the Total Coins tile ITSELF carries the + that opens
+                        the Coin Store (CoinStoreSheet on BOTH web and
+                        Capacitor). It shows the LIVE balance in the compact
+                        chip format (1000 → 1K, 1500 → 1.5K) and updates
+                        instantly after a purchase. The separate balance
+                        strip with its own + that used to sit under this
+                        grid is REMOVED — one coin chip, one entry point. */}
                     {config.gameStats.length > 0 && (
                       <div className="grid grid-cols-4 gap-2.5 mt-5">
-                        {config.gameStats.map((st) => (
-                          <div
-                            key={st.key}
-                            className="bg-white/5 border border-white/10 rounded-2xl p-2.5 flex flex-col items-center text-center gap-1"
-                          >
-                            <span className="text-base leading-none" style={{ color: st.tint }} aria-hidden>{st.icon}</span>
-                            <p className="text-base font-black mt-0.5 tabular-nums leading-none">
-                              {typeof st.value === 'number' ? st.value.toLocaleString('en-US') : st.value}
-                            </p>
-                            <p className="text-[9px] text-white/50 uppercase tracking-wide leading-tight">{st.label}</p>
-                          </div>
-                        ))}
+                        {config.gameStats.map((st) => {
+                          const isCoin = st.key === 'total-coins'
+                          const coins = isCoin && coinBalance != null ? coinBalance : st.value
+                          const display = isCoin
+                            ? formatCoinCount(typeof coins === 'number' ? coins : Number(coins) || 0)
+                            : typeof st.value === 'number'
+                              ? st.value.toLocaleString('en-US')
+                              : st.value
+                          const TileTag = (isCoin && onBuyCoins ? 'button' : 'div') as 'button' | 'div'
+                          return (
+                            <TileTag
+                              key={st.key}
+                              {...(isCoin && onBuyCoins
+                                ? {
+                                    type: 'button' as const,
+                                    onClick: onBuyCoins,
+                                    'aria-label': 'Buy coins — open the coin store',
+                                    'data-testid': 'landing-coin-add',
+                                  }
+                                : {})}
+                              className={`relative bg-white/5 border border-white/10 rounded-2xl p-2.5 flex flex-col items-center text-center gap-1 ${
+                                isCoin && onBuyCoins ? 'hover:bg-white/10 active:scale-95 transition-all' : ''
+                              }`}
+                            >
+                              {isCoin && onBuyCoins && (
+                                <span
+                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-coral-gradient border border-[var(--qk-card)] shadow-md flex items-center justify-center"
+                                  aria-hidden
+                                >
+                                  <Plus className="w-3 h-3 text-white" strokeWidth={3.5} />
+                                </span>
+                              )}
+                              <span className="text-base leading-none" style={{ color: st.tint }} aria-hidden>{st.icon}</span>
+                              <p className="text-base font-black mt-0.5 tabular-nums leading-none">{display}</p>
+                              <p className="text-[9px] text-white/50 uppercase tracking-wide leading-tight">{st.label}</p>
+                            </TileTag>
+                          )
+                        })}
                       </div>
                     )}
 
@@ -357,28 +391,17 @@ export function GamePrimaryScreen({
                       </div>
                     )}
 
-                    {/* Coin balance + top-up (existing CoinStoreSheet pattern) */}
-                    <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 px-3.5 py-2.5">
-                      <span className="flex items-center gap-2 text-sm font-bold tabular-nums">
-                        🪙 {(coinBalance ?? 0).toLocaleString('en-US')}
-                      </span>
-                      <button
-                        onClick={onBuyCoins}
-                        className="w-8 h-8 rounded-full bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 flex items-center justify-center active:scale-95 transition-transform"
-                        aria-label="Buy coins"
-                        data-testid="landing-coin-add"
-                      >
-                        <Plus className="w-4 h-4 text-[var(--qk-accent-light)]" />
-                      </button>
-                    </div>
                   </div>
 
-                  {/* Play Now (§54: Play Now → Game Room, unchanged) */}
+                  {/* Play Now (§54: Play Now → Game Room, unchanged).
+                      WEB: a BIT shorter than the column width, CENTERED —
+                      icon + label stay dead-center. NATIVE (Capacitor):
+                      keeps the full-width CTA. */}
                   {config.playable && onPlay && (
                     <button
                       onClick={onPlay}
                       disabled={playBusy || playDisabled}
-                      className="w-full rounded-2xl bg-coral-gradient glow-coral py-4 font-black tracking-wide text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-60"
+                      className={`${native ? 'w-full' : 'w-full max-w-[320px] mx-auto'} rounded-2xl bg-coral-gradient glow-coral py-4 font-black tracking-wide text-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-60`}
                       data-testid={playTestId}
                     >
                       {playBusy ? (

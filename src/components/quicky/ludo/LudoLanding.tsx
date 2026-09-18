@@ -14,11 +14,11 @@
 // across games. No Kiss Points anywhere (§74).
 
 import { useEffect, useState } from 'react'
-import { Dice5 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { CoinStoreSheet } from '../CoinStoreSheet'
+import { AnimatedPlayIcon } from '../game-primary/AnimatedPlayIcon'
 import { GamePrimaryScreen } from '../game-primary/GamePrimaryScreen'
 import { MatchmakingModal } from '../game-primary/MatchmakingModal'
 import {
@@ -94,7 +94,9 @@ export function LudoLanding({
         onBack={onClose}
         onPlay={() => void playNow()}
         playLabel="Play Now"
-        playIcon={<Dice5 className="w-5 h-5" aria-hidden />}
+        // §54 revised — the dice icon INSIDE the button ROLLS (tumble + hop),
+        // rests, and rolls again — a real die flicked onto the table.
+        playIcon={<AnimatedPlayIcon kind="dice" />}
         playBusy={joining}
         playDisabled={failed}
         playTestId="ludo-play-now"

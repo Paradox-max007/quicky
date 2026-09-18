@@ -252,6 +252,31 @@ export function buildGenericPrimaryConfig(game: GameDef | null, overall: SpinLan
   }
 }
 
+// ── Coin count display (Unified PRD §8 revised — the coin chip format) ──────
+
+/** Compact coin-count format for the entry-screen coin chip:
+ * 999 → "999", 1000 → "1K", 1500 → "1.5K", 12500 → "12.5K",
+ * 999400 → "999.4K"→"999K", 1000000 → "1M", 1500000 → "1.5M".
+ * At most ONE decimal, trailing zeros never printed ("1.0K" is impossible),
+ * and a value that ROUNDS into the next order collapses to it ("1000K"
+ * can never appear — 999,500+ reads as "1M"). */
+export function formatCoinCount(n: number): string {
+  if (!Number.isFinite(n)) return '0'
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(Math.floor(n))
+  if (abs < 1000) return `${sign}${abs}`
+  if (abs < 1_000_000) {
+    const k = Math.round(abs / 100) / 10 // one-decimal rounding of abs/1000
+    if (k >= 999.5) return `${sign}1M` // 999,500+ rounds to the next order
+    const whole = Math.round(k)
+    return `${sign}${k >= 100 || whole === k ? whole : k}K`
+  }
+  const m = Math.round(abs / 100_000) / 10
+  if (m >= 999.5) return `${sign}1B` // defensive — balances never get here
+  const whole = Math.round(m)
+  return `${sign}${m >= 100 || whole === m ? whole : m}M`
+}
+
 // ── §6/§7 REVISED — COMMON stats helper (the ONE stat set for every game) ───
 
 /** The COMMON statistics grid rendered on every game's entry screen:

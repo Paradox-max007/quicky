@@ -68,6 +68,15 @@ ok('ONE entry screen for every game: shared matchmaking modal kept (§7/§91 rev
 ok('COMMON stats for ALL games: Total Games/Wins/Coins/Interactions in every config (§6/§7 revised)', has('src/components/quicky/game-primary/game-configs.ts', 'commonGameStats', 'Total Games', 'Total Wins', 'Total Coins', 'Interactions', 'SPIN_DEFAULT_TAGLINES', 'combinedOverallStats') && (src('src/components/quicky/game-primary/game-configs.ts').match(/commonGameStats\(/g) ?? []).length >= 3)
 ok('ludo config: taglines + how-it-works kept (§6/§43 revised)', has('src/components/quicky/game-primary/game-configs.ts', 'Roll the dice', 'LUDO_RULES', 'overallStats: []'))
 
+// ── Coin chip + animated Play Now (Unified PRD §8/§54 revised) ──────────────
+ok('coin chip: + on the FIRST (Total Coins) tile opens the Coin Store on web AND Capacitor; extra balance strip REMOVED (§8 revised)', (() => {
+  const s = src('src/components/quicky/game-primary/GamePrimaryScreen.tsx')
+  return s.includes("'data-testid': 'landing-coin-add'") && s.includes('Buy coins — open the coin store') && s.includes('bg-coral-gradient border border-[var(--qk-card)]') && !s.includes('Coin balance + top-up') && !s.includes("(coinBalance ?? 0).toLocaleString('en-US')")
+})())
+ok('coin count compact chip format: 1000→1K, 1500→1.5K (formatCoinCount)', has('src/components/quicky/game-primary/game-configs.ts', 'export function formatCoinCount', "1000 → \"1K\"", "1500 → \"1.5K\"") && src('src/components/quicky/game-primary/GamePrimaryScreen.tsx').includes('formatCoinCount('))
+ok('Play Now: animated icon INSIDE the button — bottle SPINS / dice ROLLS, each loop separated by a rest delay (§54 revised)', has('src/components/quicky/game-primary/AnimatedPlayIcon.tsx', 'AnimatedPlayIconKind', 'repeatDelay: REST_S', "kind === 'bottle' ? '🍾' : '🎲'", 'useReducedMotion') && src('src/components/quicky/SpinBottleLanding.tsx').includes('AnimatedPlayIcon kind="bottle"') && src('src/components/quicky/ludo/LudoLanding.tsx').includes('AnimatedPlayIcon kind="dice"'))
+ok('Play Now: WEB a bit shorter in width and CENTERED; NATIVE keeps the full-width CTA (§54 revised)', src('src/components/quicky/game-primary/GamePrimaryScreen.tsx').includes("native ? 'w-full' : 'w-full max-w-[320px] mx-auto'"))
+
 // ── Ludo room: availability + gender weighting (2 male + 2 female) ─────────
 ok('ludo join: server checks table availability + gender weighting (2M+2F)', has('src/lib/quicky/ludo-assignment.ts', 'ludoSeatsOfGender', 'maleCapacity: 2', 'femaleCapacity: 2', 'gender_full', 'normalizeGender') && has('src/app/api/quicky/games/ludo/join/route.ts', 'gender: true', 'assignLudoRoomAndSeat(me.id, profile?.gender ?? null)'))
 

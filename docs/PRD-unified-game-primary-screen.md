@@ -114,7 +114,8 @@ The order is EXACTLY:
      ↓
 You / Level
      ↓
-Statistics          (COMMON stats — identical for every game + coin balance)
+Statistics          (COMMON stats — identical for every game; the Total Coins
+                     tile IS the coin chip: a + on it opens the Coin Store)
      ↓
 Play Now
      ↓
@@ -136,6 +137,24 @@ The same `GamePrimaryScreen` serves EVERY game. Across games only THREE things e
 3. the How-It-Works copy / rotating taglines that describe the game itself.
 
 **The Statistics grid is COMMON**: every game shows the identical set — Total Games · Total Wins · Total Coins · Interactions — computed from the shared landing payloads (`commonGameStats`). The old per-game stat sets (kisses, tokens home, captures…) are retired; the separate "All Quicky" combined block stays empty and is hidden by the screen. The matchmaking modal is likewise SHARED (`MatchmakingModal`) — one join flow for every game, only the status copy differs.
+
+### 4.2 The coin chip (§8 revised) — ONE chip, on BOTH web and Capacitor
+
+There is exactly ONE coin chip on the entry screen: the **Total Coins tile inside the COMMON statistics grid** (the FIRST coin display).
+
+- The tile carries a **+ badge** (coral, top-right corner). Pressing the tile opens the **Coin Store** (`CoinStoreSheet`) — on the WEB app AND the Capacitor app alike. The tile keeps the live balance and updates instantly after a purchase.
+- The separate balance strip (with its own + button) that used to sit under the statistics grid is **REMOVED** — one coin chip, one entry point.
+- **Compact coin format** (`formatCoinCount`): the chip never prints raw thousands — `999 → 999`, `1000 → 1K`, `1500 → 1.5K`, `12500 → 12.5K`, `1000000 → 1M`. At most one decimal, trailing zeros never printed ("1.0K" is impossible).
+
+### 4.3 Play Now — the animated CTA (§54 revised)
+
+The [Play Now] button carries an ANIMATED icon — a tiny idle loop that teases the exact physical motion of the game it opens, performing, resting, performing again (`AnimatedPlayIcon`):
+
+- **Spin the Bottle** → the bottle icon **SPINS** (a full twirl with fast-flick → slow-settle easing), rests, spins again.
+- **Quicky Ludo** → the dice icon **ROLLS** (tumble + hop, like a die flicked onto the table), rests, rolls again.
+- Every loop is separated by a deliberate rest (`repeatDelay` ~2.4s) and the first animation waits a beat (~0.9s) — the button never jitters.
+- `prefers-reduced-motion` renders the static glyph.
+- **Width**: on the WEB app the button is a bit SHORTER than the column and CENTERED (`max-w-[320px] mx-auto`); on NATIVE (Capacitor) it keeps the full-width CTA.
 
 ## 5. Game identity
 
@@ -221,10 +240,13 @@ Full Screen Friends List        (dedicated GameFriendsScreen)
 6. Opening chats/friends never resets the selected game's primary screen state (§33).
 7. Play Now → Game Room flow is unchanged (§54); the game name, icon and LIVE/COMING SOON state render in the header for every game.
 8. The old bottom Game Chats section remains removed.
+9. The entry screen has exactly ONE coin chip: the Total Coins tile with the + badge opens the Coin Store on web AND Capacitor; the old standalone balance strip is gone; the chip reads 1K / 1.5K style compact counts (§4.2).
+10. The Play Now icon animates per game — bottle spins / dice rolls with a rest between loops — and on web the button is shorter and centered while native keeps full width (§4.3).
 
 ## 9. Regression paths
 
 - **Spin the Bottle (web desktop):** Games → Spin the Bottle → 3-column primary screen → Play Now → matchmaking modal → room; back to primary → columns intact.
 - **Spin the Bottle (mobile web):** primary screen → 💬 → overlay contacts → personal chat → Back → contacts → close; 👥 → friends → profile → Back → list.
-- **Quicky Ludo (web desktop + mobile):** same screen driven by the Ludo config (Games/Wins/Tokens Home/Captures) — columns and flows identical.
+- **Quicky Ludo (web desktop + mobile):** same screen driven by the Ludo config — columns and flows identical; the Play Now dice rolls with a rest between loops.
+- **Coin chip:** tap the Total Coins tile (mobile web, desktop web, Capacitor) → Coin Store sheet opens → a mock purchase updates the chip instantly (1.5K formatting holds after purchase).
 - **Capacitor:** 💬 → contacts → chat → back → contacts → back → primary; 👥 → friends → profile → back → friends → back → primary; hardware back mirrors on-screen back on the Friends screen.
