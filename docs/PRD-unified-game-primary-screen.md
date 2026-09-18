@@ -69,13 +69,15 @@ MAIN PROFILE (1.6fr)        CHAT (1fr)         FRIENDS (1fr)
 
 Implemented as a CSS grid with a **1.6fr : 1fr : 1fr** ratio (`lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]`) on a full-width container. The breakpoint is `lg` (≥1024px). Below `lg` the social columns disappear and the mobile architecture takes over.
 
-### 3.0 Profile card social icons (all platforms)
+### 3.0 Profile card social icons
 
 The 💬 Chat and 👥 Friends icons live **INSIDE the profile card**, flanking the profile image circle **at both ends of the row**, with standard spacing from the card border (the card's own padding). Chat sits on the left end (accent color, shared unread badge), Friends on the right end (purple). You / Level renders directly beneath, centered.
 
+**Desktop web (lg+): the flanking icons are HIDDEN.** The persistent GAME CHATS and MY FRIENDS columns are already on screen at that breakpoint, so duplicating the entry points inside the card would be redundant — the columns are the desktop surface. The profile image stays centered when the icons are hidden.
+
 Icon behaviour per surface:
-- **Desktop web (lg+):** the social columns are already on screen — tapping an icon briefly **pulse-highlights** the matching column.
-- **Narrow web + Capacitor:** tapping an icon opens the dedicated screen as a fresh page (§6).
+- **Desktop web (lg+):** icons hidden — the persistent social columns take over (no duplicate entry points in the card).
+- **Narrow web + Capacitor:** icons visible; tapping one opens the dedicated screen as a fresh page (§6). Capacitor keeps the icons at EVERY viewport (wide tablets included), because the columns are a web-only surface.
 
 ### 3.1 Game Chats column (desktop)
 
@@ -106,6 +108,9 @@ The order is EXACTLY:
 
 ```text
 [💬 Chat]  Profile Image  [👥 Friends]     ← icons inside the card, both ends of the row
+                                              (hidden on desktop web lg+ — the
+                                               GAME CHATS / MY FRIENDS columns
+                                               are the desktop surface)
      ↓
 You / Level
      ↓
@@ -201,7 +206,7 @@ Full Screen Friends List        (dedicated GameFriendsScreen)
 1. Desktop (≥1024px, web): the primary screen renders **three columns** — a substantially wider main profile column plus GAME CHATS and MY FRIENDS social columns on the same row.
 2. The main column contains, in order: Profile Image → You/Level → Statistics (selected game + All Quicky) → Play Now → Group/Meet someone new → Your Progress → How It Works.
 3. The social columns are persistent: opening a personal chat from the GAME CHATS column keeps it inside that column; Back restores the contact list. Opening a friend profile from MY FRIENDS keeps it inside that column; Back restores the friends list.
-4. Mobile (web <1024px and Capacitor): NO social columns; the 💬/👥 icons sit INSIDE the profile card flanking the profile image circle; the profile content flows vertically in the §4 order.
+4. Mobile (web <1024px and Capacitor): NO social columns; the 💬/👥 icons sit INSIDE the profile card flanking the profile image circle — hidden on desktop web (lg+) where the columns take over; the profile content flows vertically in the §4 order.
 5. Capacitor AND small-screen web flows: 💬 → Contact List screen (fresh page) → Chat Screen; 👥 → Friends screen (fresh page) → [View Profile]/[Chat]; Back always returns to the logical previous screen and never the Games list. The in-page overlay panel is gone.
 6. Opening chats/friends never resets the selected game's primary screen state (§33).
 7. Play Now → Game Room flow is unchanged (§54); the game name, icon and LIVE/COMING SOON state render in the header for every game.

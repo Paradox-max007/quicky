@@ -38,10 +38,17 @@
 //   maximum width of the screen (no max-width cap) — the chats/friends
 //   columns are wider than the earlier 2fr version (v2 §3 revised).
 //
-// ── Profile card social icons (v2 §4a — revised) ──
+// ── Profile card social icons (v2 §4a — revised twice) ──
 // · The 💬 Chat and 👥 Friends icons live INSIDE the profile card, flanking
 //   the profile image circle at BOTH ENDS of the row (standard spacing from
-//   the card border = the card's own padding) — on every platform.
+//   the card border = the card's own padding).
+// · On DESKTOP WEB (lg+) they are HIDDEN — the persistent GAME CHATS and
+//   MY FRIENDS columns are already on screen, so duplicating the entry
+//   points inside the card would be redundant. The profile image stays
+//   centered via lg:justify-center.
+// · On NARROW WEB and CAPACITOR they remain visible and open the dedicated
+//   screens as a fresh page. Native keeps them at EVERY viewport (wide
+//   tablets included) because the columns are a web-only surface.
 //
 // ── Mobile / Capacitor (v2 §6) ───────────────────────────────────────────────
 // · No social columns below lg. The 💬/👥 icons are INSIDE the profile card
@@ -50,7 +57,8 @@
 //   the DEDICATED screens (Game Chat Contacts / Friends) as a FRESH PAGE via
 //   the existing store navigation — NOT an in-page overlay. Back returns to
 //   this Game Primary Screen (§13-§18/§40). The in-page overlay panel is
-//   GONE; on desktop web the icons pulse-highlight the matching column.
+//   GONE. (On desktop web the icons are hidden entirely — the pulse-
+//   highlight path below remains only as a defensive fallback.)
 //
 // Everything else (matchmaking, join, rooms, chat backends) is REUSED, never
 // duplicated (§2/§34/§35).
@@ -254,15 +262,21 @@ export function GamePrimaryScreen({
                     className="bg-[var(--qk-card)] border border-white/10 rounded-3xl p-5"
                     data-testid="game-primary-profile-card"
                   >
-                    {/* §9/§10 + v2 §4a: Chat / Friends icons INSIDE the card,
-                            flanking the profile image circle at BOTH ENDS of
-                            the row — standard spacing from the card border is
-                            provided by the card's own padding. */}
-                    <div className="flex items-center justify-between">
+                    {/* §9/§10 + v2 §4a (revised): Chat / Friends icons INSIDE
+                            the card, flanking the profile image circle at BOTH
+                            ENDS of the row — but only BELOW lg on web. On
+                            desktop web the persistent columns take over, so
+                            the flanking icons are hidden and the profile
+                            image stays centered. NATIVE keeps the icons at
+                            every viewport (the columns are web-only). The
+                            hiding is pure CSS (lg:hidden, dropped when native
+                            is detected), so the first web-desktop paint is
+                            already correct — no flash, no hydration risk. */}
+                    <div className={`flex items-center justify-between ${native ? '' : 'lg:justify-center'}`}>
                       {/* Chat icon — left end (accent), shared unread badge */}
                       <button
                         onClick={openChats}
-                        className="relative w-12 h-12 shrink-0 rounded-2xl bg-white/5 border-2 border-[var(--qk-accent)]/50 shadow-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all"
+                        className={`relative w-12 h-12 shrink-0 rounded-2xl bg-white/5 border-2 border-[var(--qk-accent)]/50 shadow-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all ${native ? '' : 'lg:hidden'}`}
                         aria-label="Open game chats"
                         data-testid="game-primary-chat-icon"
                       >
@@ -288,7 +302,7 @@ export function GamePrimaryScreen({
                       {/* Friends icon — right end (purple) */}
                       <button
                         onClick={openFriends}
-                        className="w-12 h-12 shrink-0 rounded-2xl bg-white/5 border-2 border-[var(--qk-purple)]/60 shadow-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all"
+                        className={`w-12 h-12 shrink-0 rounded-2xl bg-white/5 border-2 border-[var(--qk-purple)]/60 shadow-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all ${native ? '' : 'lg:hidden'}`}
                         aria-label="Open friends"
                         data-testid="game-primary-friends-icon"
                       >
