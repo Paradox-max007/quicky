@@ -29,6 +29,8 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   serverSkewMs,
   currentPlayerName,
   statusText,
+  playersJoined = 0,
+  maxPlayers = 4,
 }: {
   phase: TurnPhase
   /** The last dice result of the round — persists until the round moves on. */
@@ -39,6 +41,10 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   serverSkewMs: number
   currentPlayerName: string
   statusText?: string
+  /** REVISED — mode-aware waiting state lives HERE (on mobile this strip
+   * IS the room-state surface; the board overlay stays web-only). */
+  playersJoined?: number
+  maxPlayers?: number
 }) {
   // Ticking countdown — 250ms cadence keeps the seconds honest without churn.
   const [now, setNow] = useState(() => Date.now())
@@ -53,7 +59,8 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   const urgent = secondsLeft != null && secondsLeft <= 10
 
   let main: string
-  if (phase === 'waiting') main = 'Waiting for players — the table needs 2'
+  if (phase === 'waiting')
+    main = `Waiting for players — ${playersJoined}/${maxPlayers} joined · chat is open`
   else if (phase === 'starting') main = 'The table is getting ready…'
   else if (phase === 'finished') main = 'Game over'
   else if (lastRoll) main = `${lastRoll.isMe ? 'You' : lastRoll.name}: rolled ${lastRoll.value}`

@@ -218,10 +218,10 @@ export const api = {
         tokensFinished: number
         captures: number
       }>('/api/quicky/games/ludo/landing'),
-    join: () =>
-      jsonFetch<{ ok: boolean; roomId: string; createdNewRoom: boolean; snapshot: any }>(
+    join: (mode: 2 | 4 = 2) =>
+      jsonFetch<{ ok: boolean; roomId: string; mode: number; createdNewRoom: boolean; snapshot: any }>(
         '/api/quicky/games/ludo/join',
-        { method: 'POST' }
+        { method: 'POST', body: JSON.stringify({ mode }) }
       ),
     room: (roomId: string) =>
       jsonFetch<{ ok: boolean; snapshot: any }>(`/api/quicky/games/ludo/room?roomId=${roomId}`),

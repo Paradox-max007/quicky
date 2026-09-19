@@ -118,6 +118,11 @@ export function scheduleLudoCountdown(roomId: string) {
   pushTimer(roomId, t)
 }
 
+/** Exported for the join route: the CURRENT seating as engine players. */
+export async function seatedLudoPlayers(roomId: string): Promise<LudoPlayer[]> {
+  return seatedPlayers(roomId)
+}
+
 async function seatedPlayers(roomId: string): Promise<LudoPlayer[]> {
   const rows = await db.spinRoomPlayer.findMany({
     where: { roomId, leftAt: null, isActive: true, connection: { in: ['online', 'reconnecting'] } },

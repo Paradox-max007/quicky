@@ -83,6 +83,7 @@ export function GamePrimaryScreen({
   onPlay,
   playLabel = 'Play Now',
   playIcon,
+  playExtra,
   playBusy = false,
   playDisabled = false,
   playTestId = 'game-primary-play-now',
@@ -98,6 +99,10 @@ export function GamePrimaryScreen({
   onPlay?: () => void
   playLabel?: string
   playIcon?: React.ReactNode
+  /** Optional slot rendered directly ABOVE the CTA (e.g. Ludo's 2P/4P
+   * table-mode picker — chosen BEFORE starting). Games without an extra
+   * simply don't pass it. */
+  playExtra?: React.ReactNode
   playBusy?: boolean
   playDisabled?: boolean
   playTestId?: string
@@ -392,6 +397,10 @@ export function GamePrimaryScreen({
                     )}
 
                   </div>
+
+                  {/* Game-specific CTA extension — Ludo's 2P/4P mode picker
+                      sits directly above Play Now (chosen BEFORE starting). */}
+                  {config.playable && onPlay && playExtra}
 
                   {/* Play Now (§54: Play Now → Game Room, unchanged).
                       WEB: a BIT shorter than the column width, CENTERED —

@@ -23,6 +23,7 @@ import { joinRoomChannel, type RoomChannel } from '@/lib/quicky/realtime'
 import { useQuickyStore } from '@/store/quicky'
 import { alertMentionOnce } from '@/lib/quicky/mention-alerts'
 import type { RoomMessage } from '@/components/quicky/RoomChatPanel'
+import { moveToken as engineMoveToken } from '@/lib/quicky/ludo/rules'
 import type { LudoGameState, LudoLegalMove } from '@/lib/quicky/ludo/types'
 import type { LudoRoomSnapshot } from '@/lib/quicky/ludo-snapshot'
 
@@ -71,6 +72,11 @@ type Runtime = {
   skew: number
   channel: RoomChannel | null
   closureHandled: boolean
+  /** CLIENT PREDICTION — set when a predicted move was REJECTED by the
+   * server: the next incoming snapshot is accepted REGARDLESS of the
+   * version-regression guard (the prediction may have inflated the local
+   * version above the server truth — the server always wins). */
+  forceNextSnapshot: boolean
 }
 
 const g = globalThis as unknown as { __quickyLudoRoomRuntime?: Runtime }
@@ -82,6 +88,7 @@ const ctl: Runtime = (g.__quickyLudoRoomRuntime ??= {
   skew: 0,
   channel: null,
   closureHandled: false,
+  forceNextSnapshot: false,
 })
 
 function stopStreams() {
@@ -123,10 +130,18 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       // every coin unselectable ("I rolled a 6 and tapping does nothing").
       // The engine's monotonic version is the tiebreaker — an older game
       // state is always discarded in favour of the locally known newer one.
+      // EXCEPTION (client prediction): when a PREDICTED move was rejected,
+      // the server truth may carry a LOWER version than our optimistic
+      // state — it must be force-accepted so the board corrects itself.
+      const force = ctl.forceNextSnapshot
+      ctl.forceNextSnapshot = false
       const prevGame = prev.snapshot?.game ?? null
       const incomingGame = s.game ?? null
       const staleGame =
-        !!incomingGame && !!prevGame && (incomingGame.version ?? 0) < (prevGame.version ?? 0)
+        !force &&
+        !!incomingGame &&
+        !!prevGame &&
+        (incomingGame.version ?? 0) < (prevGame.version ?? 0)
       const snap: LudoSnapshot = staleGame ? { ...s, game: prevGame } : s
       const prevMap = new Map(prev.chat.map((m) => [m.id, m]))
       const merged = s.recentMessages.map((m) => ({
@@ -329,12 +344,33 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       const { roomId, snapshot, movingTokenId } = get()
       if (!roomId || movingTokenId) return false // §88: one movement per dice
       const game = snapshot?.game
+      const meId = useQuickyStore.getState().user?.id ?? ''
       if (!game || game.status !== 'playing') return false
-      if (game.currentPlayerId !== (useQuickyStore.getState().user?.id ?? '')) return false
+      if (game.currentPlayerId !== meId) return false
+      if (game.dice.value == null) return false
+      // ═══ CLIENT-SIDE PREDICTION (smoothness revision) ═══
+      // The tap must move the coin INSTANTLY — not one network round-trip
+      // later. So the client runs the VERY SAME pure engine the server runs
+      // (moveToken — one shared rule source, §85), commits the predicted
+      // state IMMEDIATELY (the board animates the hop from the version
+      // diff), and only then sends the action. The server validates in its
+      // own time; its authoritative state replaces the prediction. On ANY
+      // mismatch/rejection the server version WINS (forced reconcile —
+      // never a forked board).
+      const predicted = engineMoveToken(game, meId, tokenId, `local_${Date.now()}`)
+      if (!predicted.ok) return false
       set({ movingTokenId: tokenId })
+      // Optimistic commit BEFORE the network hop — zero perceived latency.
+      set((prev) => ({
+        snapshot: prev.snapshot
+          ? { ...prev.snapshot, game: predicted.state as LudoGameState }
+          : prev.snapshot,
+      }))
       try {
         const res = await api.ludo.move(roomId, tokenId, newActionId())
         if (res?.ok && res.state) {
+          // Server authority — same version as the prediction (usually the
+          // identical state); replaces the optimistic copy atomically.
           set((prev) => ({
             snapshot: prev.snapshot
               ? { ...prev.snapshot, game: res.state as LudoGameState }
@@ -342,10 +378,15 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
           }))
           return true
         }
+        // Rejected → our predicted version may sit ABOVE the server truth;
+        // force-accept the next snapshot so the board snaps back.
+        ctl.forceNextSnapshot = true
+        void get().reconcile()
         return false
       } catch (e: any) {
         // §94: "Move unavailable" — reconcile the authoritative state, the
         // board corrects itself instead of breaking.
+        ctl.forceNextSnapshot = true
         if (e?.status !== 409) toast.error(e?.message ?? 'Move unavailable')
         void get().reconcile()
         return false

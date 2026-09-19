@@ -3641,3 +3641,79 @@ I checked the current repository tree and latest inspected HEAD, including the e
 [Open the Quicky repository](https://github.com/Paradox-max007/quicky?utm_source=chatgpt.com)
 
 **Implementation priority:** do the **pure 4-player Ludo engine first**, test every rule independently, then connect it to the existing room runtime. That prevents the old 2-player match implementation from contaminating the new 4-player multiplayer architecture.
+
+---
+
+# PLAY-TEST REVISION — ROUND 3 (mode tables, diagonal seats, join-race hardening, client prediction)
+
+## R3.1 MOBILE JOIN FAILURE — FIXED AT THE ROOT (P2028 / P2003)
+
+The Capacitor/mobile join could fail with `P2028` ("Transaction not found") and
+`P2003` (`SpinRoomPlayer_roomId_fkey`). Root-cause chain: a join transaction
+timed out under dashboard-poll connection-pool pressure (Prisma's default
+5s interactive-transaction timeout) → the freshly created room was left with
+ZERO players → the cleanup worker deleted the empty room → the retried join
+read the room as a candidate, then the room vanished mid-transaction → FK
+violation. Three hardening layers in `ludo-assignment.ts`:
+
+1. **Atomic creation** — a new table and its creator's FIRST seat are created
+   inside ONE transaction. A Ludo room can never exist with zero players, so
+   cleanup can never race a joiner.
+2. **Explicit transaction budget** — every assignment transaction runs with
+   `timeout: 15s, maxWait: 10s` (survives pool pressure).
+3. **Transient-error policy** — `P2028` is RETRIED (3 attempts, backoff);
+   `P2003`/`P2025` are absorbed as "room vanished" → the hunter moves to the
+   next candidate or builds a new table; a `P2002` on room creation makes the
+   whole join IDEMPOTENT (the user re-joins the room they already sit in).
+
+## R3.2 DIAGONAL SEAT FILL — 1 → 3 → 2 → 4 (supersedes gender-parity seating)
+
+Yards are assigned STRICTLY in join order clockwise 1→3→2→4
+(`LUDO_SEAT_FILL_ORDER = [0, 2, 1, 3]`): the 2nd joiner ALWAYS sits in the
+yard DIAGONALLY OPPOSITE the 1st; the 3rd diagonally opposite the 4th. This
+supersedes the earlier 2M+2F gender-slot seating (the `maleCapacity`/
+`femaleCapacity` columns remain for report queries only).
+
+## R3.3 TABLE MODE — chosen BEFORE starting (2P duel / 4P table)
+
+The Ludo landing gains a persisted segmented picker above Play Now
+(`2 Players` / `4 Players` — `quicky-ludo-mode` in localStorage). The mode IS
+`SpinRoom.maxPlayers` (no schema change) and matchmaking only matches equal
+modes:
+
+* **2P duel** — the game arms the moment the 2nd player joins: room flips
+  `WAITING → STARTING`, the shared 3·2·1·LUDO! countdown plays, then the
+  first turn is dealt.
+* **4P table** — the room keeps WAITING with a "waiting for players…"
+  state until all FOUR are seated; only then does the countdown arm.
+* **Waiting UX** — on WEB the waiting state overlays the board; on
+  MOBILE (app / Capacitor / mobile web) it lives in the bottom round-bar
+  strip (the timer / rolled-number line) so the table keeps the whole
+  screen. The room chat stays open for everyone while waiting.
+* **Join lock (§98 reaffirmed)** — `PLAYING` rooms never accept new players
+  (and a full table of any mode is physically un-joinable); a player
+  arriving mid-game gets a fresh table of their own.
+* The lobby board now shows the CURRENT seating in the yards while waiting
+  (join route re-seeds the WAITING gameState from the live rows).
+
+## R3.4 DICE LIFECYCLE BUG — tumble-forever FIXED
+
+The die's stop/hide timers shared one timer pool with the board-animation
+effect; the version bump from the roll itself wiped them in the same commit,
+so the tumble ran forever and the die never disappeared. The die now owns a
+DEDICATED `diceTimersRef` (never cleared by board re-renders), the settled
+die fades after `DICE_ROLL_ANIM_MS + DICE_HOLD_MS`, leaves immediately when
+the dice is consumed, and returns when the next roll lands.
+
+## R3.5 CLIENT-SIDE PREDICTION — instant coins, server still the judge
+
+Tapping a coin previously waited a full network round-trip before anything
+moved. Now the client runs the SAME pure engine as the server
+(`moveToken` — one shared rule source) and commits the predicted state
+IMMEDIATELY: the coin hops instantly, captures resolve, the turn banner
+flips. The action then goes to the server with its actionId; the server
+validates and its authoritative state replaces the prediction. On ANY
+rejection/mismatch the server version WINS via a forced reconcile (the
+version-regression guard is bypassed exactly once, so the board always
+snaps back to truth — client prediction can never fork the game).
+

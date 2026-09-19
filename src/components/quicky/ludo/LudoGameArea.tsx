@@ -71,7 +71,7 @@ function statusLine(
 }
 
 // How long the settled die stays on the table before it fades away.
-const DICE_HOLD_MS = 1_500
+const DICE_HOLD_MS = 1_400
 
 export function LudoGameArea({
   snapshot,
@@ -100,6 +100,11 @@ export function LudoGameArea({
   const [lastRoll, setLastRoll] = useState<{ name: string; value: number; isMe: boolean } | null>(null)
   const [chanceMissed, setChanceMissed] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  // DEDICATED dice timers — NEVER cleared by the board-animation effect.
+  // (The old shared array let a same-commit version bump from the roll
+  // itself wipe the dice's stop/hide timers → the tumble ran forever and
+  // the die never disappeared. Two lifecycles, two timer pools.)
+  const diceTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const prevVersionRef = useRef<number>(0)
   const prevDiceRef = useRef<{ value: number | null; rolledBy: string | null }>({ value: null, rolledBy: null })
 
@@ -107,7 +112,13 @@ export function LudoGameArea({
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
   }, [])
-  useEffect(() => clearTimers, [clearTimers])
+  useEffect(
+    () => () => {
+      timersRef.current.forEach(clearTimeout)
+      diceTimersRef.current.forEach(clearTimeout)
+    },
+    []
+  )
 
   // ── Board sizing (Ludo PRD §9 — measured, never hardcoded): the square
   // board FILLS the measured stage box on every device, and --ldo-cell is
@@ -135,14 +146,24 @@ export function LudoGameArea({
 
   // ── Dice animation: the SERVER rolls for every player — every fresh
   // value animates on EVERY device (§55), the die floats over the board,
-  // settles on the server number, then disappears. No optimistic roll —
-  // there is no roll button to be optimistic about. ────────────────────────
+  // settles on the server number, then DISAPPEARS (fixed lifecycle: the
+  // stop/hide timers live in diceTimersRef and can no longer be wiped by
+  // a board re-render). The die comes back when the next roll lands. ──────
   useEffect(() => {
     if (!game) return
     const prev = prevDiceRef.current
     const changed = game.dice.value !== prev.value || game.dice.rolledBy !== prev.rolledBy
     prevDiceRef.current = { value: game.dice.value, rolledBy: game.dice.rolledBy }
-    if (!changed || game.dice.value == null) return
+    diceTimersRef.current.forEach(clearTimeout)
+    diceTimersRef.current = []
+    if (!changed) return
+    if (game.dice.value == null) {
+      // Dice consumed / turn moved on — the settled die leaves at once;
+      // the rolled number stays readable in the bottom round-bar hint.
+      setDiceRolling(false)
+      setDiceVisible(false)
+      return
+    }
     const roller = game.players.find((p) => p.userId === game.dice.rolledBy)
     setLastRoll({
       name: roller?.displayName ?? 'Player',
@@ -154,8 +175,8 @@ export function LudoGameArea({
     void hapticImpact('light')
     const stop = setTimeout(() => setDiceRolling(false), DICE_ROLL_ANIM_MS)
     const hide = setTimeout(() => setDiceVisible(false), DICE_ROLL_ANIM_MS + DICE_HOLD_MS)
-    timersRef.current.push(stop, hide)
-  }, [game?.dice?.value, game?.dice?.rolledBy])
+    diceTimersRef.current.push(stop, hide)
+  }, [game?.dice?.value, game?.dice?.rolledBy, game?.status])
 
   // ── Token animation (server transition → client animation, §53) ──────────
   useEffect(() => {
@@ -394,10 +415,16 @@ export function LudoGameArea({
           )}
         </AnimatePresence>
 
-        {game && game.status === 'playing' && game.players.length < 2 && (
+        {roomStatus === 'WAITING' && (
           <div className="ldo-waiting" data-testid="ludo-waiting-pill">
-            <b>🎲 Waiting for more players</b>
-            <span>The game starts when another player joins</span>
+            <b>
+              🎲 Waiting for players — {snapshot.players.length}/{snapshot.maxPlayers} joined
+            </b>
+            <span>
+              {snapshot.maxPlayers === 2
+                ? 'The duel starts the moment player 2 joins'
+                : 'The table starts when all 4 players are in — chat stays open'}
+            </span>
           </div>
         )}
         {!game && (
@@ -448,7 +475,9 @@ export function LudoGameArea({
         )}
       </div>
 
-      {/* The slim bottom hint: "{name}: rolled 6" + the visible 45s timer */}
+      {/* The slim bottom hint: "{name}: rolled 6" + the visible 45s timer.
+          On MOBILE this strip is ALSO the room-state surface (waiting text
+          lives here instead of over the board). */}
       <LudoRoundBar
         phase={phase}
         lastRoll={lastRoll}
@@ -456,6 +485,8 @@ export function LudoGameArea({
         serverSkewMs={snapshot.serverNow ? snapshot.serverNow - Date.now() : 0}
         currentPlayerName={currentPlayer?.displayName ?? '…'}
         statusText={statusLine(phase, currentPlayer?.displayName, game, meId)}
+        playersJoined={snapshot.players.length}
+        maxPlayers={snapshot.maxPlayers}
       />
 
       {/* Gift entry (§100 — gifting never pauses the Ludo engine) */}

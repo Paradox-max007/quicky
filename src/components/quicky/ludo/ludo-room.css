@@ -686,14 +686,18 @@
   100% { transform: translateY(110vh) rotate(540deg); }
 }
 
-/* ── Lobby (waiting) hint (§95) ──────────────────────────── */
+/* ── Lobby (waiting) hint (§95 REVISED) ─────────────────── */
+/* WEB (≥1024px): the waiting state is OVERLAID over the board.
+   MOBILE (app / Capacitor / mobile web): HIDDEN — the bottom round
+   bar (the timer / rolled-number strip) carries the waiting state so
+   the small screen keeps every pixel for the table itself. */
 .ldo-waiting {
   position: absolute;
   left: 50%;
   bottom: 10px;
   transform: translateX(-50%);
   z-index: 30;
-  display: flex;
+  display: none; /* mobile default — round bar owns the waiting state */
   flex-direction: column;
   align-items: center;
   gap: 2px;
@@ -703,6 +707,9 @@
   padding: 7px 14px;
   pointer-events: none;
   max-width: calc(100% - 24px);
+}
+@media (min-width: 1024px) {
+  .ldo-waiting { display: flex; } /* web: overlay over the board */
 }
 .ldo-waiting b { font-size: 12.5px; color: #fff; white-space: nowrap; }
 .ldo-waiting span { font-size: 10.5px; color: rgba(255, 255, 255, 0.55); white-space: nowrap; }

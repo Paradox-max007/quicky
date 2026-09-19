@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { Users } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { CoinStoreSheet } from '../CoinStoreSheet'
@@ -26,6 +27,8 @@ import {
   type GameDef,
   type LudoLandingStats,
 } from '../game-primary/game-configs'
+
+const MODE_KEY = 'quicky-ludo-mode'
 
 export function LudoLanding({
   onClose,
@@ -41,6 +44,26 @@ export function LudoLanding({
   const [joining, setJoining] = useState(false)
   const [coinStoreOpen, setCoinStoreOpen] = useState(false)
   const [coinBalance, setCoinBalance] = useState(0)
+  // REVISED — the TABLE MODE is chosen BEFORE starting: a 2-player duel
+  // (starts the moment the 2nd player joins, 3·2·1) or a full 4-player
+  // table (waits for all four — "waiting for players…"). The choice
+  // persists across sessions.
+  const [mode, setMode] = useState<2 | 4>(2)
+  useEffect(() => {
+    // Deferred (react-hooks v6: no synchronous setState in effect bodies).
+    const t = setTimeout(() => {
+      try {
+        if (Number(localStorage.getItem(MODE_KEY)) === 4) setMode(4)
+      } catch {}
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+  const pickMode = (m: 2 | 4) => {
+    setMode(m)
+    try {
+      localStorage.setItem(MODE_KEY, String(m))
+    } catch {}
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -66,11 +89,11 @@ export function LudoLanding({
     if (joining) return
     setJoining(true)
     try {
-      // Server-authoritative matchmaking (Ludo PRD §6/§117): the client
-      // never decides which room or seat it gets — the server checks table
-      // availability AND the 2-male/2-female gender weighting before
-      // assigning a seat.
-      const res = await api.ludo.join()
+      // Server-authoritative matchmaking (Ludo PRD §6/§117 revised): the
+      // client never decides which room or seat it gets — the server checks
+      // MODE availability and assigns yards in DIAGONAL fill order (1→3→2→4:
+      // the 2nd joiner sits diagonally opposite the 1st).
+      const res = await api.ludo.join(mode)
       if (res?.ok && res.roomId) {
         onJoined(res.roomId)
       } else {
@@ -100,6 +123,32 @@ export function LudoLanding({
         playBusy={joining}
         playDisabled={failed}
         playTestId="ludo-play-now"
+        playExtra={
+          <div
+            className="flex items-center justify-center gap-1.5 mb-3"
+            role="radiogroup"
+            aria-label="Table mode"
+            data-testid="ludo-mode-pick"
+          >
+            {([2, 4] as const).map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={mode === m}
+                onClick={() => pickMode(m)}
+                data-testid={`ludo-mode-${m}`}
+                className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-black tracking-wide transition-all active:scale-95 ${
+                  mode === m
+                    ? 'bg-coral-gradient glow-coral text-white'
+                    : 'border border-white/15 bg-white/5 text-white/60 hover:text-white/90'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" aria-hidden />
+                {m} Players
+              </button>
+            ))}
+          </div>
+        }
         coinBalance={coinBalance}
         onBuyCoins={() => setCoinStoreOpen(true)}
         failed={failed}
@@ -114,10 +163,10 @@ export function LudoLanding({
         userAvatar={avatar}
         level={Math.max(1, Math.floor((stats?.quickyPoints ?? 0) / 50) + 1)}
         messages={[
+          mode === 2 ? 'Waiting for 1 more player…' : 'Waiting for players…',
           'Finding a Ludo table…',
           'Checking seat availability…',
-          'Balancing the table…',
-          'Looking for players…',
+          'Placing you diagonally opposite…',
           'Rolling out the board…',
           'Almost ready…',
           'The dice are waiting…',
