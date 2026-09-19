@@ -33,7 +33,7 @@ import {
   rollDice,
   startGame,
 } from '../src/lib/quicky/ludo/rules'
-import { parseMoveRequest, parseRollRequest, statusForEngineError } from '../src/lib/quicky/ludo/validation'
+import { parseMoveRequest, statusForEngineError } from '../src/lib/quicky/ludo/validation'
 import type { LudoGameState, LudoToken } from '../src/lib/quicky/ludo/types'
 
 let passed = 0
@@ -276,8 +276,6 @@ section('Leaver recovery (PRD §41/§43/§44)')
 // ── Security/validation (PRD §105/§106) ─────────────────────────────────────
 section('Server validation (PRD §105/§106)')
 {
-  check('roll parser passes actionId only', parseRollRequest({ actionId: 'abcdefgh', dice: 6 })!.actionId === 'abcdefgh')
-  check('roll parser rejects short action ids', parseRollRequest({ actionId: 'x' }) === null)
   check('move parser accepts canonical token ids', parseMoveRequest({ tokenId: 'red-1', actionId: 'abcdefgh' }) !== null)
   check('move parser rejects junk token ids', parseMoveRequest({ tokenId: 'gold-9', actionId: 'abcdefgh' }) === null)
   check('engine error → 403 for wrong turn', statusForEngineError('not_your_turn') === 403)

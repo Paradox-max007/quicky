@@ -1,13 +1,13 @@
 // Quicky — LUDO VALIDATION (Ludo PRD §47/§105/§106)
 //
-// Server-side request-shape validation shared by the roll/move routes.
-// SECURITY (§105/§106): the client sends ONLY { actionId } / { tokenId,
-// actionId } — never a dice value, never a position, never a winner. Every
-// gameplay fact is recomputed from the authoritative DB state here.
+// Server-side request-shape validation for the move route (the ONLY client
+// action — ROUND-4: the dice are a server action, there is no roll request
+// at all). SECURITY (§105/§106): the client sends ONLY { tokenId, actionId }
+// — never a dice value, never a position, never a winner. Every gameplay
+// fact is recomputed from the authoritative DB state here.
 
 import type { LudoEngineError } from './types'
 
-export type RollRequestInput = { actionId: string }
 export type MoveRequestInput = { tokenId: string; actionId: string }
 
 export function parseUuidLike(value: unknown): string | null {
@@ -16,12 +16,6 @@ export function parseUuidLike(value: unknown): string | null {
   // actionId is client-generated; accept any reasonable id token (uuid,
   // cuid, nanoid…) but never an empty/garbage string.
   return v.length >= 8 && v.length <= 64 && /^[\w:-]+$/.test(v) ? v : null
-}
-
-export function parseRollRequest(body: unknown): RollRequestInput | null {
-  if (typeof body !== 'object' || body == null) return null
-  const actionId = parseUuidLike((body as Record<string, unknown>).actionId)
-  return actionId ? { actionId } : null
 }
 
 export function parseMoveRequest(body: unknown): (MoveRequestInput & { tokenId: string }) | null {

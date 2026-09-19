@@ -14,7 +14,9 @@
 //   · the room realtime channel (chat push + gift/balance nudges)
 //   · room chat state (optimistic send + realtime merge)
 //   · room-closure state
-//   · roll / move actions — single-flight, actionId-stamped (§48/§50)
+//   · move action — single-flight, actionId-stamped (§49/§50). The DICE
+//     have no client action at all: the SERVER rolls automatically
+//     (multiplayer PRD §14) and every client animates the broadcast roll.
 
 import { create } from 'zustand'
 import { toast } from 'sonner'
@@ -40,15 +42,13 @@ type LudoRoomState = {
   economy: Economy
   /** Mentions §48: id of a message that mentions ME — the bubble flashes. */
   mentionFlashId: string | null
-  /** Local roll/move single-flight (§88 race-condition tests). */
-  rolling: boolean
+  /** Local move single-flight (§88 race-condition tests). */
   movingTokenId: string | null
   /** Last server response for the UI (dice + legal token ids). */
   legalMoves: LudoLegalMove[]
 
   attach: (roomId: string) => void
   detach: () => void
-  roll: () => Promise<{ dice: number; legal: string[] } | null>
   move: (tokenId: string) => Promise<boolean>
   sendChat: (
     text: string,
@@ -180,7 +180,6 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
     closure: null,
     economy: { coinBalance: 0, kissPoints: 0, giftsReceived: 0 },
     mentionFlashId: null,
-    rolling: false,
     movingTokenId: null,
     legalMoves: [],
 
@@ -202,7 +201,6 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
         closure: null,
         economy: { coinBalance: 0, kissPoints: 0, giftsReceived: 0 },
         mentionFlashId: null,
-        rolling: false,
         movingTokenId: null,
         legalMoves: [],
       })
@@ -324,39 +322,9 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
         closure: null,
         economy: { coinBalance: 0, kissPoints: 0, giftsReceived: 0 },
         mentionFlashId: null,
-        rolling: false,
         movingTokenId: null,
         legalMoves: [],
       })
-    },
-
-    roll: async () => {
-      const { roomId, rolling, snapshot } = get()
-      if (!roomId || rolling) return null
-      const game = snapshot?.game
-      if (!game || game.status !== 'playing') return null
-      if (game.currentPlayerId !== (useQuickyStore.getState().user?.id ?? '')) return null
-      if (game.dice.value != null) return null // §88: one roll per turn
-      set({ rolling: true })
-      try {
-        const res = await api.ludo.roll(roomId, newActionId())
-        if (res?.ok && res.state) {
-          set((prev) => ({
-            snapshot: prev.snapshot
-              ? { ...prev.snapshot, game: res.state as LudoGameState }
-              : prev.snapshot,
-            legalMoves: [],
-          }))
-          return { dice: res.dice, legal: res.legalMoves ?? [] }
-        }
-        return null
-      } catch (e: any) {
-        if (e?.status !== 409) toast.error(e?.message ?? 'Roll failed')
-        void get().reconcile()
-        return null
-      } finally {
-        set({ rolling: false })
-      }
     },
 
     move: async (tokenId) => {

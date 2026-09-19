@@ -109,6 +109,21 @@ export function useDiceSequencer(
   const freeAtRef = useRef(0)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
+  // ROUND-4 FIX — pendingDice is read through a REF, never as an effect
+  // dependency. The coin tap consumes the authoritative dice MID-SEQUENCE
+  // (the player picks during the hold); with pendingDice as a dep that flip
+  // re-ran this effect, its CLEANUP cancelled the exit/hidden timers, and
+  // the same-rollId early-return scheduled nothing new → the die froze on
+  // the table until the next roll (and re-entered with an ugly reverse
+  // spin). The exit choreography must ALWAYS complete: the sequence is
+  // keyed by the rollId alone.
+  const pendingDiceRef = useRef(pendingDice)
+  useEffect(() => {
+    // Declared BEFORE the sequencer effect so the freshest pendingDice is
+    // already in the ref when a new rollId lands in the same commit.
+    pendingDiceRef.current = pendingDice
+  }, [pendingDice])
+
   useEffect(() => {
     const clearTimers = () => {
       timersRef.current.forEach(clearTimeout)
@@ -124,7 +139,7 @@ export function useDiceSequencer(
 
     if (firstSight) {
       // Reconnect / refresh / rejoin — never replay history as theatre.
-      if (pendingDice) {
+      if (pendingDiceRef.current) {
         // The dice of THIS roll is still owed → snap to the authoritative
         // number, hold it briefly, leave. The player can pick immediately.
         // (Deferred one tick — react-hooks v6: no setState in effect bodies.)
@@ -201,7 +216,7 @@ export function useDiceSequencer(
       }, base + total)
     )
     return clearTimers
-  }, [roll?.rollId, pendingDice])
+  }, [roll?.rollId])
 
   return { phase, displayFace, finalValue, rollId, revealed, hint, freeAtRef }
 }

@@ -91,7 +91,7 @@ export const LUDO_POINTS_PER_CAPTURE = 1
  * changes) → settle → hold the server value → exit → THEN tokens move).
  * Presentation only — the server never waits for any of this. */
 export const DICE_ENTER_MS = 240
-export const DICE_ROLL_MS = 1_900
+export const DICE_ROLL_MS = 1_600
 export const DICE_SETTLE_MS = 340
 export const DICE_HOLD_MS = 560
 export const DICE_EXIT_MS = 340

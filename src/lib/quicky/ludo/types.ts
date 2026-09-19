@@ -158,15 +158,8 @@ export type EngineResult =
   | { ok: true; state: LudoGameState; events: LudoGameEvent[] }
   | { ok: false; error: LudoEngineError }
 
-/** Result payloads for the roll/move HTTP APIs (Ludo PRD §48/§49). */
-export type LudoRollResponse = {
-  ok: true
-  dice: number
-  legalMoves: LudoLegalMove[]
-  stateVersion: number
-  state: LudoGameState
-}
-
+/** Result payloads for the move HTTP API (Ludo PRD §49). The dice have no
+ * request/response type — they are a SERVER action (multiplayer PRD §14). */
 export type LudoMoveResponse = {
   ok: true
   stateVersion: number

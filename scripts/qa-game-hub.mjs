@@ -8,7 +8,7 @@
 // DB-driven fields, honest isPlayable), landing-stats §59/§60/§74 contract,
 // 401 handling.
 const BASE = process.env.BASE ?? 'http://localhost:3000'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 
 let passed = 0
 let failed = 0
@@ -100,6 +100,14 @@ ok('ludo §14 REVISED: dice are a SERVER ACTION — no roll button anywhere, ser
   const turn = src('src/components/quicky/ludo/LudoRoundBar.tsx')
   return has('src/lib/quicky/ludo/constants.ts', 'TURN_AUTOROLL_DELAY_MS = 2_200', 'TURN_MOVE_TIMEOUT_MS = 45_000') && has('src/lib/quicky/ludo-server.ts', 'async function autoRollFor', '`auto_${Date.now()}', 'await autoRollFor(roomId, state, state.currentPlayerId)', 'scheduleWatchdog(roomId, st)') && !area.includes('onRoll') && !area.includes('ROLL DICE') && !src('src/components/quicky/ludo/LudoRoom.tsx').includes('.roll()') && turn.includes('rolling the dice')
 })())
+ok('ludo ROUND-4 FINAL: NO client roll request path exists at all — no /roll route, no api.ludo.roll, no store roll(); the watchdog + tick are the only dice sources', (() => {
+  const noRoute = !existsSync('src/app/api/quicky/games/ludo/roll/route.ts')
+  const client = src('src/lib/quicky/api-client.ts')
+  const store = src('src/store/ludo-room.ts')
+  return noRoute && !client.includes('/api/quicky/games/ludo/roll') && !client.includes('roll: (roomId') && !store.includes('roll: async') && !store.includes('rolling:') && !store.includes('api.ludo.roll')
+})())
+ok('ludo ROUND-4 FINAL: dice exit choreography survives a mid-hold coin tap — the sequencer is keyed by rollId ALONE (pendingDice read via ref), the die can never freeze on the table', has('src/components/quicky/ludo/useDiceSequencer.ts', 'pendingDiceRef', '}, [roll?.rollId])') && !src('src/components/quicky/ludo/useDiceSequencer.ts').includes('[roll?.rollId, pendingDice]'))
+ok('ludo ROUND-4 FINAL: dice sequence ≈3s total (enter 240 + roll 1600 + settle 340 + hold 560 + exit 340)', has('src/lib/quicky/ludo/constants.ts', 'DICE_ROLL_MS = 1_600', 'DICE_SEQ_TOTAL_MS'))
 ok('ludo §44 REVISED: 45s visible move timer + CHANCE MISSED center popup (no backdrop) on a skipped chance', has('src/components/quicky/ludo/LudoRoundBar.tsx', 'ludo-move-timer', 'ldo-roundbar-urgent', 'secondsLeft', 'moveDeadlineAt') && has('src/components/quicky/ludo/LudoGameArea.tsx', 'CHANCE_MISSED_MS', 'turn_skipped', 'ludo-chance-missed') && src('src/components/quicky/ludo/ludo-room.css').includes('.ldo-missed'))
 ok('ludo §31 REVISED: the die FLOATS over the board and disappears when not in use; the roll lives on in the bottom hint', has('src/components/quicky/ludo/LudoGameArea.tsx', 'ldo-dice-float', 'useDiceSequencer', 'LudoRoundBar') && has('src/components/quicky/ludo/useDiceSequencer.ts', 'DICE_HOLD_MS', 'DICE_EXIT_MS', 'DICE_ROLL_MS') && has('src/components/quicky/ludo/ludo-room.css', '.ldo-dice-float', 'pointer-events: none') && has('src/components/quicky/ludo/LudoRoundBar.tsx', 'rolled ${lastRoll.value}', 'ludo-roundbar'))
 ok('ludo §38 REVISED: NO player chips above the table on mobile — profile pictures live in the yard corners and tap open the toolbox', has('src/components/quicky/ludo/LudoBoard.tsx', 'ldo-yard-avatar', 'ldo-ya-', 'onPlayerTap') && has('src/components/quicky/ludo/ludo-room.css', '.ldo-hud-slot { display: none; }', '.ldo-hud-slot { display: block; }', '.ldo-yard-avatar', 'ldo-ya-tl'))

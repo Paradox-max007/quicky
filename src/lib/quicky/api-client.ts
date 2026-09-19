@@ -242,11 +242,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ roomId }),
       }),
-    roll: (roomId: string, actionId: string) =>
-      jsonFetch<{ ok: boolean; dice: number; legalMoves: string[]; stateVersion: number; state: any }>(
-        '/api/quicky/games/ludo/roll',
-        { method: 'POST', body: JSON.stringify({ roomId, actionId }) }
-      ),
     move: (roomId: string, tokenId: string, actionId: string) =>
       jsonFetch<{ ok: boolean; stateVersion: number; state: any }>(
         '/api/quicky/games/ludo/move',

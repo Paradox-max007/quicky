@@ -34,7 +34,6 @@ import {
 } from './ludo/constants'
 import {
   createGameState,
-  getLegalMoves,
   moveToken as engineMoveToken,
   passTurn as enginePassTurn,
   removePlayer as engineRemovePlayer,
@@ -272,50 +271,11 @@ async function passTurnFor(roomId: string, state: LudoGameState, playerId: strin
   }
 }
 
-// ── Roll / Move (Ludo PRD §48/§49/§50) ──────────────────────────────────────
+// ── Move (Ludo PRD §49/§50 — the ONLY client action; dice are server-rolled)
 
 export type LudoActionResult =
-  | { ok: true; state: LudoGameState; events: LudoGameEvent[]; idempotent: boolean; dice?: number; legalMoves?: { tokenId: string }[] }
+  | { ok: true; state: LudoGameState; events: LudoGameEvent[]; idempotent: boolean }
   | { ok: false; status: number; error: string }
-
-export async function performRoll(
-  roomId: string,
-  userId: string,
-  actionId: string
-): Promise<LudoActionResult> {
-  await ensureLudoRuntime(roomId)
-  const loaded = await loadGameState(roomId)
-  if (!loaded || !loaded.state) return { ok: false, status: 404, error: 'room_not_found' }
-  const state = loaded.state
-  if (loaded.room.status !== 'PLAYING' || state.status !== 'playing') {
-    return { ok: false, status: 409, error: 'game_not_playing' }
-  }
-  // §50 — idempotency: the same actionId replays the stored result without
-  // executing twice (no duplicate dice, no duplicate turn pass).
-  if (state.lastActionId === actionId) {
-    return {
-      ok: true,
-      state,
-      events: [],
-      idempotent: true,
-      dice: state.dice.value ?? undefined,
-      legalMoves: state.dice.value != null ? getLegalMoves(state, userId, state.dice.value) : [],
-    }
-  }
-  const res = engineRollDice(state, userId, actionId, secureRng)
-  if (!res.ok) return { ok: false, status: mapError(res.error), error: res.error }
-  if (!(await writeGameStateCas(roomId, res.state, state.version))) {
-    return { ok: false, status: 409, error: 'state_conflict' }
-  }
-  const moved = res.state.lastEvent
-  if (moved?.type === 'dice_rolled') {
-    emitRoomUpdate(roomId, 'LUDO_DICE_ROLLED', { roomId, playerId: userId, dice: moved.dice })
-  }
-  emitRoomUpdate(roomId)
-  scheduleWatchdog(roomId, res.state)
-  const legal = res.state.dice.value != null ? getLegalMoves(res.state, userId, res.state.dice.value) : []
-  return { ok: true, state: res.state, events: res.events, idempotent: false, dice: res.state.dice.value ?? undefined, legalMoves: legal }
-}
 
 export async function performMove(
   roomId: string,
