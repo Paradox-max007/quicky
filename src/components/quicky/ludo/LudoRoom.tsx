@@ -360,7 +360,7 @@ export function LudoRoom({
               !isNativeCapacitor && roomChatPanel === 'contacts' ? (
                 <GameContactsPanel />
               ) : !isNativeCapacitor && roomChatPanel === 'personal' ? (
-                <GameChatScreen embedded onBack={() => setRoomChatPanel('contacts')} />
+                <GameChatScreen embedded visible={roomChatPanel === 'personal'} onBack={() => setRoomChatPanel('contacts')} />
               ) : !isNativeCapacitor && roomChatPanel === 'dating' ? (
                 <ChatView embedded onBack={() => setRoomChatPanel('contacts')} />
               ) : null

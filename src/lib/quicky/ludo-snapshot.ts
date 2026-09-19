@@ -61,29 +61,42 @@ export type LudoRoomSnapshot = {
 const DISCONNECTED_AFTER_MS = 35_000
 
 export async function buildLudoSnapshot(roomId: string, viewerId: string): Promise<LudoRoomSnapshot | null> {
-  const room = await db.spinRoom.findUnique({
-    where: { id: roomId },
-    include: {
-      players: {
-        where: { leftAt: null },
-        orderBy: [{ seatIndex: 'asc' }],
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              gender: true,
-              kissPoints: true,
-              photos: {
-                orderBy: [{ position: 'asc' }],
-                select: { url: true, isPrimary: true, isPrivate: true, position: true },
+  // INSTANT REALTIME: every independent query runs in PARALLEL — the old
+  // 5-6 sequential round-trips (room → messages → mentions → names → viewer
+  // → gifts) took 2-3s through the pooled connection and delayed every
+  // other player's view of a move. Only the mention joins wait on messages.
+  const [room, msgs, viewerUser, giftsReceivedAgg] = await Promise.all([
+    db.spinRoom.findUnique({
+      where: { id: roomId },
+      include: {
+        players: {
+          where: { leftAt: null },
+          orderBy: [{ seatIndex: 'asc' }],
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                gender: true,
+                kissPoints: true,
+                photos: {
+                  orderBy: [{ position: 'asc' }],
+                  select: { url: true, isPrimary: true, isPrivate: true, position: true },
+                },
               },
             },
           },
         },
       },
-    },
-  })
+    }),
+    db.spinRoomMessage.findMany({
+      where: { roomId, kind: { in: ['user', 'join', 'leave'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 80,
+    }),
+    db.user.findUnique({ where: { id: viewerId }, select: { coinBalance: true, kissPoints: true } }),
+    db.spinRoomGift.aggregate({ where: { recipientId: viewerId }, _sum: { quantity: true } }),
+  ])
   if (!room || room.gameType !== 'ludo') return null
 
   const activeRows = room.players.filter((p) => p.isActive)
@@ -119,16 +132,15 @@ export async function buildLudoSnapshot(roomId: string, viewerId: string): Promi
 
   // Recent chat (last 80) — the SAME room-chat storage Spin Bottle uses
   // (Ludo PRD §35/§79: no duplicated chat architecture), user/join/leave only.
-  const msgs = await db.spinRoomMessage.findMany({
-    where: { roomId, kind: { in: ['user', 'join', 'leave'] } },
-    orderBy: { createdAt: 'desc' },
-    take: 80,
-  })
-  const mentionRows = await db.spinRoomChatMention.findMany({
-    where: { messageId: { in: msgs.map((m) => m.id) } },
-    select: { messageId: true, mentionedUserId: true },
-  })
-  const mentionNames = mentionRows.length
+  // Mentions depend on `msgs`, so they run as two tight follow-ups (usually
+  // zero: rooms with no mentions touch nothing).
+  const mentionRows = msgs.length > 0
+    ? await db.spinRoomChatMention.findMany({
+        where: { messageId: { in: msgs.map((m) => m.id) } },
+        select: { messageId: true, mentionedUserId: true },
+      })
+    : []
+  const mentionNames = mentionRows.length > 0
     ? await db.user.findMany({
         where: { id: { in: [...new Set(mentionRows.map((r) => r.mentionedUserId))] } },
         select: { id: true, name: true },
@@ -151,12 +163,6 @@ export async function buildLudoSnapshot(roomId: string, viewerId: string): Promi
       createdAt: m.createdAt.toISOString(),
       mentions: mentionsByMsgId.get(m.id) ?? [],
     }))
-
-  // Viewer economy (same source the Spin Bottle HUD uses — v3 §19-§25).
-  const [viewerUser, giftsReceivedAgg] = await Promise.all([
-    db.user.findUnique({ where: { id: viewerId }, select: { coinBalance: true, kissPoints: true } }),
-    db.spinRoomGift.aggregate({ where: { recipientId: viewerId }, _sum: { quantity: true } }),
-  ])
 
   return {
     roomId: room.id,

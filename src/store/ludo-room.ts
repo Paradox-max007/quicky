@@ -215,12 +215,26 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
             applySnapshot(snap)
           } catch {}
         })
-        // Typed LUDO_* events — the authoritative snapshot follows right
-        // behind; these only drive immediate UX (haptics/animation hints).
+        // Typed LUDO_* events — INSTANT REALTIME: every typed transition
+        // carries the fresh authoritative game state INSIDE the payload
+        // (ludo-server embeds it at emit time). Applying it here means the
+        // coin hop / dice roll / turn change renders on every device the
+        // MOMENT the event lands — no waiting for the full snapshot build
+        // (which still follows for players/economy/chat). Version-guarded so
+        // it can never drag the board backwards or fight a local prediction.
         es.addEventListener('room_event', (e) => {
           try {
-            const { event } = JSON.parse((e as MessageEvent).data) as { event: string }
-            void event // animations are driven by game.version + lastEvent
+            const { payload } = JSON.parse((e as MessageEvent).data) as { event: string; payload?: any }
+            const incoming = (payload?.game ?? null) as LudoGameState | null
+            if (!incoming) return
+            set((prev) => {
+              const prevGame = prev.snapshot?.game ?? null
+              // Lower/equal version: stale or already predicted locally —
+              // the following snapshot reconciles anything else.
+              if (!prevGame || !prev.snapshot) return prev
+              if ((incoming.version ?? 0) <= (prevGame.version ?? 0)) return prev
+              return { snapshot: { ...prev.snapshot, game: incoming } }
+            })
           } catch {}
         })
         es.addEventListener('room_gone', () => void handleRoomGone())
@@ -245,13 +259,14 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       // room is attached, stream up or down. The server's lazy recovery
       // (ensureLudoRuntime) throws a stalled roll, skips a stalled move and
       // flips a stuck STARTING room — so the auto-turn chain can NEVER die
-      // quietly (dev hot reload, process restart, lost timer). The response
-      // carries no state; the SSE snapshot (or the recovery poll) delivers
-      // whatever the heal changed.
+      // quietly (dev hot reload, process restart, lost timer). 3s cadence:
+      // a lost in-process watchdog resolves within one tick instead of 7.
+      // The response carries no state; the SSE snapshot (or the recovery
+      // poll) delivers whatever the heal changed.
       ctl.tick = setInterval(() => {
         if (ctl.closureHandled || !ctl.roomId) return
         void api.ludo.tick(roomId).catch(() => {})
-      }, 7_000)
+      }, 3_000)
 
       // PRESENCE keep-alive (lifecycle §12/§13)
       const beat = () => void api.ludo.ping(roomId).catch(() => {})

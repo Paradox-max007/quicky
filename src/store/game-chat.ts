@@ -156,8 +156,16 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
               const meId = useQuickyStore.getState().user?.id
               if (evt.conversationId === get().activeConversationId) {
                 mergeMessages([msg])
-                // §16: a message arriving while I'm viewing → mark read
-                if (msg.senderId !== meId) get().markActiveRead()
+                // READ-RECEIPT FIX (dating-chat parity): arriving messages are
+                // NOT auto-marked read here anymore — the store cannot know
+                // whether the chat screen is actually on screen (the embedded
+                // room screen stays MOUNTED but hidden behind the room-chat
+                // tab, which used to flip the sender's ✓✓ even though the
+                // receiver never saw the message). GameChatScreen now marks
+                // read only when it is VISIBLE and the new message is in the
+                // VIEW AREA (scrolled into sight); otherwise the message
+                // stays "sent" for the sender and the receiver's unread
+                // badge counts it (server-computed from lastReadAt).
               }
               if (msg.senderId !== meId) get().refreshList(true) // §90: reorder + unread
             } else if (evt?.type === 'conversation') {

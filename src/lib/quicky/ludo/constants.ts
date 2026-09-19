@@ -63,15 +63,18 @@ export function isSafeRingCell(ringIndex: number): boolean {
 /** §14 REVISED — the dice are a SERVER ACTION: there is no roll button. The
  * server auto-rolls for the active player this long after the turn arms —
  * long enough for the turn change to read and the PREVIOUS dice animation
- * to leave the table (with the 5s sequence the earliest possible move lands
- * ~1.65s before the die finishes exiting; 2.6s keeps every roll starting on
- * a clean table), then the dice fly (ROUND-4 multiplayer PRD §16). */
-export const TURN_AUTOROLL_DELAY_MS = 2_600
+ * to leave the table (earliest possible move = the reveal beat at 3.5s; the
+ * die exits at 5.25s; 1.5s + 250ms grace lands the next roll just after the
+ * exit — clean table, snappy cadence), then the dice fly (ROUND-4 §16).
+ * TURN-ROTATION NOTE: this delay arms for EVERY seat change — 2P and 4P
+ * alike — so the roll alternates player-to-player; only a rolled 6 keeps
+ * the turn (§16). */
+export const TURN_AUTOROLL_DELAY_MS = 1_500
 /** §44 REVISED — 45s VISIBLE move window once a dice is pending. When it
  * expires the chance is cancelled/skipped and the game moves forward. */
 export const TURN_MOVE_TIMEOUT_MS = 45_000
 /** Watchdog fires slightly AFTER the deadline so a last-moment request wins. */
-export const WATCHDOG_GRACE_MS = 900
+export const WATCHDOG_GRACE_MS = 250
 /** STARTING → PLAYING countdown (Ludo PRD §56: ~1.5s visual + join window). */
 export const START_COUNTDOWN_MS = 3_000
 /** Ludo PRD §5 — exactly 4 players max, 2 min. Not 6. Not 8. Not 12. */
@@ -102,8 +105,8 @@ export const LUDO_POINTS_PER_CAPTURE = 1
  * server move deadline are all keyed to). */
 export const DICE_ENTER_MS = 300
 export const DICE_ROLL_MS = 2_600
-export const DICE_SETTLE_MS = 450
-export const DICE_HOLD_MS = 1_300
+export const DICE_SETTLE_MS = 600
+export const DICE_HOLD_MS = 1_400
 export const DICE_EXIT_MS = 350
 /** Total dice sequence — exported for QA + tests. */
 export const DICE_SEQ_TOTAL_MS = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS + DICE_HOLD_MS + DICE_EXIT_MS

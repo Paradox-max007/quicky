@@ -223,7 +223,11 @@ async function autoRollFor(roomId: string, state: LudoGameState, playerId: strin
   if (!res.ok) return
   if (!(await writeGameStateCas(roomId, res.state, state.version))) return
   for (const ev of res.events) {
-    if (ev.type === 'dice_rolled') emitRoomUpdate(roomId, 'LUDO_DICE_ROLLED', { roomId, playerId, dice: ev.dice })
+    if (ev.type === 'dice_rolled')
+      // INSTANT REALTIME: the authoritative game rides INSIDE the typed
+      // event — every client applies it the moment the event lands (zero
+      // extra DB reads), instead of waiting for the full snapshot build.
+      emitRoomUpdate(roomId, 'LUDO_DICE_ROLLED', { roomId, playerId, dice: ev.dice, game: res.state })
   }
   emitRoomUpdate(roomId)
   scheduleWatchdog(roomId, res.state)
@@ -265,7 +269,7 @@ async function passTurnFor(roomId: string, state: LudoGameState, playerId: strin
   const res = enginePassTurn(state, playerId, reason, `wd_${Date.now()}`)
   if (!res.ok) return
   if (await writeGameStateCas(roomId, res.state, state.version)) {
-    emitRoomUpdate(roomId, 'LUDO_TURN_SKIPPED', { roomId, playerId, reason })
+    emitRoomUpdate(roomId, 'LUDO_TURN_SKIPPED', { roomId, playerId, reason, game: res.state })
     emitRoomUpdate(roomId)
     scheduleWatchdog(roomId, res.state)
   }
@@ -301,12 +305,16 @@ export async function performMove(
     return { ok: false, status: 409, error: 'state_conflict' }
   }
   for (const ev of res.events) {
-    if (ev.type === 'token_moved') emitRoomUpdate(roomId, 'LUDO_TOKEN_MOVED', { roomId, ...ev })
-    if (ev.type === 'token_captured') emitRoomUpdate(roomId, 'LUDO_TOKEN_CAPTURED', { roomId, ...ev })
-    if (ev.type === 'token_finished') emitRoomUpdate(roomId, 'LUDO_TOKEN_FINISHED', { roomId, ...ev })
+    // INSTANT REALTIME: every typed transition carries the fresh
+    // authoritative game state — other players' clients apply it on event
+    // arrival (the coin move starts animating immediately), while the full
+    // snapshot follows behind for players/economy/chat.
+    if (ev.type === 'token_moved') emitRoomUpdate(roomId, 'LUDO_TOKEN_MOVED', { roomId, ...ev, game: res.state })
+    if (ev.type === 'token_captured') emitRoomUpdate(roomId, 'LUDO_TOKEN_CAPTURED', { roomId, ...ev, game: res.state })
+    if (ev.type === 'token_finished') emitRoomUpdate(roomId, 'LUDO_TOKEN_FINISHED', { roomId, ...ev, game: res.state })
   }
   if (res.state.status === 'finished' && res.state.winnerId) {
-    emitRoomUpdate(roomId, 'LUDO_GAME_FINISHED', { roomId, winnerId: res.state.winnerId })
+    emitRoomUpdate(roomId, 'LUDO_GAME_FINISHED', { roomId, winnerId: res.state.winnerId, game: res.state })
     await awardLudoStats(roomId, res.state).catch(() => {})
   }
   emitRoomUpdate(roomId)

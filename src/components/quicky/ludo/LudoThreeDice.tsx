@@ -38,8 +38,9 @@ const SLOT_VALUES = [3, 4, 2, 5, 1, 6] // +X right, -X left, +Y top, -Y bottom, 
 
 /**
  * DETERMINISTIC ORIENTATION (§37) — the Euler rotation (XYZ) that brings the
- * face carrying `value` toward the camera (camera sits on +Z looking at the
- * origin). 1 → front · 2 → top · 3 → right · 4 → left · 5 → bottom · 6 → back.
+ * face carrying `value` toward +Z (the camera's nominal axis).
+ * 1 → front · 2 → top → front · 3 → right → front · 4 → left → front ·
+ * 5 → bottom → front · 6 → back → front.
  */
 const FACE_EULER: Record<number, [number, number, number]> = {
   1: [0, 0, 0],
@@ -50,11 +51,25 @@ const FACE_EULER: Record<number, [number, number, number]> = {
   6: [0, Math.PI, 0],
 }
 
-/** Quaternion cache for the six resting orientations. */
+/** TILT FIX — the camera sits ABOVE the die (0, 2.05, 4.9), so a face
+ * oriented to plain +Z is viewed at a ~23° downward angle: the landed die
+ * read as "still tilted". Every resting orientation is therefore
+ * PRE-CORRECTED: the value's face normal is aligned EXACTLY at the camera
+ * (billboarded along the camera ray), so the landed face is perfectly
+ * square to the viewer on every device while the die still keeps its 3D
+ * perspective from the projection. */
+const CAMERA_DIR = new THREE.Vector3(0, 2.05, 4.9).normalize()
+const ALIGN_TO_CAMERA = new THREE.Quaternion().setFromUnitVectors(
+  new THREE.Vector3(0, 0, 1),
+  CAMERA_DIR
+)
+
+/** Quaternion cache for the six camera-facing resting orientations. */
 const FACE_QUAT: Record<number, THREE.Quaternion> = Object.fromEntries(
   ([1, 2, 3, 4, 5, 6] as const).map((v) => {
     const [x, y, z] = FACE_EULER[v]!
-    return [v, new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))]
+    const face = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+    return [v, ALIGN_TO_CAMERA.clone().multiply(face)]
   })
 )
 
@@ -97,43 +112,51 @@ const PIP_GRID: Record<number, [number, number][]> = {
   ],
 }
 
-/** One pip face as a canvas texture — drawn once, never per frame (§45). */
+/** One pip face as a canvas texture — drawn once, never per frame (§45).
+ *  BLACK die with RED pips: a glossy near-black body with a soft top-left
+ *  sheen and deep-red radial pips — classic casino dice look, reads clearly
+ *  on the dark game table. */
 function makeFaceTexture(value: number): THREE.CanvasTexture {
   const S = 128
   const canvas = document.createElement('canvas')
   canvas.width = S
   canvas.height = S
   const ctx = canvas.getContext('2d')!
-  // Warm ivory face with a soft radial highlight — reads like a real die.
-  const grad = ctx.createRadialGradient(S * 0.34, S * 0.28, S * 0.08, S * 0.5, S * 0.55, S * 0.78)
-  grad.addColorStop(0, '#fffdf6')
-  grad.addColorStop(0.72, '#f7f0e0')
-  grad.addColorStop(1, '#e9dfc6')
+  // Glossy black body — radial sheen from the upper-left, deep black edges.
+  const grad = ctx.createRadialGradient(S * 0.32, S * 0.26, S * 0.06, S * 0.5, S * 0.55, S * 0.85)
+  grad.addColorStop(0, '#3a3a44')
+  grad.addColorStop(0.45, '#22222a')
+  grad.addColorStop(1, '#0c0c10')
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, S, S)
-  // Subtle inner border so faces read individually while tumbling.
-  ctx.strokeStyle = 'rgba(84, 62, 32, 0.16)'
+  // Subtle inner border so faces read individually while tumbling — a
+  // whisper of red rim light on the black body.
+  ctx.strokeStyle = 'rgba(255, 80, 110, 0.20)'
   ctx.lineWidth = 4
   ctx.strokeRect(3, 3, S - 6, S - 6)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'
+  ctx.lineWidth = 2
+  ctx.strokeRect(6, 6, S - 12, S - 12)
   for (const [px, py] of PIP_GRID[value] ?? PIP_GRID[1]!) {
     const r = S * 0.095
-    // pip shadow
+    // pip shadow — a soft dark halo on the black body
     ctx.beginPath()
-    ctx.arc(px * S + 1.5, py * S + 2, r, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(46, 28, 10, 0.28)'
+    ctx.arc(px * S + 1.5, py * S + 2.5, r * 1.12, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
     ctx.fill()
-    // pip body
+    // pip body — deep red radial, brighter core
     ctx.beginPath()
     ctx.arc(px * S, py * S, r, 0, Math.PI * 2)
     const pip = ctx.createRadialGradient(px * S - r * 0.3, py * S - r * 0.35, r * 0.1, px * S, py * S, r)
-    pip.addColorStop(0, '#4a2c12')
-    pip.addColorStop(1, '#1d1005')
+    pip.addColorStop(0, '#ff5a63')
+    pip.addColorStop(0.55, '#e11d48')
+    pip.addColorStop(1, '#8f0f26')
     ctx.fillStyle = pip
     ctx.fill()
-    // pip glint
+    // pip glint — a tiny hot highlight, keeps the red alive under light
     ctx.beginPath()
-    ctx.arc(px * S - r * 0.32, py * S - r * 0.38, r * 0.24, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+    ctx.arc(px * S - r * 0.32, py * S - r * 0.38, r * 0.22, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(255, 205, 210, 0.55)'
     ctx.fill()
   }
   const tex = new THREE.CanvasTexture(canvas)
@@ -283,11 +306,13 @@ export const LudoThreeDice = memo(function LudoThreeDice({
     camera.lookAt(0, 0, 0)
 
     // Lights: warm key from the camera side + cool fill + colored accent.
-    scene.add(new THREE.AmbientLight(0xfff6e8, 0.85))
-    const key = new THREE.DirectionalLight(0xffffff, 1.5)
+    // Tuned for the BLACK die: a touch more ambient/key so the dark body
+    // keeps its glossy reads without washing out the red pips.
+    scene.add(new THREE.AmbientLight(0xfff2e2, 1.15))
+    const key = new THREE.DirectionalLight(0xffffff, 1.85)
     key.position.set(2.4, 4.2, 3.6)
     scene.add(key)
-    const fill = new THREE.DirectionalLight(0xbcd4ff, 0.5)
+    const fill = new THREE.DirectionalLight(0xbcd4ff, 0.65)
     fill.position.set(-3, 1.2, 2.5)
     scene.add(fill)
     const accent = new THREE.PointLight(0xf43f5e, 2.2, 7.5, 1.8)
@@ -296,10 +321,11 @@ export const LudoThreeDice = memo(function LudoThreeDice({
     accent.color.copy(st.accentColor)
     st.accent = accent
 
-    // The die — ONE mesh, six canvas-texture faces (§36).
+    // The die — ONE mesh, six canvas-texture faces (§36). Glossy black body:
+    // low roughness + a hint of metalness gives the casino-dice sheen.
     const textures = SLOT_VALUES.map((v) => makeFaceTexture(v))
     const materials = textures.map(
-      (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.32, metalness: 0.04 })
+      (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.26, metalness: 0.12 })
     )
     const geometry = new THREE.BoxGeometry(1.55, 1.55, 1.55)
     const die = new THREE.Mesh(geometry, materials)
@@ -357,6 +383,17 @@ export const LudoThreeDice = memo(function LudoThreeDice({
         die.rotation.x += st.spin.x * decay * dt
         die.rotation.y += st.spin.y * decay * dt
         die.rotation.z += st.spin.z * decay * dt
+        // SMOOTH-FACE CONVERGENCE (§41 smoothness): through the FINAL 40% of
+        // the tumble the die is progressively pulled toward the target
+        // orientation for the SERVER value — the die visibly TURNS INTO the
+        // final number (6 slowly rotates into place) instead of stopping on
+        // some other face and snapping. The pull ramps up quadratically as
+        // the spin decays, so motion stays fluid — never a sudden swap.
+        if (r > 0.6) {
+          const k = (r - 0.6) / 0.4
+          const pull = 0.03 + 0.19 * k * k
+          die.quaternion.slerp(quatForValue(st.value), Math.min(0.4, pull))
+        }
         // Three diminishing hops while it tumbles.
         const hop = Math.abs(Math.sin(r * Math.PI * 3)) * 0.42 * (1 - r)
         die.position.y = hop

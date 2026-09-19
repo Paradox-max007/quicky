@@ -80,7 +80,9 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   else if (diceAnimating && (phase === 'my_move' || phase === 'my_roll'))
     main = 'Your dice is rolling…'
   else if (diceAnimating) main = `${currentPlayerName}'s dice is rolling…`
-  else if (lastRoll) main = `${lastRoll.isMe ? 'You' : lastRoll.name}: rolled ${lastRoll.value}`
+  // The rolled NUMBER lives ONLY in the bold accent element below — never
+  // baked into the sentence too (it used to render twice: "You rolled 6 6").
+  else if (lastRoll) main = `${lastRoll.isMe ? 'You' : lastRoll.name} rolled:`
   else if (phase === 'my_roll') main = 'Your turn — rolling the dice…'
   else main = `${currentPlayerName}'s turn — rolling the dice…`
 

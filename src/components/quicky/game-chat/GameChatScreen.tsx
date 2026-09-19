@@ -83,16 +83,23 @@ class GameChatErrorBoundary extends Component<{ children: ReactNode }, { error: 
 export function GameChatScreen({
   onBack,
   embedded = false,
+  visible = true,
 }: {
   onBack?: () => void
   /** Inside the room chat panel: the host lifts the overlay via the room's
    * --sbr-kb var, so this screen must NOT run its own visualViewport
    * keyboard shim — a second shift pushes the composer out of the sheet. */
   embedded?: boolean
+  /** READ-RECEIPT GATE — true ONLY while this screen is actually the panel
+   * the user is looking at. The room keeps the embedded screen MOUNTED
+   * (hidden) to preserve scroll; passing `roomChatPanel === 'personal'`
+   * here keeps read receipts honest: messages arriving while false stay
+   * "sent" for the sender and count into the receiver's unread badge. */
+  visible?: boolean
 }) {
   return (
     <GameChatErrorBoundary>
-      <GameChatScreenInner onBack={onBack} embedded={embedded} />
+      <GameChatScreenInner onBack={onBack} embedded={embedded} visible={visible} />
     </GameChatErrorBoundary>
   )
 }
@@ -100,9 +107,11 @@ export function GameChatScreen({
 function GameChatScreenInner({
   onBack,
   embedded,
+  visible = true,
 }: {
   onBack?: () => void
   embedded?: boolean
+  visible?: boolean
 }) {
   const me = useQuickyStore((s) => s.user)
   const peer = useGameChatStore((s) => s.activePeer)
@@ -133,6 +142,20 @@ function GameChatScreenInner({
   const longPress = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number }>({ timer: null, x: 0, y: 0 })
   const lastMsgId = messages.length ? messages[messages.length - 1].id : null
   const prevLastIdRef = useRef<string | null>(null)
+  // READ-RECEIPT (dating-chat parity): set when a PEER message arrives while
+  // this screen is hidden (room tab active) or the message is OUT of the
+  // view area (scrolled up) — it flips the moment the message is actually
+  // seen: screen visible again, or the user scrolls it into view.
+  const unseenPeerMsgRef = useRef(false)
+
+  // ── document visibility — a backgrounded app is NOT "viewing the chat" ──
+  const [docVisible, setDocVisible] = useState(true)
+  useEffect(() => {
+    const onVis = () => setDocVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+  const screenVisible = (visible ?? true) && docVisible
 
   // ── RULES OF HOOKS (layout PRD §93): every hook below must run on EVERY
   // render. The old `if (!peer) return null` HERE sat above the effects, so
@@ -143,10 +166,26 @@ function GameChatScreenInner({
   // screen — and every render executes the exact same hook sequence.
   const peerName = peer?.peerName ?? 'Player'
 
-  // ── mark read when the screen is visible (§16) ───────────────────────────
-  useEffect(() => {
+  // ── mark read — DATING-CHAT FLOW (§16/§17, read-receipt fix) ──────────
+  // A message is READ only when the RECEIVER is on the chat screen AND the
+  // message is in the view area. Three (and only three) triggers:
+  //   1. the conversation opens (scroll-to-bottom puts history in view),
+  //   2. a peer message ARRIVES while visible + near bottom (in view),
+  //   3. the user scrolls an unseen message INTO view (or returns to the
+  //      tab/screen while at bottom).
+  const markReadNow = useCallback(() => {
+    const cid = useGameChatStore.getState().activeConversationId
+    if (!cid) return
+    unseenPeerMsgRef.current = false
     useGameChatStore.getState().markActiveRead()
-  }, [conversationId])
+  }, [])
+
+  useEffect(() => {
+    // Returning to a VISIBLE chat at the bottom = the newest messages are
+    // in the view area → they are read. Returning while scrolled up keeps
+    // them unread until the user scrolls them into sight (onScroll).
+    if (screenVisible && nearBottomRef.current) markReadNow()
+  }, [conversationId, screenVisible, markReadNow])
 
   // ── scroll behavior (§79): near-bottom → autoscroll; scrolled up → pill ──
   const scrollToBottom = useCallback((smooth = false) => {
@@ -170,9 +209,24 @@ function GameChatScreenInner({
     const isNew = prevLastIdRef.current !== lastMsgId
     prevLastIdRef.current = lastMsgId
     if (!isNew) return
-    if (nearBottomRef.current) scrollToBottom(true)
-    else setUnreadBelow((n) => n + 1)
-  }, [lastMsgId, scrollToBottom])
+    const fromPeer = messages.length > 0 && messages[messages.length - 1].senderId !== meId
+    if (fromPeer) {
+      if (screenVisible && nearBottomRef.current) {
+        // On screen + in the view area → the sender's ✓ flips to ✓✓ NOW.
+        scrollToBottom(true)
+        markReadNow()
+      } else {
+        // Hidden or scrolled away → stays "sent" for the sender; the
+        // receiver's unread badge counts it until it is actually seen.
+        unseenPeerMsgRef.current = true
+        if (!nearBottomRef.current) setUnreadBelow((n) => n + 1)
+      }
+    } else if (nearBottomRef.current) {
+      scrollToBottom(true)
+    } else {
+      setUnreadBelow((n) => n + 1)
+    }
+  }, [lastMsgId, screenVisible, scrollToBottom, markReadNow, messages, meId])
 
   const onScroll = () => {
     const el = listRef.current
@@ -180,6 +234,8 @@ function GameChatScreenInner({
     const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - NEAR_BOTTOM_PX
     nearBottomRef.current = nearBottom
     if (nearBottom && unreadBelow > 0) setUnreadBelow(0)
+    // Scrolled the unseen messages INTO the view area → they are read now.
+    if (nearBottom && unseenPeerMsgRef.current) markReadNow()
     // §24: scrolled to the top → load older messages (cursor pagination)
     if (el.scrollTop <= 4 && hasMore && !loadingOlder) {
       const beforeH = el.scrollHeight
