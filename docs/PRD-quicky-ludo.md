@@ -3717,3 +3717,82 @@ rejection/mismatch the server version WINS via a forced reconcile (the
 version-regression guard is bypassed exactly once, so the board always
 snaps back to truth — client prediction can never fork the game).
 
+
+---
+
+# PLAY-TEST REVISION — ROUND 4 (Multiplayer Turn Sync + Automatic Dice + Smooth Animation)
+
+Play-test feedback: with Player 1 on Capacitor/mobile and Player 2 on PC,
+"Player 2 does not properly receive their roll" — the game behaves as if
+Player 1 is the permanent active player; the dice appears/disappears
+abruptly; coin movement is not coordinated with the dice. Root causes found
+in the code (and fixed at the source, not by "making PC listen to mobile"):
+
+## R4.1 THE SILENT TURN-SKIP — the real "player 2 never rolls" bug
+
+When the server rolled a value with NO legal move (the classic early game:
+all tokens still in their yard and anything but a 6) — or when a third six
+was cancelled — the engine advanced the turn WITHOUT ever exposing the dice
+value in the authoritative state (`dice.value` stayed null). Clients saw
+nothing: no dice, no roll, no hint — the turn simply flipped silently every
+few seconds. With both players stuck in yards, MOST rolls were invisible,
+so the game looked like "the dice only ever comes to player 1".
+
+FIX — the persistent ROLL RECORD (multiplayer PRD §9/§13/§27):
+* `LudoGameState.lastRoll: { rollId, playerId, value, rolledAt }` is written
+  on EVERY successful roll, BEFORE any branch — including the no-legal-move
+  and six-cancelled paths where the pending dice is consumed in the same
+  transition.
+* Every client keys the dice animation on `lastRoll.rollId` (dedupe §27 — a
+  redelivered event never plays twice). Every roll is now VISIBLE on every
+  device, and the round bar keeps "Alex: rolled 6" until the next roll.
+* `LudoGameState.turnId` arms with every turn (§28) for turn-scoped logic.
+
+## R4.2 THE DICE PHASE MACHINE — one continuous animation (§16-§21/§26/§53)
+
+The old booleans (`diceRolling`/`diceVisible` + unrelated timers) are
+replaced by `useDiceSequencer` — an explicit visual state machine:
+
+```
+hidden → entering → rolling → settling → revealed → exiting → hidden
+            240ms   ~1.9s faces   340ms spring  560ms hold  340ms fade
+                    decelerating  onto the
+                    face cycle    server value
+```
+
+* The server value is known internally from ROLL_STARTED but is NEVER
+  rendered before the settle (§13/§16) — the readable face cycles with a
+  geometrically decelerating schedule (FAST → MEDIUM → SLOW, §20).
+* The cube rotation is framer-driven: easeOut through ~2 full turns, then a
+  short spring with a tiny overshoot lands EXACTLY on the server value's
+  face (§19/§21). Faces flip back to the canonical layout for the settle so
+  FACE_ORIENTATION always shows the authoritative number (§14/§15).
+* The die leaves with a phase-driven fade/scale exit — no display:none
+  jumps (§17). Total sequence ≈ 3.3s; `TURN_AUTOROLL_DELAY_MS` rises to
+  2.2s so the previous die is always gone before the next one enters.
+* Late mounts (refresh / reconnect / rejoin) NEVER replay history: the
+  first roll a client sees is snapped straight to `revealed` if its dice is
+  still pending (§52), otherwise ignored (§93).
+
+## R4.3 SETTLE-THEN-MOVE — dice and coins never overlap (§18/§22/§41-§44)
+
+* The sequencer exposes `freeAtRef` — the epoch ms at which the die has
+  fully left the table. EVERY board-animation timer (hops, captures,
+  finish effects, yard-return snaps) is offset by it: coins move only after
+  the die is gone, square-by-square at 180ms/hop with the existing settle
+  bounce (§23).
+* Coins become selectable only once the value has SETTLED (`revealed`) —
+  the player always sees what they are moving (§43); early taps shake.
+* The server never waits for any of this (§25/§39/§40): presentation only.
+
+## R4.4 THE GAME CAN NEVER LOOK FROZEN (§30/§47) + crypto dice (§12)
+
+* NEW keepalive `POST /api/quicky/games/ludo/tick` — the attached clients
+  beat it every 7s; it runs the lazy runtime recovery (ensureLudoRuntime),
+  so even if the in-process watchdog chain dies (dev hot reload, process
+  restart, lost timer), a stalled roll is thrown server-side / a stalled
+  move skipped within seconds. The old design only polled while the SSE
+  stream was DOWN — a dead timer chain with a healthy stream froze games.
+* Dice values are generated with `node:crypto randomInt` (uniform,
+  unguessable) instead of `Math.random` — still 100% server-side; the
+  client can only ever send an actionId.

@@ -10,10 +10,20 @@
 //   Animation NEVER determines state — every render snaps back to the
 //   authoritative game state and the step-by-step movement is pure display.
 //
-// REVISED mechanics (Unified PRD + Ludo PRD revisions):
+// REVISED mechanics (Unified PRD + Ludo PRD + ROUND-4 multiplayer PRD):
 //   · §14 REVISED — THE DICE ARE A SERVER ACTION: there is NO roll button.
 //     The server throws the dice for every player; this area animates EVERY
 //     fresh roll (mine included) identically for the whole table (§55).
+//   · ROUND-4 — the dice plays ONE continuous client-side sequence driven
+//     by useDiceSequencer (enter → rolling with decelerating faces → settle
+//     on the server value → hold → exit), keyed by the authoritative
+//     lastRoll.rollId. Every roll is visible — even the ones whose dice is
+//     consumed instantly (no legal move / third six) — so a turn can NEVER
+//     flip silently on any device (the "player 2 never sees their roll"
+//     class of bugs is dead at the root).
+//   · ROUND-4 — token movement is GATED behind the dice exit (§18/§22):
+//     coins start hopping only after the die has left the table, and coins
+//     become selectable only once the value has settled (§43).
 //   · The 3D die FLOATS OVER the board while it rolls, settles on the
 //     server's number, then FADES AWAY — never parked in a controls bar,
 //     exactly like the bottle in Spin the Bottle. The rolled number stays
@@ -33,7 +43,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Gift } from 'lucide-react'
-import { CHANCE_MISSED_MS, DICE_ROLL_ANIM_MS, FINISH_STEP } from '@/lib/quicky/ludo/constants'
+import { CHANCE_MISSED_MS, DICE_EXIT_MS, FINISH_STEP } from '@/lib/quicky/ludo/constants'
 import { tokenPlacement } from '@/lib/quicky/ludo/board'
 import { movementPath } from '@/lib/quicky/ludo/movement'
 import { getLegalMoves } from '@/lib/quicky/ludo/rules'
@@ -46,6 +56,7 @@ import { LudoRoundBar, type TurnPhase } from './LudoRoundBar'
 import { LudoCountdown } from './LudoCountdown'
 import { LudoGameResult } from './LudoGameResult'
 import { LudoDice } from './LudoDice'
+import { useDiceSequencer } from './useDiceSequencer'
 
 type DisplayEntry = { row: number; col: number; position: number; state: LudoToken['state'] }
 
@@ -70,9 +81,6 @@ function statusLine(
   return undefined
 }
 
-// How long the settled die stays on the table before it fades away.
-const DICE_HOLD_MS = 1_400
-
 export function LudoGameArea({
   snapshot,
   meId,
@@ -95,18 +103,27 @@ export function LudoGameArea({
   const [fx, setFx] = useState<Record<string, 'none' | 'shake' | 'captured' | 'finished'>>({})
   const [captureChip, setCaptureChip] = useState<string | null>(null)
   const [movingId, setMovingId] = useState<string | null>(null)
-  const [diceRolling, setDiceRolling] = useState(false)
-  const [diceVisible, setDiceVisible] = useState(false)
-  const [lastRoll, setLastRoll] = useState<{ name: string; value: number; isMe: boolean } | null>(null)
   const [chanceMissed, setChanceMissed] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
-  // DEDICATED dice timers — NEVER cleared by the board-animation effect.
-  // (The old shared array let a same-commit version bump from the roll
-  // itself wipe the dice's stop/hide timers → the tumble ran forever and
-  // the die never disappeared. Two lifecycles, two timer pools.)
-  const diceTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  // ROUND-4 — THE DICE PHASE MACHINE. One sequencer owns the whole visual
+  // lifecycle (hidden→entering→rolling→settling→revealed→exiting), deduped
+  // by the authoritative lastRoll.rollId — replacing the old booleans
+  // (diceRolling/diceVisible) whose independent timers produced the
+  // appear/vanish flicker. `freeAtRef` is the moment the die has left the
+  // table; the token animation waits for it (§18: no coin moves under a
+  // rolling die).
+  const dice = useDiceSequencer(game?.lastRoll ?? null, game?.dice?.value != null)
   const prevVersionRef = useRef<number>(0)
-  const prevDiceRef = useRef<{ value: number | null; rolledBy: string | null }>({ value: null, rolledBy: null })
+
+  // A light haptic the moment the die ENTERS — every device feels every
+  // roll (the sequencer guarantees it fires once per rollId, never twice).
+  const hapticPhaseRef = useRef<string>('hidden')
+  useEffect(() => {
+    if (dice.phase === 'entering' && hapticPhaseRef.current !== 'entering') {
+      void hapticImpact('light')
+    }
+    hapticPhaseRef.current = dice.phase
+  }, [dice.phase])
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach(clearTimeout)
@@ -115,7 +132,6 @@ export function LudoGameArea({
   useEffect(
     () => () => {
       timersRef.current.forEach(clearTimeout)
-      diceTimersRef.current.forEach(clearTimeout)
     },
     []
   )
@@ -144,41 +160,12 @@ export function LudoGameArea({
     }
   }, [])
 
-  // ── Dice animation: the SERVER rolls for every player — every fresh
-  // value animates on EVERY device (§55), the die floats over the board,
-  // settles on the server number, then DISAPPEARS (fixed lifecycle: the
-  // stop/hide timers live in diceTimersRef and can no longer be wiped by
-  // a board re-render). The die comes back when the next roll lands. ──────
-  useEffect(() => {
-    if (!game) return
-    const prev = prevDiceRef.current
-    const changed = game.dice.value !== prev.value || game.dice.rolledBy !== prev.rolledBy
-    prevDiceRef.current = { value: game.dice.value, rolledBy: game.dice.rolledBy }
-    diceTimersRef.current.forEach(clearTimeout)
-    diceTimersRef.current = []
-    if (!changed) return
-    if (game.dice.value == null) {
-      // Dice consumed / turn moved on — the settled die leaves at once;
-      // the rolled number stays readable in the bottom round-bar hint.
-      setDiceRolling(false)
-      setDiceVisible(false)
-      return
-    }
-    const roller = game.players.find((p) => p.userId === game.dice.rolledBy)
-    setLastRoll({
-      name: roller?.displayName ?? 'Player',
-      value: game.dice.value,
-      isMe: game.dice.rolledBy === meId,
-    })
-    setDiceVisible(true)
-    setDiceRolling(true)
-    void hapticImpact('light')
-    const stop = setTimeout(() => setDiceRolling(false), DICE_ROLL_ANIM_MS)
-    const hide = setTimeout(() => setDiceVisible(false), DICE_ROLL_ANIM_MS + DICE_HOLD_MS)
-    diceTimersRef.current.push(stop, hide)
-  }, [game?.dice?.value, game?.dice?.rolledBy, game?.status])
-
   // ── Token animation (server transition → client animation, §53) ──────────
+  // ROUND-4 — EVERY timer below is offset by the dice-exit gate: while the
+  // die is still on the table (rolling/settling/holding/leaving) the board
+  // holds its breath; coins hop square-by-square only AFTER the sequencer
+  // reports the die gone (freeAtRef). Game state itself is never delayed —
+  // this is pure presentation sequencing (§25/§41).
   useEffect(() => {
     if (!game) return
     if (prevVersionRef.current === 0 || Object.keys(display).length === 0) {
@@ -193,6 +180,9 @@ export function LudoGameArea({
     if (prevVersionRef.current === game.version) return
     prevVersionRef.current = game.version
     clearTimers()
+
+    // How long until the die has fully left the table (0 when idle).
+    const wait = Math.max(0, dice.freeAtRef.current - Date.now())
 
     // §44 REVISED — a skipped chance: small center popup, NO backdrop, on
     // the missed player's device only. The game has already moved forward.
@@ -220,13 +210,15 @@ export function LudoGameArea({
     }
     if (!mover) {
       // Deferred snap (react-hooks v6 rule) — state already IS the
-      // authority; this only repaints the display layer.
+      // authority; this only repaints the display layer. Gated behind the
+      // dice exit too (a yard-return / reconcile diff must not repaint
+      // under a rolling die).
       const t = setTimeout(() => {
         setDisplay(next)
         setFx({})
         setMovingId(null)
         if (game.status === 'playing' && game.currentPlayerId === meId) void hapticImpact('light')
-      }, 0)
+      }, wait)
       timersRef.current.push(t)
       return
     }
@@ -240,7 +232,7 @@ export function LudoGameArea({
     const path = movementPath(mover.color, mover.index, moverFrom, mover.position)
     // The coin LIFTS and hops square by square (real board-game feel):
     // the moving flag drives the continuous hop cycle on the token dot.
-    const startHop = setTimeout(() => setMovingId(mover!.id), 0)
+    const startHop = setTimeout(() => setMovingId(mover!.id), wait)
     timersRef.current.push(startHop)
     path.forEach((placement, i) => {
       const timer = setTimeout(() => {
@@ -277,7 +269,7 @@ export function LudoGameArea({
           const t3 = setTimeout(() => setFx((f) => ({ ...f, [mover!.id]: 'none' })), 850)
           timersRef.current.push(t3)
         }
-      }, i * 180) // TOKEN_STEP_MS (§19: 150-220ms per square)
+      }, wait + i * 180) // TOKEN_STEP_MS (§19/§23: 150-220ms per square)
       timersRef.current.push(timer)
     })
   }, [game?.version])
@@ -288,6 +280,21 @@ export function LudoGameArea({
     return getLegalMoves(game, meId, game.dice.value)
   }, [game, meId])
   const legalIds = useMemo(() => new Set(legal.map((m) => m.tokenId)), [legal])
+
+  // ROUND-4 (§43) — coins become selectable only once the dice has SETTLED
+  // on the server value (or after the die has left the table). The player
+  // can SEE what they are moving with — no blind picks under a rolling die.
+  const diceSettled = dice.revealed || dice.phase === 'hidden'
+
+  // ROUND-4 — the persistent round-bar hint ("Alex: rolled 6"): derived
+  // from the sequencer's settled roll, it survives the die's exit and stays
+  // readable until the NEXT roll replaces it (§31 revised).
+  const lastRoll = useMemo(() => {
+    const h = dice.hint
+    if (!h) return null
+    const p = game?.players.find((pl) => pl.userId === h.playerId)
+    return { name: p?.displayName ?? 'Player', value: h.value, isMe: h.playerId === meId }
+  }, [dice.hint, game?.players, meId])
 
   // ── Turn phase (§30/§32) ──────────────────────────────────────────────────
   const roomStatus = snapshot.status
@@ -315,7 +322,7 @@ export function LudoGameArea({
         row: d.row,
         col: d.col,
         state: d.state,
-        selectable: legalIds.has(t.id),
+        selectable: diceSettled && legalIds.has(t.id),
         fx: (fx[t.id] ?? 'none') as DisplayToken['fx'],
         stackIndex: 0,
         stackCount: 1,
@@ -323,7 +330,7 @@ export function LudoGameArea({
       }
     })
     return withStackOffsets(raw)
-  }, [game, display, fx, legalIds, movingId])
+  }, [game, display, fx, legalIds, movingId, diceSettled])
 
   // Corner home-base owners: the yard carries the player's NAME + PROFILE
   // PICTURE (mobile has no chip row above the table — §38 revised).
@@ -341,18 +348,20 @@ export function LudoGameArea({
 
   const onTokenTap = useCallback(
     (tokenId: string) => {
-      if (!legalIds.has(tokenId)) {
-        // §20 — illegal tap: the coin shakes (no dead taps, no error toast).
+      if (!diceSettled || !legalIds.has(tokenId)) {
+        // §20 — illegal / too-early tap: the coin shakes (no dead taps, no
+        // error toast). The value must be visible before a coin can move.
         setFx((f) => ({ ...f, [tokenId]: 'shake' }))
         const t = setTimeout(() => setFx((f) => ({ ...f, [tokenId]: 'none' })), 340)
         timersRef.current.push(t)
         return
       }
       // §44 REVISED — the moment the coin is tapped it moves: no cooldown,
-      // the move resolves to the dice-chosen number immediately.
+      // the move resolves to the dice-chosen number immediately (the token
+      // ANIMATION itself still waits for the die to leave — above).
       onMove(tokenId)
     },
-    [legalIds, onMove]
+    [diceSettled, legalIds, onMove]
   )
 
   const winner =
@@ -392,28 +401,37 @@ export function LudoGameArea({
           </div>
         </div>
 
-        {/* §14/§31 REVISED — the die FLOATS over the board while it rolls,
-            settles on the server's number, then disappears (pointer-events
-            none — it can never block a coin tap). The rolled number lives
-            on in the round-bar hint below the table. */}
-        <AnimatePresence>
-          {diceVisible && game && (
+        {/* §14/§31 REVISED + ROUND-4 — the die FLOATS over the board through
+            ONE continuous sequence (enter → roll → settle on the server's
+            number → hold → exit), driven by the phase machine — never
+            display:none jumps (pointer-events none — it can never block a
+            coin tap). The rolled number lives on in the round-bar hint.
+            The OUTER div is static CSS positioning; the INNER motion.div
+            owns the enter/exit tween so the two transforms never fight. */}
+        {dice.phase !== 'hidden' && game && (
+          <div className="ldo-dice-float" data-testid="ludo-dice-float">
             <motion.div
-              className="ldo-dice-float"
-              initial={{ opacity: 0, scale: 0.5, y: -26 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.6, y: 18 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-              data-testid="ludo-dice-float"
+              initial={{ opacity: 0, scale: 0.78, y: -22 }}
+              animate={
+                dice.phase === 'exiting'
+                  ? { opacity: 0, scale: 0.85, y: 16 }
+                  : { opacity: 1, scale: 1, y: 0 }
+              }
+              transition={
+                dice.phase === 'exiting'
+                  ? { duration: DICE_EXIT_MS / 1000, ease: 'easeOut' }
+                  : { type: 'spring', stiffness: 320, damping: 24 }
+              }
             >
               <LudoDice
-                value={game.dice.value}
-                rolling={diceRolling}
+                phase={dice.phase}
+                displayFace={dice.displayFace}
+                value={dice.finalValue}
                 color={turnColorVar ?? 'var(--qk-accent)'}
               />
             </motion.div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
 
         {roomStatus === 'WAITING' && (
           <div className="ldo-waiting" data-testid="ludo-waiting-pill">

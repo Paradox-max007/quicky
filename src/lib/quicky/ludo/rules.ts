@@ -40,6 +40,11 @@ import type {
   LudoToken,
 } from './types'
 
+/** ROUND-4 — rollId synthesis from the injected rng (deterministic in tests). */
+function makeRollId(now: number, rng: () => number): string {
+  return `roll_${now.toString(36)}_${Math.floor(rng() * 1e9).toString(36)}`
+}
+
 // ── Factories ────────────────────────────────────────────────────────────────
 
 function tokensForPlayer(player: Pick<LudoPlayer, 'userId' | 'color'>): LudoToken[] {
@@ -75,7 +80,9 @@ export function createGameState(players: Pick<LudoPlayer, 'userId' | 'seat' | 'd
     players: seated,
     currentPlayerId: null,
     turnNumber: 0,
+    turnId: null,
     dice: { value: null, rolledBy: null, rolledAt: null },
+    lastRoll: null,
     sixStreak: 0,
     tokens: seated.flatMap((p) => tokensForPlayer(p)),
     winnerId: null,
@@ -119,6 +126,9 @@ function nextPlayerAfter(state: LudoGameState, seat: number): LudoPlayer | null 
 
 function armTurn(state: LudoGameState, playerId: string | null, now: number) {
   state.currentPlayerId = playerId
+  // ROUND-4 (multiplayer PRD §28) — every armed turn carries a stable id:
+  // clients can key turn-scoped animation on it instead of guessing.
+  state.turnId = `turn_${state.turnNumber}_${now.toString(36)}`
   state.dice = { value: null, rolledBy: null, rolledAt: null }
   state.moveDeadlineAt = null
   // §14 revised — the deadline is the SERVER'S OWN auto-roll beat: the user
@@ -213,6 +223,11 @@ export function rollDice(
   const state = clone(prev)
   const value = 1 + Math.floor(rng() * 6)
   const events: LudoGameEvent[] = [{ type: 'dice_rolled', playerId, dice: value }]
+  // ROUND-4 (multiplayer PRD §13/§27) — the roll record is written for EVERY
+  // successful throw BEFORE any branch: even when the dice is consumed in
+  // the same transition (no legal move, third-six cancellation) every client
+  // still receives the value and plays the same dice animation.
+  state.lastRoll = { rollId: makeRollId(now, rng), playerId, value, rolledAt: now }
 
   // §17 — three consecutive sixes: the third six is cancelled, the turn
   // passes and the streak resets. Server-side only (§17).

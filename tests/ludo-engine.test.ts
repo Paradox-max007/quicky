@@ -293,6 +293,54 @@ section('Server validation (PRD §105/§106)')
   check('move without a dice rejected', !noDice.ok && noDice.error === 'no_dice')
 }
 
+// ── Roll record + turn id (ROUND-4 multiplayer PRD §9/§13/§27/§28) ──────────
+section('Roll record + turn id (ROUND-4 multiplayer PRD)')
+{
+  const s0 = startGame(createGameState([P('a', 0), P('b', 1)]), () => 0)
+  check('armed turn carries a turnId', !!s0.turnId && s0.turnId.startsWith('turn_'))
+  check('fresh state has no roll record', s0.lastRoll === null)
+
+  // Normal roll (a token is on the track, so a 4 HAS a legal move):
+  // dice pending + record present, same value.
+  const sT = setToken(s0, 'red-1', { state: 'track', position: 10 })
+  const r4 = rollDice(sT, sT.currentPlayerId!, 'act-r4', d(4))
+  check('roll 4 records lastRoll', r4.ok && r4.state.lastRoll?.value === 4 && r4.state.lastRoll?.playerId === sT.currentPlayerId)
+  check('roll record carries a unique rollId', r4.ok && !!r4.state.lastRoll?.rollId && r4.state.lastRoll.rollId !== r4.state.lastActionId)
+  check('pending dice mirrors the record', r4.ok && r4.state.dice.value === r4.state.lastRoll?.value)
+
+  // No legal move (everyone in the yard + a 3): the dice is consumed in the
+  // SAME transition, yet the record must survive so every client can play
+  // the roll animation (the "player 2 never sees their roll" fix).
+  const r3 = rollDice(s0, s0.currentPlayerId!, 'act-r3', d(3))
+  check('no-move roll still records lastRoll (turn passed silently NO MORE)', r3.ok && r3.state.lastRoll?.value === 3)
+  check('no-move roll advanced the turn', r3.ok && r3.state.currentPlayerId !== s0.currentPlayerId)
+  check('no-move roll cleared the pending dice', r3.ok && r3.state.dice.value === null)
+  check('no-move roll armed the next turnId', r3.ok && !!r3.state.turnId && r3.state.turnId !== s0.turnId)
+
+  // Third-six cancellation: the 6 IS visible in the record even though the
+  // throw is cancelled and the turn passes (PRD §17 + ROUND-4).
+  let st = startGame(createGameState([P('a', 0), P('b', 1)]), () => 0)
+  const rollSix = (s: LudoGameState, action: string) => {
+    const r = rollDice(s, s.currentPlayerId!, action, d(6))
+    return r.ok ? r : null
+  }
+  // six #1 → yard exit consumes it → extra turn; six #2 → same; six #3 → cancelled.
+  const s1 = rollSix(st, 'act-6-1')
+  const m1 = s1 ? moveToken(s1.state, s1.state.currentPlayerId!, 'red-1', 'act-6-1m') : null
+  const s2 = m1?.ok ? rollSix(m1.state, 'act-6-2') : null
+  const m2 = s2 ? moveToken(s2.state, s2.state.currentPlayerId!, 'red-2', 'act-6-2m') : null
+  const s3 = m2?.ok ? rollSix(m2.state, 'act-6-3') : null
+  check('third six is cancelled by the engine', !!s3 && s3.events.some((e) => e.type === 'six_cancelled'))
+  check('third six records the cancelled throw', !!s3 && s3.state.lastRoll?.value === 6)
+  check('third six passes the turn', !!s3 && s3.events.some((e) => e.type === 'turn_changed'))
+
+  // Moves PRESERVE the last record (history until the next roll).
+  const onTrack = setToken(s0, 'red-1', { state: 'track', position: 10 })
+  const withDice = { ...onTrack, dice: { value: 4, rolledBy: 'a', rolledAt: 1 }, lastRoll: { rollId: 'roll_x', playerId: 'a', value: 4, rolledAt: 1 } }
+  const after = moveToken(withDice, 'a', 'red-1', 'act-mv')
+  check('move keeps the roll record until the next roll', after.ok && after.state.lastRoll?.value === 4)
+}
+
 // ── Constants sanity ─────────────────────────────────────────────────────────
 section('Game limits (PRD §5/§6)')
 check('max players is exactly 4', LUDO_MAX_PLAYERS === 4)

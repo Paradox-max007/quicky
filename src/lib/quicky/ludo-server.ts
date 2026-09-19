@@ -22,6 +22,7 @@
 //     room game) wakes the SSE streams afterwards.
 
 import { db } from '@/lib/db'
+import { randomInt } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import {
   LUDO_MIN_PLAYERS,
@@ -46,6 +47,13 @@ import { emitRoomUpdate } from './spin-events'
 // ── Per-process timer registry (mirrors spin-bottle.ts; cancelled on leave,
 //    close and cleanup so no dead timer ever touches a deleted room) ────────
 const roomTimers = new Map<string, ReturnType<typeof setTimeout>[]>()
+
+/**
+ * ROUND-4 (multiplayer PRD §12) — the dice are generated with a
+ * CRYPTOGRAPHIC RNG on the server, never Math.random: uniform, unguessable,
+ * and unreachable from any client (the client sends only an actionId).
+ */
+const secureRng = (): number => randomInt(0, 2 ** 31) / 2 ** 31
 
 function pushTimer(roomId: string, t: ReturnType<typeof setTimeout>) {
   const list = roomTimers.get(roomId) ?? []
@@ -170,7 +178,7 @@ export async function ensureLudoRuntime(roomId: string): Promise<void> {
       emitRoomUpdate(roomId, 'LUDO_STATE', { roomId })
       return
     }
-    const next = engineStartGame(createGameState(players), Math.random)
+    const next = engineStartGame(createGameState(players), secureRng)
     const flipped = await db.spinRoom.updateMany({
       where: { id: roomId, status: 'STARTING' },
       data: {
@@ -212,7 +220,7 @@ export async function ensureLudoRuntime(roomId: string): Promise<void> {
  */
 async function autoRollFor(roomId: string, state: LudoGameState, playerId: string) {
   const actionId = `auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const res = engineRollDice(state, playerId, actionId, Math.random)
+  const res = engineRollDice(state, playerId, actionId, secureRng)
   if (!res.ok) return
   if (!(await writeGameStateCas(roomId, res.state, state.version))) return
   for (const ev of res.events) {
@@ -294,7 +302,7 @@ export async function performRoll(
       legalMoves: state.dice.value != null ? getLegalMoves(state, userId, state.dice.value) : [],
     }
   }
-  const res = engineRollDice(state, userId, actionId, Math.random)
+  const res = engineRollDice(state, userId, actionId, secureRng)
   if (!res.ok) return { ok: false, status: mapError(res.error), error: res.error }
   if (!(await writeGameStateCas(roomId, res.state, state.version))) {
     return { ok: false, status: 409, error: 'state_conflict' }

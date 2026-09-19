@@ -85,6 +85,22 @@ export type LudoGameEvent =
   | { type: 'game_finished'; winnerId: string; winnerName: string }
 
 /**
+ * ROUND-4 REVISION — the persistent ROLL RECORD (multiplayer PRD §9/§13/§27:
+ * "ROLL_STARTED { result }"). Every successful roll — INCLUDING the ones
+ * whose dice is consumed in the same breath (no legal move, third-six
+ * cancellation) — lands here. `dice.value` only carries a PENDING dice;
+ * `lastRoll` is the complete, replayable history of the last throw, so
+ * EVERY client animates EVERY roll and no turn ever flips silently.
+ * Dedupe key: `rollId` (§27 — a redelivered event never plays twice).
+ */
+export type LudoRollRecord = {
+  rollId: string
+  playerId: string
+  value: number
+  rolledAt: number
+}
+
+/**
  * Ludo PRD §45 — server state. `version` is the stateVersion every mutation
  * increments (§51): clients ignore stale versions and reconcile on gaps.
  */
@@ -94,11 +110,15 @@ export type LudoGameState = {
   players: LudoPlayer[]
   currentPlayerId: string | null
   turnNumber: number
+  /** ROUND-4 — stable id of the armed turn (multiplayer PRD §28). */
+  turnId: string | null
   dice: {
     value: number | null
     rolledBy: string | null
     rolledAt: number | null
   }
+  /** ROUND-4 — the last throw, visible to every client (see above). */
+  lastRoll: LudoRollRecord | null
   sixStreak: number
   tokens: LudoToken[]
   winnerId: string | null

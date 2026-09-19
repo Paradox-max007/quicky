@@ -61,9 +61,10 @@ export function isSafeRingCell(ringIndex: number): boolean {
 
 // ── Tuning (server-authoritative timings; Ludo PRD §42/§103) ────────────────
 /** §14 REVISED — the dice are a SERVER ACTION: there is no roll button. The
- * server auto-rolls for the active player this long after the turn arms
- * (a short beat so the turn change is readable, then the dice fly). */
-export const TURN_AUTOROLL_DELAY_MS = 1_500
+ * server auto-rolls for the active player this long after the turn arms —
+ * long enough for the turn change to read and the PREVIOUS dice animation
+ * to leave the table, then the dice fly (ROUND-4 multiplayer PRD §16). */
+export const TURN_AUTOROLL_DELAY_MS = 2_200
 /** §44 REVISED — 45s VISIBLE move window once a dice is pending. When it
  * expires the chance is cancelled/skipped and the game moves forward. */
 export const TURN_MOVE_TIMEOUT_MS = 45_000
@@ -85,8 +86,17 @@ export const LUDO_POINTS_WIN = 10
 export const LUDO_POINTS_PER_TOKEN = 2
 export const LUDO_POINTS_PER_CAPTURE = 1
 
-/** Client animation timings (Ludo PRD §103) — presentation only. */
-export const DICE_ROLL_ANIM_MS = 900
+/** Client animation timings (Ludo PRD §103; ROUND-4 multiplayer PRD §16–§21
+ * — the dice is ONE continuous sequence: enter → roll (decelerating face
+ * changes) → settle → hold the server value → exit → THEN tokens move).
+ * Presentation only — the server never waits for any of this. */
+export const DICE_ENTER_MS = 240
+export const DICE_ROLL_MS = 1_900
+export const DICE_SETTLE_MS = 340
+export const DICE_HOLD_MS = 560
+export const DICE_EXIT_MS = 340
+/** Total dice sequence — exported for QA + tests. */
+export const DICE_SEQ_TOTAL_MS = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS + DICE_HOLD_MS + DICE_EXIT_MS
 export const TOKEN_STEP_MS = 180
 export const CAPTURE_FX_MS = 900
 export const FINISH_FX_MS = 800

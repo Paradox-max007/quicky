@@ -68,6 +68,10 @@ type Runtime = {
   roomId: string | null
   es: EventSource | null
   poll: ReturnType<typeof setInterval> | null
+  /** ROUND-4 keepalive beat — heals a stalled server watchdog even when the
+   * SSE stream is perfectly healthy (the old design only polled when it
+   * was NOT, so a dead in-process timer chain froze the game forever). */
+  tick: ReturnType<typeof setInterval> | null
   ping: ReturnType<typeof setInterval> | null
   skew: number
   channel: RoomChannel | null
@@ -84,6 +88,7 @@ const ctl: Runtime = (g.__quickyLudoRoomRuntime ??= {
   roomId: null,
   es: null,
   poll: null,
+  tick: null,
   ping: null,
   skew: 0,
   channel: null,
@@ -98,6 +103,8 @@ function stopStreams() {
   ctl.es = null
   if (ctl.poll) clearInterval(ctl.poll)
   ctl.poll = null
+  if (ctl.tick) clearInterval(ctl.tick)
+  ctl.tick = null
   if (ctl.ping) clearInterval(ctl.ping)
   ctl.ping = null
   void ctl.channel?.unsubscribe().catch(() => {})
@@ -235,6 +242,18 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
           if (e?.body?.closed || e?.status === 404) void handleRoomGone()
         }
       }, 3000)
+
+      // ROUND-4 KEEPALIVE TICK (multiplayer PRD §30/§47) — runs while the
+      // room is attached, stream up or down. The server's lazy recovery
+      // (ensureLudoRuntime) throws a stalled roll, skips a stalled move and
+      // flips a stuck STARTING room — so the auto-turn chain can NEVER die
+      // quietly (dev hot reload, process restart, lost timer). The response
+      // carries no state; the SSE snapshot (or the recovery poll) delivers
+      // whatever the heal changed.
+      ctl.tick = setInterval(() => {
+        if (ctl.closureHandled || !ctl.roomId) return
+        void api.ludo.tick(roomId).catch(() => {})
+      }, 7_000)
 
       // PRESENCE keep-alive (lifecycle §12/§13)
       const beat = () => void api.ludo.ping(roomId).catch(() => {})

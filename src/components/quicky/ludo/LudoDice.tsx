@@ -1,16 +1,31 @@
 'use client'
 
-// Quicky — LUDO DICE (Ludo PRD §14/§15/§55/§103 — REVISED: real-world 3D dice)
+// Quicky — LUDO DICE (Ludo PRD §14/§15/§55/§103 — ROUND-4 multiplayer PRD
+// §18-§21/§53: phase-driven 3D cube)
 //
-// A true CSS 3D CUBE with six pip faces that TUMBLES like a real die and
-// settles on the server's value (§14/§106 — the client only renders; the
-// value always comes from the server). While rolling, the cube spins on two
-// axes with a bouncing hop; when the value lands, the cube tumbles to the
-// matching face with a physical overshoot ease and an extra full turn per
-// roll, so every roll animates even when the same number repeats.
-// When ANOTHER player rolls, everyone sees the same animation (§55).
+// A true CSS 3D CUBE with six pip faces whose MOTION is owned by the dice
+// sequencer's phase machine — one continuous animation, never a boolean pile:
+//
+//   entering  cube rests, the die fades/scales in (wrapper)
+//   rolling   framer tweens rotateX/rotateY through ~2 full turns with an
+//             easeOut curve — FAST → MEDIUM → SLOW, physically decelerating
+//             (§19/§20) — while the readable face cycles (§13: decoration
+//             only, never the result)
+//   settling  the cube springs the last half-turn onto the SERVER value's
+//             face with a small overshoot bounce (§21)
+//   revealed  the server value sits facing the viewer (§14/§15: the final
+//             face is ALWAYS the authoritative number)
+//   exiting   the wrapper fades the die away (no display:none jumps)
+//
+// The pip layout is CANONICAL whenever the cube is at/near rest (settling/
+// revealed/exiting) so FACE_ORIENTATION lands the exact value; while the
+// cube is spinning the faces are re-arranged per readable face — a physical
+// tumbling die whose numbers visibly change, not a flat sprite swap.
 
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo } from 'react'
+import { motion } from 'framer-motion'
+import { DICE_ROLL_MS } from '@/lib/quicky/ludo/constants'
+import type { DicePhase } from './useDiceSequencer'
 
 // Pip layouts on a 3×3 grid (indices 0..8, center = 4).
 const PIP_LAYOUT: Record<number, number[]> = {
@@ -22,12 +37,11 @@ const PIP_LAYOUT: Record<number, number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 }
 
-// Which face carries which value (front/back, right/left, top/bottom —
-// classic die: opposite faces always sum to 7).
+// Canonical face values (opposite faces always sum to 7). FACE_ORIENTATION
+// below is authored against THIS arrangement.
 const FACE_VALUES = { front: 1, back: 6, right: 3, left: 4, top: 2, bottom: 5 } as const
 
-// Cube orientation that brings each face toward the viewer. Extra 360°
-// multiples are added per roll so the settle ALWAYS animates a fresh tumble.
+// Cube orientation that brings each face toward the viewer (canonical layout).
 const FACE_ORIENTATION: Record<number, { x: number; y: number }> = {
   1: { x: 0, y: 0 }, // front
   6: { x: 0, y: 180 }, // back
@@ -37,7 +51,27 @@ const FACE_ORIENTATION: Record<number, { x: number; y: number }> = {
   5: { x: 90, y: 0 }, // bottom
 }
 
-function DiceFace({ side, value }: { side: keyof typeof FACE_VALUES; value: number }) {
+/**
+ * Face arrangement while the cube TUMBLES: the front carries the readable
+ * face, every other side keeps the classic "opposites sum to 7" feel. At
+ * rest the cube switches back to the canonical layout so the settle
+ * orientation shows the exact server value.
+ */
+function sideValues(readable: number, canonical: boolean) {
+  if (canonical) return FACE_VALUES
+  const right = ((readable + 1) % 6) + 1
+  const top = ((readable + 3) % 6) + 1
+  return {
+    front: readable,
+    back: (7 - readable) as 1 | 2 | 3 | 4 | 5 | 6,
+    right: right as 1 | 2 | 3 | 4 | 5 | 6,
+    left: (7 - right) as 1 | 2 | 3 | 4 | 5 | 6,
+    top: top as 1 | 2 | 3 | 4 | 5 | 6,
+    bottom: (7 - top) as 1 | 2 | 3 | 4 | 5 | 6,
+  }
+}
+
+function DiceFace({ side, value }: { side: string; value: number }) {
   const pips = PIP_LAYOUT[value] ?? PIP_LAYOUT[1]
   const sideTransform: Record<string, string> = {
     front: 'translateZ(var(--ldo-dice-half))',
@@ -56,57 +90,61 @@ function DiceFace({ side, value }: { side: keyof typeof FACE_VALUES; value: numb
   )
 }
 
+// Roll rotation: ~2 full turns on X and ~1⅓ on Y under easeOut — the cube
+// visibly slows INTO the settle instead of fast/fast/fast/STOP (§20).
+const ROLL_X = 720
+const ROLL_Y = 480
+
 export const LudoDice = memo(function LudoDice({
+  phase,
+  displayFace,
   value,
-  rolling,
   color,
 }: {
+  phase: DicePhase
+  /** Face readable while the cube tumbles (decoration only, §15). */
+  displayFace: number
+  /** The SERVER value — the only face the cube ever settles on (§14). */
   value: number | null
-  rolling: boolean
   /** Current player color — accents the resting dice ring. */
   color: string
 }) {
-  // Every new roll adds a full extra turn so the settle animation always
-  // plays, even when the value repeats. (State, not a ref — the settle
-  // transform is read during render.)
-  const [rollCount, setRollCount] = useState(0)
-  const prevRollingRef = useRef(false)
-
-  useEffect(() => {
-    const wasRolling = prevRollingRef.current
-    prevRollingRef.current = rolling
-    if (!rolling || wasRolling) return
-    // Deferred (react-hooks v6: no synchronous setState in effect bodies).
-    const t = setTimeout(() => setRollCount((n) => n + 1), 0)
-    return () => clearTimeout(t)
-  }, [rolling])
-
-  const shown = value ?? 1
+  const atRest = phase === 'settling' || phase === 'revealed' || phase === 'exiting'
+  const shown = value ?? displayFace
   const o = FACE_ORIENTATION[shown] ?? FACE_ORIENTATION[1]
-  const turns = rollCount * 360
-  const settle = `rotateX(${o.x + turns}deg) rotateY(${o.y + turns}deg)`
+  const sides = sideValues(displayFace, atRest)
+
+  const rotate =
+    phase === 'entering'
+      ? { rotateX: 0, rotateY: 0 }
+      : phase === 'rolling'
+        ? { rotateX: ROLL_X, rotateY: ROLL_Y }
+        : { rotateX: ROLL_X + o.x, rotateY: ROLL_Y + o.y }
+  const transition =
+    phase === 'rolling'
+      ? { duration: DICE_ROLL_MS / 1000, ease: 'easeOut' as const }
+      : phase === 'entering'
+        ? { duration: 0.22, ease: 'easeOut' as const }
+        : // settle: short spring with a tiny physical overshoot (§21)
+          { type: 'spring' as const, stiffness: 300, damping: 15, mass: 0.7 }
 
   return (
     <div
-      className={`ldo-dice-scene${rolling ? ' ldo-rolling' : ''}`}
-      style={value && !rolling ? ({ '--ldo-dice-ring': color } as React.CSSProperties) : undefined}
+      className={`ldo-dice-scene${phase === 'rolling' ? ' ldo-rolling' : ''}${atRest ? ' ldo-settled' : ''}`}
+      style={atRest ? ({ '--ldo-dice-ring': color } as React.CSSProperties) : undefined}
       role="img"
-      aria-label={value ? `Dice showing ${value}` : 'Dice ready'}
+      aria-label={atRest ? `Dice showing ${shown}` : 'Dice rolling'}
       data-testid="ludo-dice"
     >
       <span className="ldo-dice-shadow" aria-hidden />
-      <span
-        className="ldo-dice-cube"
-        style={rolling ? undefined : ({ transform: settle } as React.CSSProperties)}
-        aria-hidden
-      >
-        <DiceFace side="front" value={FACE_VALUES.front} />
-        <DiceFace side="back" value={FACE_VALUES.back} />
-        <DiceFace side="right" value={FACE_VALUES.right} />
-        <DiceFace side="left" value={FACE_VALUES.left} />
-        <DiceFace side="top" value={FACE_VALUES.top} />
-        <DiceFace side="bottom" value={FACE_VALUES.bottom} />
-      </span>
+      <motion.span className="ldo-dice-cube" initial={false} animate={rotate} transition={transition} aria-hidden>
+        <DiceFace side="front" value={sides.front} />
+        <DiceFace side="back" value={sides.back} />
+        <DiceFace side="right" value={sides.right} />
+        <DiceFace side="left" value={sides.left} />
+        <DiceFace side="top" value={sides.top} />
+        <DiceFace side="bottom" value={sides.bottom} />
+      </motion.span>
     </div>
   )
 })

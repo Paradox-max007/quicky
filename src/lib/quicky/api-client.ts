@@ -230,6 +230,13 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ roomId }),
       }),
+    /** ROUND-4 — tiny keepalive: heals a stalled auto-roll/watchdog chain
+     * (multiplayer PRD §30/§47). Never returns state — the SSE stream does. */
+    tick: (roomId: string) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/games/ludo/tick', {
+        method: 'POST',
+        body: JSON.stringify({ roomId }),
+      }),
     leave: (roomId: string) =>
       jsonFetch<{ ok: boolean; roomDeleted?: boolean }>('/api/quicky/games/ludo/leave', {
         method: 'POST',
