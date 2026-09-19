@@ -51,6 +51,7 @@ import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from './RoomChatPanel'
+import { useRoomContactsNav } from './useRoomContactsNav'
 import { GameChatScreen } from './game-chat/GameChatScreen'
 import { ChatView } from './ChatView'
 import { useDatingUnread } from './game-hub/useDatingUnread'
@@ -264,6 +265,12 @@ export function SpinBottleRoom({
       useQuickyStore.getState().setRoomChatPanel('room')
     }
   }, [])
+
+  // ── Unified PRD §23/§24 — the ONE shared contacts navigation used by both
+  // the "Game Chats" header button and the 💬 composer message button:
+  // desktop web → embedded contacts panel; mobile / Capacitor → dedicated
+  // full-screen contacts page. The room runtime never detaches (§21/§92).
+  const openRoomContacts = useRoomContactsNav('spin-bottle-room')
 
   // ─── Spin-transition presentation (new spin / room swap) ─────────────────
   // The store resets its optimistic answer when a new spin id appears; this
@@ -977,7 +984,13 @@ export function SpinBottleRoom({
               Chat stays MOUNTED inside the shell (display:none) so its
               scroll survives the personal → contacts → room round-trip
               (§15/§16/§17); messages keep arriving via the shared runtime
-              either way (§13/§65). */}
+              either way (§13/§65).
+
+              Unified PRD §23/§24 — ONE shared contacts navigation (the
+              "Game Chats" header button AND the composer message button):
+              desktop web → embedded contacts panel (bottle stays spinning);
+              mobile / Capacitor → dedicated full-screen contacts page. The
+              old desktop-shell openChats('game') full-page branch is GONE. */}
           <RoomChatPanel
             messages={chat}
             players={chatPlayers}
@@ -986,13 +999,7 @@ export function SpinBottleRoom({
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={toolbox.openGiftSheet}
-            onOpenGameChats={
-              isNativeCapacitor
-                ? () => useQuickyStore.getState().openGameChatContacts('spin-bottle-room')
-                : isDeskShell
-                  ? () => useQuickyStore.getState().openChats('game')
-                  : () => setRoomChatPanel('contacts')
-            }
+            onOpenGameChats={openRoomContacts}
             gameChatsUnread={gameChatsUnread}
             panel={roomChatPanel}
             panelContent={

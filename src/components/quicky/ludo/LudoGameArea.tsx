@@ -55,7 +55,7 @@ import { LudoPlayerHud } from './LudoPlayerHud'
 import { LudoRoundBar, type TurnPhase } from './LudoRoundBar'
 import { LudoCountdown } from './LudoCountdown'
 import { LudoGameResult } from './LudoGameResult'
-import { LudoDice } from './LudoDice'
+import { LudoThreeDice } from './LudoThreeDice'
 import { useDiceSequencer } from './useDiceSequencer'
 
 type DisplayEntry = { row: number; col: number; position: number; state: LudoToken['state'] }
@@ -109,9 +109,10 @@ export function LudoGameArea({
   // lifecycle (hidden→entering→rolling→settling→revealed→exiting), deduped
   // by the authoritative lastRoll.rollId — replacing the old booleans
   // (diceRolling/diceVisible) whose independent timers produced the
-  // appear/vanish flicker. `freeAtRef` is the moment the die has left the
-  // table; the token animation waits for it (§18: no coin moves under a
-  // rolling die).
+  // appear/vanish flicker. `freeAtRef` is the LANDING beat (DICE_REVEAL_MS)
+  // — the moment the die rests on the server value; coin movement is
+  // allowed from exactly there (§18/§41: never under a rolling die, never
+  // dead-waiting behind a resting one either).
   const dice = useDiceSequencer(game?.lastRoll ?? null, game?.dice?.value != null)
   const prevVersionRef = useRef<number>(0)
 
@@ -161,11 +162,12 @@ export function LudoGameArea({
   }, [])
 
   // ── Token animation (server transition → client animation, §53) ──────────
-  // ROUND-4 — EVERY timer below is offset by the dice-exit gate: while the
-  // die is still on the table (rolling/settling/holding/leaving) the board
-  // holds its breath; coins hop square-by-square only AFTER the sequencer
-  // reports the die gone (freeAtRef). Game state itself is never delayed —
-  // this is pure presentation sequencing (§25/§41).
+  // ROUND-4 + §41 SYNC — the timers below are offset by the LANDING gate:
+  // while the die is still entering/tumbling/landing the board holds its
+  // breath; from the landing beat (number + timer + coin gate all flipped)
+  // coins hop square-by-square the moment the move resolves. Game state
+  // itself is never delayed — this is pure presentation sequencing
+  // (§25/§41); the die's own hold/exit timeline runs in parallel.
   useEffect(() => {
     if (!game) return
     if (prevVersionRef.current === 0 || Object.keys(display).length === 0) {
@@ -285,6 +287,12 @@ export function LudoGameArea({
   // on the server value (or after the die has left the table). The player
   // can SEE what they are moving with — no blind picks under a rolling die.
   const diceSettled = dice.revealed || dice.phase === 'hidden'
+  // §41 SYNC — true while the CURRENT roll's die is still moving (enter →
+  // tumble → landing): the round bar hides the rolled number + the countdown
+  // until the die LANDS, so die face, "{name}: rolled {n}", the coin gate and
+  // the 45s timer flip on ONE beat (DICE_REVEAL_MS) on every device.
+  const diceAnimating =
+    dice.phase === 'entering' || dice.phase === 'rolling' || dice.phase === 'settling'
 
   // ROUND-4 — the persistent round-bar hint ("Alex: rolled 6"): derived
   // from the sequencer's settled roll, it survives the die's exit and stays
@@ -401,31 +409,34 @@ export function LudoGameArea({
           </div>
         </div>
 
-        {/* §14/§31 REVISED + ROUND-4 — the die FLOATS over the board through
-            ONE continuous sequence (enter → roll → settle on the server's
-            number → hold → exit), driven by the phase machine — never
-            display:none jumps (pointer-events none — it can never block a
-            coin tap). The rolled number lives on in the round-bar hint.
-            The OUTER div is static CSS positioning; the INNER motion.div
-            owns the enter/exit tween so the two transforms never fight. */}
-        {dice.phase !== 'hidden' && game && (
+        {/* §14/§31 REVISED + ROUND-4 + Unified PRD §34–§47 — the die FLOATS
+            over the board through ONE continuous sequence (enter → roll →
+            settle on the server's number → hold → exit), rendered by the
+            REAL THREE.JS WebGL dice (LudoThreeDice). The renderer is created
+            ONCE per room session and stays mounted — only the wrapper fades
+            per roll (§45: no renderer recreation per roll). The sequencer's
+            phase machine drives the choreography so the WebGL die, the
+            "rolled {n}" hint and the move timer are beat-synced (§41).
+            pointer-events: none — it can never block a coin tap. The OUTER
+            div is static CSS positioning; the INNER motion.div owns the
+            enter/exit tween so the two transforms never fight. */}
+        {game && (
           <div className="ldo-dice-float" data-testid="ludo-dice-float">
             <motion.div
-              initial={{ opacity: 0, scale: 0.78, y: -22 }}
+              initial={false}
               animate={
-                dice.phase === 'exiting'
-                  ? { opacity: 0, scale: 0.85, y: 16 }
+                dice.phase === 'exiting' || dice.phase === 'hidden'
+                  ? { opacity: 0, scale: 0.82, y: 14 }
                   : { opacity: 1, scale: 1, y: 0 }
               }
               transition={
-                dice.phase === 'exiting'
+                dice.phase === 'exiting' || dice.phase === 'hidden'
                   ? { duration: DICE_EXIT_MS / 1000, ease: 'easeOut' }
                   : { type: 'spring', stiffness: 320, damping: 24 }
               }
             >
-              <LudoDice
+              <LudoThreeDice
                 phase={dice.phase}
-                displayFace={dice.displayFace}
                 value={dice.finalValue}
                 color={turnColorVar ?? 'var(--qk-accent)'}
               />
@@ -495,7 +506,8 @@ export function LudoGameArea({
 
       {/* The slim bottom hint: "{name}: rolled 6" + the visible 45s timer.
           On MOBILE this strip is ALSO the room-state surface (waiting text
-          lives here instead of over the board). */}
+          lives here instead of over the board). diceAnimating keeps the
+          number + countdown hidden until the die lands (§41 sync). */}
       <LudoRoundBar
         phase={phase}
         lastRoll={lastRoll}
@@ -503,6 +515,7 @@ export function LudoGameArea({
         serverSkewMs={snapshot.serverNow ? snapshot.serverNow - Date.now() : 0}
         currentPlayerName={currentPlayer?.displayName ?? '…'}
         statusText={statusLine(phase, currentPlayer?.displayName, game, meId)}
+        diceAnimating={diceAnimating}
         playersJoined={snapshot.players.length}
         maxPlayers={snapshot.maxPlayers}
       />

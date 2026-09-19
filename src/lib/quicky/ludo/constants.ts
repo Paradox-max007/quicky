@@ -63,8 +63,10 @@ export function isSafeRingCell(ringIndex: number): boolean {
 /** §14 REVISED — the dice are a SERVER ACTION: there is no roll button. The
  * server auto-rolls for the active player this long after the turn arms —
  * long enough for the turn change to read and the PREVIOUS dice animation
- * to leave the table, then the dice fly (ROUND-4 multiplayer PRD §16). */
-export const TURN_AUTOROLL_DELAY_MS = 2_200
+ * to leave the table (with the 5s sequence the earliest possible move lands
+ * ~1.65s before the die finishes exiting; 2.6s keeps every roll starting on
+ * a clean table), then the dice fly (ROUND-4 multiplayer PRD §16). */
+export const TURN_AUTOROLL_DELAY_MS = 2_600
 /** §44 REVISED — 45s VISIBLE move window once a dice is pending. When it
  * expires the chance is cancelled/skipped and the game moves forward. */
 export const TURN_MOVE_TIMEOUT_MS = 45_000
@@ -86,17 +88,36 @@ export const LUDO_POINTS_WIN = 10
 export const LUDO_POINTS_PER_TOKEN = 2
 export const LUDO_POINTS_PER_CAPTURE = 1
 
-/** Client animation timings (Ludo PRD §103; ROUND-4 multiplayer PRD §16–§21
- * — the dice is ONE continuous sequence: enter → roll (decelerating face
- * changes) → settle → hold the server value → exit → THEN tokens move).
- * Presentation only — the server never waits for any of this. */
-export const DICE_ENTER_MS = 240
-export const DICE_ROLL_MS = 1_600
-export const DICE_SETTLE_MS = 340
-export const DICE_HOLD_MS = 560
-export const DICE_EXIT_MS = 340
+/** Client animation timings (Ludo PRD §103; Unified PRD §38/§39 + the
+ * animation-sync revision) — the dice is ONE continuous sequence:
+ * enter → roll (decelerating tumble) → settle on the server value → hold →
+ * exit → THEN tokens move. Presentation only — the server never waits for
+ * any of this.
+ *
+ * ANIMATION-SYNC REVISION (5-second choreography): the sequence was extended
+ * from ~3.08s to a full ~5.0s so that on mobile / Capacitor the dice tumble,
+ * the landed face, the "{name}: rolled {n}" hint and the 45s move timer all
+ * have room to land on EXACTLY the same beat (see DICE_REVEAL_MS below — the
+ * single sync anchor the round bar, the token-selectability gate and the
+ * server move deadline are all keyed to). */
+export const DICE_ENTER_MS = 300
+export const DICE_ROLL_MS = 2_600
+export const DICE_SETTLE_MS = 450
+export const DICE_HOLD_MS = 1_300
+export const DICE_EXIT_MS = 350
 /** Total dice sequence — exported for QA + tests. */
 export const DICE_SEQ_TOTAL_MS = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS + DICE_HOLD_MS + DICE_EXIT_MS
+/**
+ * THE SYNC ANCHOR (Unified PRD §41 sync revision): the beat inside the dice
+ * sequence at which the die lands on the SERVER value. Exactly on this beat
+ * three things flip TOGETHER everywhere:
+ *   1. the "You rolled: {n}" round-bar hint appears (sequencer setHint),
+ *   2. the coins become selectable (sequencer `revealed`),
+ *   3. the visible 45s move timer starts (server sets moveDeadlineAt to
+ *      roll + DICE_REVEAL_MS + TURN_MOVE_TIMEOUT_MS so the FULL window is
+ *      pick time, and the round bar only shows the countdown from here).
+ */
+export const DICE_REVEAL_MS = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS
 export const TOKEN_STEP_MS = 180
 export const CAPTURE_FX_MS = 900
 export const FINISH_FX_MS = 800

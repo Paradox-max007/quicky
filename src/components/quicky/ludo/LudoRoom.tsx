@@ -36,6 +36,7 @@ import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { RoomTopHud, RoomHudChips, RoomExitControl } from '../RoomTopHud'
 import { RoomEventBanner, tonightEvent } from '../RoomEventBanner'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from '../RoomChatPanel'
+import { useRoomContactsNav } from '../useRoomContactsNav'
 import { GameChatScreen } from '../game-chat/GameChatScreen'
 import { GameContactsPanel } from '../game-chat/GameContactsPanel'
 import { ChatView } from '../ChatView'
@@ -157,6 +158,13 @@ export function LudoRoom({
   useEffect(() => {
     useLudoRoomStore.getState().attach(initialRoomId)
   }, [initialRoomId])
+
+  // ── Unified PRD §23/§24 — ONE shared contacts navigation for BOTH the
+  // "Game Chats" header button and the 💬 composer button:
+  //   desktop web      → embedded contacts panel (table stays playable)
+  //   mobile / Capacitor → dedicated full-screen contacts page (§20/§22).
+  // The old desktop-shell openChats('game') full-page branch is REMOVED.
+  const openRoomContacts = useRoomContactsNav('ludo-room')
 
   useEffect(() => {
     return () => {
@@ -345,13 +353,7 @@ export function LudoRoom({
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={toolbox.openGiftSheet}
-            onOpenGameChats={
-              isNativeCapacitor
-                ? () => useQuickyStore.getState().openGameChatContacts('ludo-room')
-                : isDeskShell
-                  ? () => useQuickyStore.getState().openChats('game')
-                  : () => setRoomChatPanel('contacts')
-            }
+            onOpenGameChats={openRoomContacts}
             gameChatsUnread={gameChatsUnread}
             panel={roomChatPanel}
             panelContent={

@@ -117,13 +117,38 @@ export const YARD_SLOTS: readonly { row: number; col: number }[] = [
   { row: 3.5, col: 3.5 },
 ]
 
-/** Center triangle slot layout for finished tokens (tiny, near middle). */
-export const FINISHED_SLOTS: readonly { row: number; col: number }[] = [
-  { row: 6.75, col: 7.25 },
-  { row: 7.25, col: 7.75 },
-  { row: 7.75, col: 7.25 },
-  { row: 6.75, col: 7.75 },
-]
+/** Center-block finished slot layout — COLOR-SPECIFIC (Unified PRD fix).
+ *
+ * The old shared FINISHED_SLOTS put EVERY color's finished tokens on the
+ * same four center spots: a finished RED token and a finished BLUE token
+ * stacked directly on top of each other and became unreadable. Now each
+ * color's four tokens gather in a tight 2×2 mini-cluster inside the
+ * quadrant of the center block its HOME PATH enters from (red west ·
+ * green north · yellow east · blue south), so finished piles of different
+ * colors sit in their own corner of the triangle and never collide.
+ *
+ * Slot coordinates are token-center units (same convention as YARD_SLOTS);
+ * the renderer scales {row,col} to any board size. */
+function finishedCluster(cx: number, cy: number): { row: number; col: number }[] {
+  const d = 0.22 // half the 0.44-cell cluster pitch
+  return [
+    { row: cy - d, col: cx - d },
+    { row: cy - d, col: cx + d },
+    { row: cy + d, col: cx - d },
+    { row: cy + d, col: cx + d },
+  ]
+}
+
+export const FINISHED_SLOTS: Record<LudoColor, readonly { row: number; col: number }[]> = {
+  // RED home path walks row 7 west → east → the red pile sits left-of-center.
+  red: finishedCluster(6.92, 7.5),
+  // GREEN home path walks col 7 north → south → the green pile sits above center.
+  green: finishedCluster(7.5, 6.92),
+  // YELLOW home path walks row 7 east → west → the yellow pile sits right-of-center.
+  yellow: finishedCluster(8.08, 7.5),
+  // BLUE home path walks col 7 south → north → the blue pile sits below center.
+  blue: finishedCluster(7.5, 8.08),
+}
 
 export function tokenPlacement(color: LudoColor, tokenIndex: number, position: number): TokenPlacement {
   if (position < 0) {
@@ -132,7 +157,8 @@ export function tokenPlacement(color: LudoColor, tokenIndex: number, position: n
     return { kind: 'yard', row: origin.row + slot.row, col: origin.col + slot.col }
   }
   if (position >= FINISH_STEP) {
-    const slot = FINISHED_SLOTS[tokenIndex % FINISHED_SLOTS.length]
+    const slots = FINISHED_SLOTS[color]
+    const slot = slots[tokenIndex % slots.length]
     return { kind: 'finished', row: slot.row, col: slot.col }
   }
   const track = trackCellForStep(color, position)

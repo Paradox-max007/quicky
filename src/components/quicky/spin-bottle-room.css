@@ -1359,6 +1359,35 @@
   transition: transform 0.12s ease;
 }
 .sbr-comp-btn:active { transform: scale(0.88); }
+
+/* ── Unified PRD §25/§100 — the composer MESSAGE/CONTACTS button (💬) with
+   unread badge. Sits between the gift button and the send button; opens the
+   contacts surface (full-screen page on mobile/Capacitor, embedded panel on
+   desktop web). */
+.sbr-comp-btn.sbr-comp-msgs {
+  position: relative;
+  color: #ffd7de;
+  background: rgba(244, 63, 94, 0.14);
+  border: 1px solid rgba(244, 63, 94, 0.42);
+}
+.sbr-comp-msgs-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f43f5e;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45), 0 0 0 1.5px rgba(19, 18, 28, 0.95);
+}
+
 .sbr-send {
   flex-shrink: 0;
   width: 36px;

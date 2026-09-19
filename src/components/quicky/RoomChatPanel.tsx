@@ -26,7 +26,7 @@
 // everything (§41).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Send, Reply, X, MoreHorizontal, Flag } from 'lucide-react'
+import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
@@ -799,6 +799,30 @@ export function RoomChatPanel({
         <button className="sbr-comp-btn" onClick={onOpenGifts} aria-label="Send a gift" title="Send a gift">
           🎁
         </button>
+
+        {/* Unified PRD §25/§100 — the composer carries emoji · gift · MESSAGE ·
+            send. The message/contact button opens the SAME contacts surface as
+            the "Game Chats" header button: on mobile web / Capacitor it opens
+            the dedicated full-screen contacts page; on desktop web it flips
+            this panel to the embedded contacts state. The table never
+            unmounts and the runtime never detaches. */}
+        {onOpenGameChats && (
+          <button
+            className="sbr-comp-btn sbr-comp-msgs"
+            onClick={onOpenGameChats}
+            aria-label="Messages and contacts"
+            title="Messages"
+            data-testid="composer-messages-btn"
+          >
+            <MessageCircle size={15} strokeWidth={2.6} />
+            {gameChatsUnread > 0 && (
+              <span className="sbr-comp-msgs-badge" data-testid="composer-messages-badge">
+                {gameChatsUnread > 9 ? '9+' : gameChatsUnread}
+              </span>
+            )}
+          </button>
+        )}
+
         <button className="sbr-send" onClick={send} disabled={!text.trim() || sending} aria-label="Send">
           <Send size={16} strokeWidth={2.5} />
         </button>

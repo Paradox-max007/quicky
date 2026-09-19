@@ -521,6 +521,22 @@
   filter: drop-shadow(0 14px 14px rgba(20, 8, 0, 0.45));
 }
 
+/* ── Unified PRD §34–§47 — the WebGL die (LudoThreeDice) ─────────────
+   ONE canvas that lives for the whole room session; the wrapper only
+   fades in/out per roll (framer owns that tween on the parent). Square
+   aspect is REQUIRED — the Three.js camera/render buffer is square. */
+.ldo-dice-gl {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 18px;
+}
+/* Resting accent — a soft glow in the CURRENT player's color once the die
+   has settled on the server value (parity with the old CSS-cube ring). */
+.ldo-dice-gl.ldo-dice-gl-settled {
+  filter: drop-shadow(0 0 16px var(--ldo-dice-ring, transparent));
+}
+
 /* ── §44 REVISED — "CHANCE MISSED": small center popup, NO backdrop ── */
 .ldo-missed {
   position: absolute;
@@ -568,6 +584,17 @@
   text-overflow: ellipsis;
 }
 .ldo-roundbar-dice { font-style: normal; font-size: 14px; }
+/* ── Animation-sync revision: the landed roll value rendered BIG and
+   color-accented — it appears on the exact beat the die settles on the
+   server number and the move timer starts. */
+.ldo-roundbar-roll {
+  font-size: 15px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #fde68a;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.35);
+  margin-left: 1px;
+}
 .ldo-roundbar-timer {
   font-size: 12px;
   font-weight: 900;
@@ -722,6 +749,7 @@
   .ldo-hud { padding: 8px 12px 4px; gap: 10px; }
   .ldo-hud-name { max-width: 120px; font-size: 13px; }
   .ldo-dice-scene { --ldo-dice-half: 30px; width: 60px; height: 60px; }
+  .ldo-dice-gl { width: 124px; height: 124px; }
   .ldo-roundbar { padding: 10px 14px 12px; }
 }
 

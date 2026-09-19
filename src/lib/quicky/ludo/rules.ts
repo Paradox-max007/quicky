@@ -25,6 +25,7 @@ import {
   TOKENS_PER_PLAYER,
   TURN_AUTOROLL_DELAY_MS,
   TURN_MOVE_TIMEOUT_MS,
+  DICE_REVEAL_MS,
   colorForSeat,
   isSafeRingCell,
 } from './constants'
@@ -271,7 +272,14 @@ export function rollDice(
   }
 
   state.dice = { value, rolledBy: playerId, rolledAt: now }
-  state.moveDeadlineAt = now + TURN_MOVE_TIMEOUT_MS
+  // ANIMATION-SYNC (Unified PRD §41 revision) — the 45s move window starts
+  // at the DICE REVEAL beat (enter + roll + settle), not at the raw roll
+  // timestamp: the player cannot pick a coin before the die lands on the
+  // server value, so the FULL window is pick time and the visible timer,
+  // the "rolled {n}" hint and the coin selectability all flip on the same
+  // moment on every device. The deadline stays server-authoritative — the
+  // shared DICE_REVEAL_MS constant is the single source of truth.
+  state.moveDeadlineAt = now + DICE_REVEAL_MS + TURN_MOVE_TIMEOUT_MS
   nowPatch(state, actionId)
   state.lastEvent = events[events.length - 1]
   return { ok: true, state, events }

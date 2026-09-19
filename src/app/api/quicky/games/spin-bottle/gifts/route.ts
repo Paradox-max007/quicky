@@ -174,62 +174,82 @@ export async function POST(req: NextRequest) {
   // deduct coins, credit recipients, write ledger + gift transactions + the
   // aggregated chat message. Any failure rolls EVERYTHING back (§26: no
   // partial bulk gifts; §111: no negative balance).
-  const newBalance = await db.$transaction(async (tx) => {
-    const debited = await tx.user.updateMany({
-      where: { id: me.id, coinBalance: { gte: totalCost } },
-      data: { coinBalance: { decrement: totalCost } },
-    })
-    if (debited.count === 0) {
-      throw new Error('insufficient_coins')
-    }
-    for (const r of recipients) {
-      await tx.user.update({
-        where: { id: r.userId },
-        data: { coinBalance: { increment: recipientReward }, giftsReceivedCount: { increment: quantity } },
-      })
-      if (recipientReward > 0) {
-        await tx.coinLedger.create({
-          data: { userId: r.userId, delta: recipientReward, reason: 'gift_received', meta: metadata },
+  //
+  // P2028 FIX (Unified PRD): the recipient writes are BATCHED (updateMany +
+  // createMany) instead of a per-recipient query loop — a 1000-recipient
+  // bulk send used to issue ~5000 sequential round-trips inside the
+  // interactive transaction and blew Prisma's timeout (P2028). Now the
+  // whole transaction is O(1) queries regardless of recipient count (all
+  // recipients earn the same reward, so grouped writes are exact).
+  const newBalance = await db
+    .$transaction(
+      async (tx) => {
+        const debited = await tx.user.updateMany({
+          where: { id: me.id, coinBalance: { gte: totalCost } },
+          data: { coinBalance: { decrement: totalCost } },
         })
-      }
-      // Gift transaction row per recipient — `coinsSpent` snapshots the
-      // transaction-time price (v3 §52).
-      await tx.spinRoomGift.create({
-        data: {
-          roomId,
-          senderId: me.id,
-          recipientId: r.userId,
-          itemId: giftDef.id,
-          quantity,
-          coinsSpent: perRecipientCost,
-        },
-      })
-    }
-    // Lifetime counters live on the USER rows (lifecycle §20/§21).
-    await tx.user.update({
-      where: { id: me.id },
-      data: { giftsSentCount: { increment: quantity * recipientCount } },
-    })
-    await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
-    // §28 — aggregated chat entry (never 1000 separate messages/animations).
-    await tx.spinRoomMessage.create({
-      data: {
-        roomId,
-        userId: me.id,
-        text:
-          recipientCount === 1
-            ? `${giftDef.emoji} For ${firstName} x${quantity}`
-            : `${giftDef.emoji} ${quantity}× ${giftDef.name} for ${recipientCount} players`,
-        kind: 'gift',
-        metadata,
+        if (debited.count === 0) {
+          throw new Error('insufficient_coins')
+        }
+        const recipientIds = recipients.map((r) => r.userId)
+        // Same reward for every recipient → ONE grouped update.
+        await tx.user.updateMany({
+          where: { id: { in: recipientIds } },
+          data: { coinBalance: { increment: recipientReward }, giftsReceivedCount: { increment: quantity } },
+        })
+        if (recipientReward > 0) {
+          // Per-recipient ledger rows in ONE batched insert.
+          await tx.coinLedger.createMany({
+            data: recipientIds.map((userId) => ({
+              userId,
+              delta: recipientReward,
+              reason: 'gift_received',
+              meta: metadata,
+            })),
+          })
+        }
+        // Gift transaction row per recipient — `coinsSpent` snapshots the
+        // transaction-time price (v3 §52) — ONE batched insert.
+        await tx.spinRoomGift.createMany({
+          data: recipientIds.map((userId) => ({
+            roomId,
+            senderId: me.id,
+            recipientId: userId,
+            itemId: giftDef.id,
+            quantity,
+            coinsSpent: perRecipientCost,
+          })),
+        })
+        // Lifetime counters live on the USER rows (lifecycle §20/§21).
+        await tx.user.update({
+          where: { id: me.id },
+          data: { giftsSentCount: { increment: quantity * recipientCount } },
+        })
+        await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
+        // §28 — aggregated chat entry (never 1000 separate messages/animations).
+        await tx.spinRoomMessage.create({
+          data: {
+            roomId,
+            userId: me.id,
+            text:
+              recipientCount === 1
+                ? `${giftDef.emoji} For ${firstName} x${quantity}`
+                : `${giftDef.emoji} ${quantity}× ${giftDef.name} for ${recipientCount} players`,
+            kind: 'gift',
+            metadata,
+          },
+        })
+        const fresh = await tx.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } })
+        return fresh?.coinBalance ?? 0
       },
+      // Headroom for the batched writes on a slow network — still far below
+      // the loop's unbounded runtime that triggered P2028.
+      { timeout: 15_000, maxWait: 5_000 }
+    )
+    .catch((e: any) => {
+      if (e?.message === 'insufficient_coins') return null
+      throw e
     })
-    const fresh = await tx.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } })
-    return fresh?.coinBalance ?? 0
-  }).catch((e: any) => {
-    if (e?.message === 'insufficient_coins') return null
-    throw e
-  })
 
   if (newBalance === null) {
     const bal = (await db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } }))?.coinBalance ?? 0
@@ -249,15 +269,25 @@ export async function POST(req: NextRequest) {
   // Supabase broadcast stays the instant cosmetic push (toast/animation);
   // the SSE snapshot above is the authoritative sync path. §28: one
   // AGGREGATED gift event — recipients only bump their own counter.
+  // (P2028 hygiene: recipient balances come from ONE findMany, not a
+  // per-recipient findUnique round-trip loop.)
   const supabase = getClient()
   if (supabase) {
+    const [senderNameRow, recipientBalRows] = await Promise.all([
+      db.user.findUnique({ where: { id: me.id }, select: { name: true } }),
+      db.user.findMany({
+        where: { id: { in: recipients.map((r) => r.userId) } },
+        select: { id: true, coinBalance: true },
+      }),
+    ])
+    const balanceById = new Map(recipientBalRows.map((u) => [u.id, u.coinBalance]))
     const ch = supabase.channel(`room:${roomId}`)
     void ch.send({
       type: 'broadcast',
       event: 'gift',
       payload: {
         senderId: me.id,
-        senderName: (await db.user.findUnique({ where: { id: me.id }, select: { name: true } }))?.name,
+        senderName: senderNameRow?.name,
         recipientIds: recipients.map((r) => r.userId),
         recipientNames: recipients.map((r) => r.name),
         recipientId: recipients.length === 1 ? recipients[0].userId : null,
@@ -271,8 +301,11 @@ export async function POST(req: NextRequest) {
     })
     void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: me.id, coinBalance: newBalance } })
     for (const r of recipients) {
-      const bal = (await db.user.findUnique({ where: { id: r.userId }, select: { coinBalance: true } }))?.coinBalance ?? 0
-      void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: r.userId, coinBalance: bal } })
+      void ch.send({
+        type: 'broadcast',
+        event: 'balance',
+        payload: { userId: r.userId, coinBalance: balanceById.get(r.userId) ?? 0 },
+      })
     }
   }
 

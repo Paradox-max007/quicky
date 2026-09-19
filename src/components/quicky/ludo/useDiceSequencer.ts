@@ -26,9 +26,15 @@
 //   · GAME STATE ≠ VISUAL STATE (§51) — this hook owns presentation only;
 //     the authoritative game (version/tokens/dice) flows untouched beside
 //     it, and an interrupted animation can always recover from state.
-//   · TOKEN GATE (§18/§22) — `freeAtRef` carries the epoch ms at which the
-//     sequence has fully left the table; the board's token animation waits
-//     for it, so coins never move while the die is still on screen.
+//   · TOKEN GATE (§18/§41) — `freeAtRef` carries the epoch ms at which the
+//     die has LANDED on the server value (DICE_REVEAL_MS): from that beat
+//     the number is readable, the timer is running and coin movement is
+//     allowed. Coins never move under a still-rolling/settling die, but
+//     they no longer wait for the full exit either — with the 5s sequence
+//     that wait left a ~1.65s dead gap between tap and movement (the
+//     "desync" feel) and pushed the hop animation into the NEXT roll's
+//     die entrance. The die still owns its own exit timeline (§40: the
+//     exit choreography always completes, untouched by the tap).
 
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -61,11 +67,15 @@ export type DiceSequencer = {
   /** The authoritative server value — null before the first live roll. */
   finalValue: number | null
   rollId: string | null
-  /** True from the settle of the CURRENT roll on — coins become selectable. */
+  /** True from the LANDING beat of the CURRENT roll on (= DICE_REVEAL_MS,
+   * the same beat the server starts the 45s window) — coins become
+   * selectable exactly when the number and the timer appear. */
   revealed: boolean
   /** Persisted "Alex: rolled 6" hint for the round bar (survives the exit). */
   hint: DiceHint | null
-  /** Epoch ms when the die has fully left the table (token-animation gate). */
+  /** Epoch ms when the die has LANDED on the server value (= the reveal
+   * beat). Coin movement is allowed from this beat; the die's own exit
+   * timeline continues independently. */
   freeAtRef: React.MutableRefObject<number>
 }
 
@@ -141,7 +151,9 @@ export function useDiceSequencer(
       // Reconnect / refresh / rejoin — never replay history as theatre.
       if (pendingDiceRef.current) {
         // The dice of THIS roll is still owed → snap to the authoritative
-        // number, hold it briefly, leave. The player can pick immediately.
+        // number, hold it briefly, leave. The player can pick immediately —
+        // the die is already ON the server face, so the coin-move gate opens
+        // NOW (the die's own fade-out continues in parallel).
         // (Deferred one tick — react-hooks v6: no setState in effect bodies.)
         timers.push(
           setTimeout(() => {
@@ -151,7 +163,7 @@ export function useDiceSequencer(
             setPhase('revealed')
             setRevealed(true)
             setHint({ rollId: rollKey, playerId: roll.playerId, value: roll.value })
-            freeAtRef.current = Date.now() + DICE_HOLD_MS + DICE_EXIT_MS
+            freeAtRef.current = Date.now()
           }, 0)
         )
         timers.push(setTimeout(() => setPhase('exiting'), DICE_HOLD_MS))
@@ -170,6 +182,7 @@ export function useDiceSequencer(
     // tick (react-hooks v6 rule); every later beat is already timer-driven.
     const total =
       DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS + DICE_HOLD_MS + DICE_EXIT_MS
+    const landMs = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS // = DICE_REVEAL_MS
     timers.push(
       setTimeout(() => {
         setRollId(rollKey)
@@ -177,7 +190,9 @@ export function useDiceSequencer(
         setDisplayFace(nextFace(roll.value))
         setPhase('entering')
         setRevealed(false)
-        freeAtRef.current = Date.now() + total
+        // Coin-move gate opens at the LANDING beat — the same beat the
+        // number, the coin selectability and the 45s timer flip (§41).
+        freeAtRef.current = Date.now() + landMs
       }, 0)
     )
 
@@ -188,13 +203,25 @@ export function useDiceSequencer(
         setTimeout(() => setDisplayFace((f) => nextFace(f)), base + at)
       )
     }
-    // Resolve to the SERVER value exactly here — never before (§16).
+    // ═══ THE SYNC ANCHOR (Unified PRD §41 revision) ═══ The tumble ends and
+    // the die begins its landing: the display target becomes the SERVER value
+    // (never before — §16) and the 3D slerp aligns to that face THROUGH the
+    // settle. Nothing the player READS flips yet — the number, the coin gate
+    // and the timer all wait for the landing beat below, so they can never
+    // disagree with the die face on any device.
     timers.push(
       setTimeout(() => {
         setDisplayFace(roll.value)
         setPhase('settling')
       }, base + DICE_ROLL_MS)
     )
+    // ═══ THE LANDING BEAT = DICE_REVEAL_MS (enter + roll + settle) ═══ The die
+    // is now RESTING on the server value — this is the exact beat the server
+    // starts the 45s move window (moveDeadlineAt = roll + DICE_REVEAL_MS +
+    // TURN_MOVE_TIMEOUT_MS). EVERYTHING the player reads flips TOGETHER here:
+    //   · the persistent "{name}: rolled {n}" hint appears (round bar),
+    //   · the coins become selectable (`revealed`),
+    //   · the visible countdown starts its first honest 45s tick.
     timers.push(
       setTimeout(() => {
         setPhase('revealed')
