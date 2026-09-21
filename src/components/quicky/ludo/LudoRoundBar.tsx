@@ -6,16 +6,19 @@
 // (there is no roll button) and the 3D die now floats OVER the board while it
 // rolls, then disappears — exactly like the bottle in Spin the Bottle.
 // What remains at the bottom of the table is ONE slim hint line that:
-//   · shows the LAST ROLL of the round: "Alex: rolled 6" — it stays visible
+//   · shows the LAST ROLL of the round: "Alex rolled 6" — it stays visible
 //     until the round moves on (the rolled number is never lost with the die)
-//   · carries the 45s VISIBLE move timer ("pick a coin — 32s")
+//   · carries the 30s VISIBLE move timer as a chip rendered IMMEDIATELY NEXT
+//     TO the rolled number (product revision: "You rolled: 6 ⏱24s" — one
+//     glance reads value + urgency together, instead of the timer floating
+//     detached at the end of the bar)
 //   · explains every other phase (waiting / starting / rolling / finished)
 //
 // ANIMATION SYNC (Unified PRD §41 revision): the timer, the rolled number and
 // the coin selectability all flip on the SAME beat — the moment the die lands
 // on the server value. While `diceAnimating` is true the bar says the dice is
 // rolling and shows NO countdown (the server deadline already excludes the
-// reveal window, so the first visible tick is the full 45s).
+// reveal window, so the first visible tick is the full 30s).
 
 import { memo, useEffect, useState } from 'react'
 
@@ -41,7 +44,7 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   phase: TurnPhase
   /** The last dice result of the round — persists until the round moves on. */
   lastRoll: { name: string; value: number; isMe: boolean } | null
-  /** Server-epoch move deadline (dice pending) — drives the visible 45s timer. */
+  /** Server-epoch move deadline (dice pending) — drives the visible 30s timer. */
   moveDeadlineAt: number | null
   /** serverNow - clientNow, from the snapshot. */
   serverSkewMs: number
@@ -86,9 +89,16 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   else if (phase === 'my_roll') main = 'Your turn — rolling the dice…'
   else main = `${currentPlayerName}'s turn — rolling the dice…`
 
+  // The action hint ("pick a coin" / "deciding") — the countdown itself no
+  // longer lives here; it rides the roll chip (next to the number).
   let action: string | null = null
   if (phase === 'my_move' && rollRevealed) action = 'pick a coin'
   else if (phase === 'their_turn' && rollRevealed && moveDeadlineAt != null) action = 'deciding'
+
+  // Product revision — the choice countdown renders NEXT TO the rolled
+  // number, inside the same pill: value + urgency in one glance.
+  const showInlineTimer =
+    rollRevealed && lastRoll != null && secondsLeft != null && phase !== 'finished'
 
   return (
     <div className="ldo-roundbar" data-testid="ludo-roundbar">
@@ -100,15 +110,17 @@ export const LudoRoundBar = memo(function LudoRoundBar({
             {lastRoll.value}
           </b>
         )}
+        {showInlineTimer && (
+          <span
+            className={`ldo-roundbar-timer-chip${urgent ? ' ldo-roundbar-urgent' : ''}`}
+            data-testid="ludo-move-timer"
+            aria-label={`${secondsLeft} seconds left to move`}
+          >
+            ⏱{secondsLeft}s
+          </span>
+        )}
       </span>
-      {action && secondsLeft != null && (
-        <span
-          className={`ldo-roundbar-timer${urgent ? ' ldo-roundbar-urgent' : ''}`}
-          data-testid="ludo-move-timer"
-        >
-          {action} · {secondsLeft}s
-        </span>
-      )}
+      {action && <span className="ldo-roundbar-status">{action}</span>}
       {!action && statusText && <span className="ldo-roundbar-status">{statusText}</span>}
     </div>
   )

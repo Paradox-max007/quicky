@@ -6,7 +6,7 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
 import { Toggle } from './Toggle'
-import { MessageCircle, UserPlus, Heart, Eye, Bell, Crown } from 'lucide-react'
+import { MessageCircle, UserPlus, Heart, Eye, Bell, Crown, Gamepad2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type ToggleDef = {
@@ -77,6 +77,23 @@ export function NotificationsScreen() {
   return (
     <SettingsSubScreen title="Notifications">
       <div className="px-5 py-5">
+        {/* ── IN-GAME NOTIFICATIONS ────────────────────────────────────────────
+            Gates the in-game alert layer (GameAlertCenter): Ludo turn prompts
+            with Dismiss + Go-to-Game while off the game screen, and private
+            game-chat message modals (one-line preview + Reply) when the user
+            is not in that sender's chat. ALWAYS available — it is a gameplay
+            surface, not a marketing preference, so it stays OUTSIDE the
+            premium block below. */}
+        <div className="bg-white/5 rounded-2xl border border-white/8 overflow-hidden mb-4">
+          <ToggleRow
+            icon={<Gamepad2 className="w-4 h-4 text-[var(--qk-accent-light)]" />}
+            label="In-game Notifications"
+            description="Turn alerts & private game messages while playing"
+            value={settings?.notifGameEvents ?? true}
+            onChange={(v) => toggle('notifGameEvents', v)}
+          />
+        </div>
+
         {/* Notification preferences are a premium feature */}
         {!isPremium ? (
           <div className="flex flex-col items-center text-center py-10">

@@ -43,6 +43,7 @@ import { GameChatContactsScreen } from './game-chat/GameChatContactsScreen'
 import { GameFriendsScreen } from './game-primary/GameFriendsScreen'
 import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import { GameDecisionDrawer } from './game-chat/GameDecisionDrawer'
+import { GameAlertCenter } from './game-alerts/GameAlertCenter'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
@@ -497,6 +498,11 @@ export function AppRoot() {
           renders over game-section screens (§53) and never over the table
           itself (§54), which has its own inline duel UI. */}
       <GameDecisionDrawer />
+      {/* In-game notification layer (Ludo + future games): turn alerts with
+          Dismiss + Go-to-Game while off the game screen, and private
+          game-chat message modals (one-line preview + Reply). Gated by the
+          "In-game Notifications" setting toggle; mobile/Capacitor only. */}
+      <GameAlertCenter />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
           app on desktop and respects safe-area on mobile.

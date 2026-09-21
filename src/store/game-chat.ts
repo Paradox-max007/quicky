@@ -95,8 +95,37 @@ const g = globalThis as unknown as {
     es: EventSource | null
     listTimer: ReturnType<typeof setTimeout> | null
   }
+  // In-game notification layer (GameAlertCenter): listeners poked on every
+  // INCOMING message (senderId !== me) — the alert center decides whether the
+  // user is on the sender's chat screen and whether alerts are enabled.
+  __quickyGameChatIncoming?: Set<(e: IncomingGameChatSignal) => void>
 }
 const ctl = (g.__quickyGameChatStream ??= { es: null, listTimer: null })
+
+export type IncomingGameChatSignal = {
+  message: GameChatMessage
+  conversationId: string | null
+}
+
+/** Subscribe to incoming game-chat messages (module-level — survives
+ *  remounts, same pattern as the stream controller). Returns unsubscribe. */
+export function subscribeGameChatIncoming(cb: (e: IncomingGameChatSignal) => void): () => void {
+  const set = (g.__quickyGameChatIncoming ??= new Set())
+  set.add(cb)
+  return () => {
+    set.delete(cb)
+  }
+}
+
+function emitIncoming(e: IncomingGameChatSignal) {
+  const set = g.__quickyGameChatIncoming
+  if (!set) return
+  for (const cb of set) {
+    try {
+      cb(e)
+    } catch {}
+  }
+}
 
 export const useGameChatStore = create<GameChatState>((set, get) => {
   // ── message merge: realtime + optimistic + pagination coexist (§92) ──────
@@ -167,7 +196,14 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
                 // stays "sent" for the sender and the receiver's unread
                 // badge counts it (server-computed from lastReadAt).
               }
-              if (msg.senderId !== meId) get().refreshList(true) // §90: reorder + unread
+              if (msg.senderId !== meId) {
+                // §90: reorder + unread
+                get().refreshList(true)
+                // In-game notification layer: poke the alert center (it gates
+                // on the notifGameEvents setting and on whether the user is
+                // currently viewing THIS sender's chat screen).
+                emitIncoming({ message: msg, conversationId: evt.conversationId ?? null })
+              }
             } else if (evt?.type === 'conversation') {
               get().refreshList(true)
             } else if (evt?.type === 'read') {

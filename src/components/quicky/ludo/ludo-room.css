@@ -206,7 +206,7 @@
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.07); }
 }
-/* tiny countdown clock badge on the ACTIVE avatar (45s move window) */
+/* tiny countdown clock badge on the ACTIVE avatar (30s move window) */
 .ldo-ya-clock {
   position: absolute;
   right: -4%;
@@ -605,6 +605,30 @@
   border-radius: 999px;
   padding: 5px 12px;
   white-space: nowrap;
+}
+/* ── Product revision: the choice countdown renders NEXT TO the rolled
+   number, inside the same main pill — value + urgency in one glance. */
+.ldo-roundbar-timer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-radius: 999px;
+  padding: 2.5px 9px;
+  margin-left: 4px;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+.ldo-roundbar-timer-chip.ldo-roundbar-urgent {
+  border-color: rgba(244, 63, 94, 0.7);
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.16);
+  animation: ldo-urgent 0.9s ease-in-out infinite;
 }
 .ldo-roundbar-timer.ldo-roundbar-urgent {
   border-color: rgba(244, 63, 94, 0.7);

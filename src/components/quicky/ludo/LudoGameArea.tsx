@@ -1,7 +1,7 @@
 'use client'
 
 // Quicky — LUDO GAME AREA (Ludo PRD §8/§14/§18-§26/§29-§34/§38/§44/§53/§62/
-// §65/§100-§104 — REVISED: server rolls the dice, floating die, 45s move
+// §65/§100-§104 — REVISED: server rolls the dice, floating die, 30s move
 // window, yard-avatar players, bigger mobile table)
 //
 // Presentation + animation orchestrator over the shared runtime
@@ -29,7 +29,7 @@
 //     exactly like the bottle in Spin the Bottle. The rolled number stays
 //     readable in the bottom round-bar hint ("Alex: rolled 6") until the
 //     round moves on — mobile keeps the whole stage for the table.
-//   · §44 REVISED — 45s visible move window (LudoRoundBar timer). If it
+//   · §44 REVISED — 30s visible move window (LudoRoundBar timer). If it
 //     expires, the server skips the chance and a small center popup
 //     "CHANCE MISSED" (no backdrop) acknowledges it on that player's device.
 //   · §38 REVISED — no player chips above the table on mobile: every player
@@ -290,7 +290,7 @@ export function LudoGameArea({
   // §41 SYNC — true while the CURRENT roll's die is still moving (enter →
   // tumble → landing): the round bar hides the rolled number + the countdown
   // until the die LANDS, so die face, "{name}: rolled {n}", the coin gate and
-  // the 45s timer flip on ONE beat (DICE_REVEAL_MS) on every device.
+  // the 30s timer flip on ONE beat (DICE_REVEAL_MS) on every device.
   const diceAnimating =
     dice.phase === 'entering' || dice.phase === 'rolling' || dice.phase === 'settling'
 
@@ -504,7 +504,7 @@ export function LudoGameArea({
         )}
       </div>
 
-      {/* The slim bottom hint: "{name}: rolled 6" + the visible 45s timer.
+      {/* The slim bottom hint: "{name}: rolled 6" + the visible 30s timer
           On MOBILE this strip is ALSO the room-state surface (waiting text
           lives here instead of over the board). diceAnimating keeps the
           number + countdown hidden until the die lands (§41 sync). */}

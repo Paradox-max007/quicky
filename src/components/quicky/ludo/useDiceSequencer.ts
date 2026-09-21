@@ -68,7 +68,7 @@ export type DiceSequencer = {
   finalValue: number | null
   rollId: string | null
   /** True from the LANDING beat of the CURRENT roll on (= DICE_REVEAL_MS,
-   * the same beat the server starts the 45s window) — coins become
+   * the same beat the server starts the 30s window) — coins become
    * selectable exactly when the number and the timer appear. */
   revealed: boolean
   /** Persisted "Alex: rolled 6" hint for the round bar (survives the exit). */
@@ -191,7 +191,7 @@ export function useDiceSequencer(
         setPhase('entering')
         setRevealed(false)
         // Coin-move gate opens at the LANDING beat — the same beat the
-        // number, the coin selectability and the 45s timer flip (§41).
+        // number, the coin selectability and the 30s timer flip (§41).
         freeAtRef.current = Date.now() + landMs
       }, 0)
     )
@@ -217,11 +217,11 @@ export function useDiceSequencer(
     )
     // ═══ THE LANDING BEAT = DICE_REVEAL_MS (enter + roll + settle) ═══ The die
     // is now RESTING on the server value — this is the exact beat the server
-    // starts the 45s move window (moveDeadlineAt = roll + DICE_REVEAL_MS +
+    // starts the 30s move window (moveDeadlineAt = roll + DICE_REVEAL_MS +
     // TURN_MOVE_TIMEOUT_MS). EVERYTHING the player reads flips TOGETHER here:
     //   · the persistent "{name}: rolled {n}" hint appears (round bar),
     //   · the coins become selectable (`revealed`),
-    //   · the visible countdown starts its first honest 45s tick.
+    //   · the visible countdown starts its first honest 30s tick.
     timers.push(
       setTimeout(() => {
         setPhase('revealed')

@@ -85,6 +85,9 @@ export type UserSettings = {
   notifLikes: boolean
   notifProfileViews: boolean
   notifSnackbars: boolean
+  /** In-game notifications (turn alerts with Go-to-Game + private game-chat
+   *  message modals while off the game screen). Gates GameAlertCenter. */
+  notifGameEvents: boolean
   privacyHideAge: boolean
   privacyHideDistance: boolean
   privacyHideOnline: boolean

@@ -17,7 +17,7 @@
 //     entering → rolling (hop + fast tumble + deceleration) → settling
 //     (server face alignment + small bounce) → revealed (hold) → exiting —
 //     so the WebGL die is inherently beat-synced with the "rolled {n}"
-//     hint, the coin-selectability gate and the 45s move timer.
+//     hint, the coin-selectability gate and the 30s move timer.
 //   · requestAnimationFrame render loop; rendering is SKIPPED while the die
 //     is hidden (battery-friendly on mobile).
 //   · DPR capped at 1.5 on mobile (§45) — no 4K framebuffers.

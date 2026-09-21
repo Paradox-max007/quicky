@@ -379,6 +379,10 @@ model UserSettings {
   notifLikes           Boolean  @default(true)
   notifProfileViews    Boolean  @default(true)
   notifSnackbars       Boolean  @default(true)
+  // In-game notifications (game alerts while off the game screen: turn
+  // prompts with Go-to-Game, private game-chat message modals). Free for all
+  // users — it is a gameplay surface, not a marketing preference.
+  notifGameEvents      Boolean  @default(true)
   // Privacy toggles
   privacyHideAge       Boolean  @default(false)
   privacyHideDistance   Boolean  @default(false)

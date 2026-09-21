@@ -92,7 +92,9 @@ export function GameDecisionDrawer() {
       ? new Date(decision.spin.responseDeadline).getTime()
       : null
   const { remaining } = useRoundTimer(deadlineMs, getSkew)
-  const secsLeft = Math.max(0, Math.ceil(remaining / 1000))
+  // useRoundTimer returns SECONDS — divide-by-1000 here used to collapse the
+  // badge to a permanent "1". Same interpretation as SpinBottleRoom's timer.
+  const secsLeft = Math.max(0, remaining)
   const expired = deadlineMs !== null && remaining <= 0
 
   // §115: stale-decision guard — every field must still match the live

@@ -70,9 +70,11 @@ export function isSafeRingCell(ringIndex: number): boolean {
  * alike — so the roll alternates player-to-player; only a rolled 6 keeps
  * the turn (§16). */
 export const TURN_AUTOROLL_DELAY_MS = 1_500
-/** §44 REVISED — 45s VISIBLE move window once a dice is pending. When it
- * expires the chance is cancelled/skipped and the game moves forward. */
-export const TURN_MOVE_TIMEOUT_MS = 45_000
+/** §44 REVISED — 30s VISIBLE move window once a dice is pending. When it
+ * expires the chance is cancelled/skipped and the game moves forward.
+ * (was 45s — shortened per product revision; the visible countdown now also
+ * renders NEXT TO the rolled number in the round bar.) */
+export const TURN_MOVE_TIMEOUT_MS = 30_000
 /** Watchdog fires slightly AFTER the deadline so a last-moment request wins. */
 export const WATCHDOG_GRACE_MS = 250
 /** STARTING → PLAYING countdown (Ludo PRD §56: ~1.5s visual + join window). */
@@ -99,7 +101,7 @@ export const LUDO_POINTS_PER_CAPTURE = 1
  *
  * ANIMATION-SYNC REVISION (5-second choreography): the sequence was extended
  * from ~3.08s to a full ~5.0s so that on mobile / Capacitor the dice tumble,
- * the landed face, the "{name}: rolled {n}" hint and the 45s move timer all
+ * the landed face, the "{name}: rolled {n}" hint and the 30s move timer all
  * have room to land on EXACTLY the same beat (see DICE_REVEAL_MS below — the
  * single sync anchor the round bar, the token-selectability gate and the
  * server move deadline are all keyed to). */
@@ -116,7 +118,7 @@ export const DICE_SEQ_TOTAL_MS = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS +
  * three things flip TOGETHER everywhere:
  *   1. the "You rolled: {n}" round-bar hint appears (sequencer setHint),
  *   2. the coins become selectable (sequencer `revealed`),
- *   3. the visible 45s move timer starts (server sets moveDeadlineAt to
+ *   3. the visible 30s move timer starts (server sets moveDeadlineAt to
  *      roll + DICE_REVEAL_MS + TURN_MOVE_TIMEOUT_MS so the FULL window is
  *      pick time, and the round bar only shows the countdown from here).
  */

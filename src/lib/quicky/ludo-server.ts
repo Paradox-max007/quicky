@@ -215,7 +215,7 @@ export async function ensureLudoRuntime(roomId: string): Promise<void> {
 /**
  * §14 REVISED — the dice are a SERVER ACTION: when the auto-roll beat
  * elapses the server throws the dice FOR the active player. The user never
- * rolls — they only pick a token inside the 45s move window.
+ * rolls — they only pick a token inside the 30s move window.
  */
 async function autoRollFor(roomId: string, state: LudoGameState, playerId: string) {
   const actionId = `auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`

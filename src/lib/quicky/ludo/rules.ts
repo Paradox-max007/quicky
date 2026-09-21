@@ -272,7 +272,7 @@ export function rollDice(
   }
 
   state.dice = { value, rolledBy: playerId, rolledAt: now }
-  // ANIMATION-SYNC (Unified PRD §41 revision) — the 45s move window starts
+  // ANIMATION-SYNC (Unified PRD §41 revision) — the 30s move window starts
   // at the DICE REVEAL beat (enter + roll + settle), not at the raw roll
   // timestamp: the player cannot pick a coin before the die lands on the
   // server value, so the FULL window is pick time and the visible timer,
