@@ -216,13 +216,31 @@ export function LudoRoom({
     },
   })
 
-  const leave = useCallback(async () => {
-    if (!roomId) return
+  // ── Open the room-options sheet (mobile/Capacitor exit fix).
+  // Capacitor runs KeyboardResize.None — the keyboard OVERLAYS the WebView,
+  // so an open keyboard would sit ON TOP of the bottom sheet and swallow
+  // the Leave button ("the exit button does nothing"). Clear the focus +
+  // hide the native keyboard FIRST, then slide the sheet up.
+  const openExit = () => {
     try {
-      await api.ludo.leave(roomId)
+      ;(document.activeElement as HTMLElement | null)?.blur?.()
     } catch {}
+    if (isNativeCapacitor) void Keyboard.hide().catch(() => {})
+    setShowExit(true)
+  }
+
+  // Leave ALWAYS lands the user out of the room, INSTANTLY: the runtime
+  // detaches and the view navigates BEFORE the server call resolves (the
+  // hardware-back path in AppRoot already uses this exact pattern). On a
+  // slow/stalled mobile connection the old `await` kept the user trapped in
+  // the room after the sheet closed; now the leave request runs in the
+  // background and the room-sweep job mops up any stale membership if it
+  // never lands.
+  const leave = useCallback(() => {
+    if (!roomId) return
     useLudoRoomStore.getState().detach()
     onClose()
+    void api.ludo.leave(roomId).catch(() => {})
   }, [roomId, onClose])
 
   const roomLabel = `Board #${roomId.slice(-5).toUpperCase()}`
@@ -250,7 +268,7 @@ export function LudoRoom({
               onAddCoins={() => setShowCoinStore(true)}
             />
           </div>
-          <RoomExitControl onClick={() => setShowExit(true)} />
+          <RoomExitControl onClick={openExit} />
         </header>
 
         {/* ═══ MOBILE HUD (hidden ≥1024px) ═══ */}
@@ -261,7 +279,7 @@ export function LudoRoom({
             crowns={me?.isPremium ? 1 : 0}
             gifts={economy.giftsReceived}
             coins={economy.coinBalance}
-            onRoomOptions={() => setShowExit(true)}
+            onRoomOptions={openExit}
             onAddCoins={() => setShowCoinStore(true)}
           />
         </div>
@@ -370,7 +388,9 @@ export function LudoRoom({
           />
         </div>
 
-        {/* ═══ Room options — leave always works (§41) ═══ */}
+        {/* ═══ Room options — leave always works (§41). z-[240/241]: the
+            room's CONTROL surfaces stay above the transient in-game alert
+            drawers (225-232) so an alert can never block leaving. ═══ */}
         <AnimatePresence>
           {showExit && (
             <>
@@ -378,7 +398,7 @@ export function LudoRoom({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[200] bg-black/60"
+                className="fixed inset-0 z-[240] bg-black/60"
                 onClick={() => setShowExit(false)}
               />
               <motion.div
@@ -386,7 +406,7 @@ export function LudoRoom({
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-                className="sbr-sheet fixed inset-x-0 bottom-0 z-[201] mx-auto max-w-md p-4 sbr-sheet-safe flex flex-col gap-3"
+                className="sbr-sheet fixed inset-x-0 bottom-0 z-[241] mx-auto max-w-md p-4 sbr-sheet-safe flex flex-col gap-3"
               >
                 <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
                 <h3 className="text-base font-black">Room options</h3>
@@ -423,14 +443,14 @@ export function LudoRoom({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[220] bg-black/85 backdrop-blur-sm"
+                className="fixed inset-0 z-[242] bg-black/85 backdrop-blur-sm"
               />
               <motion.div
                 initial={{ scale: 0.92, opacity: 0, y: 12 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.95, opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-                className="fixed inset-x-0 top-1/2 z-[221] mx-auto w-[min(92vw,24rem)] -translate-y-1/2 bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 text-center flex flex-col items-center gap-3"
+                className="fixed inset-x-0 top-1/2 z-[243] mx-auto w-[min(92vw,24rem)] -translate-y-1/2 bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 text-center flex flex-col items-center gap-3"
               >
                 <div className="text-4xl" aria-hidden>
                   {closure.reason === 'inactivity' ? '😴' : '🔒'}

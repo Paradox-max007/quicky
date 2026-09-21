@@ -272,10 +272,19 @@ export function GameMessageAlert() {
               background + its matching readable text color — identical
               geometry and choreography to the gameplay cards, only the
               paint differs. Golden Hour → gold drawer with deep-brown
-              text; Midnight → coral with white. */}
+              text; Midnight → coral with white.
+              TAP-TO-DISMISS (exit-button fix): a tap anywhere on the card
+              (outside its buttons) clears the notification instantly —
+              the drawer renders at the exact height of the room's top HUD
+              (where the 🚪 exit control lives), so without this the HUD
+              could stay untappable for the full 9s auto-dismiss window. */}
           <div
-            className="relative border border-white/25 rounded-3xl shadow-2xl p-4 flex items-center gap-3.5"
+            className="relative border border-white/25 rounded-3xl shadow-2xl p-4 flex items-center gap-3.5 cursor-pointer"
             style={{ background: 'var(--qk-accent)' }}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return
+              setAlert(null)
+            }}
           >
             {/* drag hint — the same affordance as the gameplay drawers, in
                 the on-accent color so it reads on every theme */}

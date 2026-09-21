@@ -439,14 +439,31 @@ export function SpinBottleRoom({
     toolbox.open({ userId: p.userId, displayName: p.displayName, avatar: p.avatar }, cardEl)
   }
 
-  const leave = async () => {
-    if (!roomId) return
+  // ── Open the room-options sheet (mobile/Capacitor exit fix).
+  // Capacitor runs KeyboardResize.None — the keyboard OVERLAYS the WebView,
+  // so an open keyboard would sit ON TOP of the bottom sheet and swallow
+  // the Leave / Move buttons ("the exit button does nothing"). Clear the
+  // focus + hide the native keyboard FIRST, then slide the sheet up.
+  const openExit = () => {
     try {
-      await api.spinBottle.leave(roomId)
+      ;(document.activeElement as HTMLElement | null)?.blur?.()
     } catch {}
-    // Room left → the background runtime ends (game-chat PRD §56).
+    if (isNativeCapacitor) void Keyboard.hide().catch(() => {})
+    setShowExit(true)
+  }
+
+  // Leave ALWAYS lands the user out of the room, INSTANTLY: the runtime
+  // detaches and the view navigates BEFORE the server call resolves (the
+  // hardware-back path in AppRoot already uses this exact pattern). On a
+  // slow/stalled mobile connection the old `await` kept the user trapped in
+  // the room after the sheet closed; now the leave request runs in the
+  // background and the room-sweep job mops up any stale membership if it
+  // never lands.
+  const leave = () => {
+    if (!roomId) return
     useGameRoomStore.getState().detach()
     onClose()
+    void api.spinBottle.leave(roomId).catch(() => {})
   }
 
   // Change Table (Games PRD §9): ONE server call — the server runs the exact
@@ -648,7 +665,7 @@ export function SpinBottleRoom({
             />
           </div>
           {/* §31/§32: the room's only control — leave/change room, top-right */}
-          <RoomExitControl onClick={() => setShowExit(true)} />
+          <RoomExitControl onClick={openExit} />
         </header>
 
         {/* ═══ MOBILE HUD (hidden ≥1024px) — no back arrow (§31) ═══ */}
@@ -659,7 +676,7 @@ export function SpinBottleRoom({
             crowns={me?.isPremium ? 1 : 0}
             gifts={economy.giftsReceived}
             coins={economy.coinBalance}
-            onRoomOptions={() => setShowExit(true)}
+            onRoomOptions={openExit}
             onAddCoins={() => setShowCoinStore(true)}
           />
         </div>
@@ -1021,7 +1038,9 @@ export function SpinBottleRoom({
 
         {/* ═══ Games PRD §34-§39/§14-§17 — ROOM OPTIONS. Leaving ALWAYS works:
             if a round is in flight the server cancels it safely (§17) — no
-            more 409 lock. Cancel always works too. */}
+            more 409 lock. Cancel always works too. z-[240/241]: the room's
+            CONTROL surfaces stay above the transient in-game alert drawers
+            (225-232) so an alert can never block leaving. */}
         <AnimatePresence>
           {showExit && (
             <>
@@ -1029,7 +1048,7 @@ export function SpinBottleRoom({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[200] bg-black/60"
+                className="fixed inset-0 z-[240] bg-black/60"
                 onClick={() => setShowExit(false)}
               />
               <motion.div
@@ -1037,7 +1056,7 @@ export function SpinBottleRoom({
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-                className="sbr-sheet fixed inset-x-0 bottom-0 z-[201] mx-auto max-w-md p-4 sbr-sheet-safe flex flex-col gap-3"
+                className="sbr-sheet fixed inset-x-0 bottom-0 z-[241] mx-auto max-w-md p-4 sbr-sheet-safe flex flex-col gap-3"
               >
                 <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
                 <h3 className="text-base font-black">Room options</h3>
@@ -1089,14 +1108,14 @@ export function SpinBottleRoom({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[220] bg-black/85 backdrop-blur-sm"
+                className="fixed inset-0 z-[242] bg-black/85 backdrop-blur-sm"
               />
               <motion.div
                 initial={{ scale: 0.92, opacity: 0, y: 12 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.95, opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-                className="fixed inset-x-0 top-1/2 z-[221] mx-auto w-[min(92vw,24rem)] -translate-y-1/2 bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 text-center flex flex-col items-center gap-3"
+                className="fixed inset-x-0 top-1/2 z-[243] mx-auto w-[min(92vw,24rem)] -translate-y-1/2 bg-[var(--qk-card)] border border-white/10 rounded-3xl p-6 text-center flex flex-col items-center gap-3"
               >
                 <div className="text-4xl" aria-hidden>
                   {closure.reason === 'inactivity' ? '😴' : '🔒'}
