@@ -4,7 +4,10 @@
 // POST → send a gift inside a room, SINGLE recipient or BULK:
 //
 //   { roomId, itemId, recipientId?, quantity?, recipientFilter? }
-//     · recipientId       → legacy single-recipient send
+//     · recipientId       → single-recipient send. SELF-GIFTS ARE ALLOWED
+//                           (gifting-revision): gifting yourself works like
+//                           gifting anyone else — you pay, you also get the
+//                           recipient reward + the received-count bump.
 //     · recipientFilter   → 'all' | 'male' | 'female'  (§18/§23/§24):
 //                           the SERVER resolves the recipient list from the
 //                           room's active players (sender always excluded);
@@ -17,7 +20,14 @@
 // negative balance, no partial bulk send, §26/§87/§88). Balance < cost → 402
 // `insufficient_coins` and the CLIENT opens the existing coin-purchase modal
 // (§27 — never a broken flow).
+//
+// SPEED (gifting-revision): single and bulk sends ride the SAME route and
+// the SAME fast path — pre-flight lookups run in PARALLEL, and every
+// post-commit side effect (activity touch, Supabase broadcasts + their
+// balance reads) is deferred with `after()` so the client's response
+// returns the instant the transaction commits.
 import { NextRequest, NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { touchMemberActivity } from '@/lib/quicky/room-activity'
@@ -87,15 +97,21 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(quantity) || quantity < 1 || quantity > 1000) {
     return NextResponse.json({ error: 'invalid_quantity' }, { status: 400 })
   }
-  if (recipientId && me.id === recipientId) {
-    return NextResponse.json({ error: 'cannot_gift_yourself' }, { status: 400 })
-  }
+  // NOTE: self-gifting is intentionally ALLOWED (gifting-revision) — tapping
+  // your own seat opens Gift + View Profile, and the gift lands normally.
 
+  // SPEED: price lookup and my membership check are independent — run both
+  // in ONE parallel round-trip instead of two sequential ones.
   // Price + activation come from the DB — the client's number is NEVER
   // trusted (v3 §71/§86). Max quantity is admin-configurable per gift (§62).
-  const giftDef = await db.gameItem.findFirst({
-    where: { id: itemId, isActive: true, category: 'gift' },
-  })
+  const [giftDef, senderMembership] = await Promise.all([
+    db.gameItem.findFirst({
+      where: { id: itemId, isActive: true, category: 'gift' },
+    }),
+    db.spinRoomPlayer.findFirst({
+      where: { roomId, userId: me.id, isActive: true },
+    }),
+  ])
   if (!giftDef) return NextResponse.json({ error: 'invalid_item' }, { status: 400 })
   const unitPrice = giftDef.coinPrice
   if (!Number.isInteger(unitPrice) || unitPrice < 0) {
@@ -103,20 +119,19 @@ export async function POST(req: NextRequest) {
   }
   const maxQty = Number.isInteger(giftDef.maxQuantity) && giftDef.maxQuantity! > 0 ? giftDef.maxQuantity! : 1000
   if (quantity > maxQty) return NextResponse.json({ error: 'invalid_quantity' }, { status: 400 })
-
-  const senderMembership = await db.spinRoomPlayer.findFirst({
-    where: { roomId, userId: me.id, isActive: true },
-  })
   if (!senderMembership) return NextResponse.json({ error: 'not_in_room' }, { status: 403 })
 
   // ── Resolve recipients SERVER-side (§23/§24/§25) ──────────────────────────
   let recipients: { userId: string; name: string }[]
   if (recipientId) {
-    const inRoom = await db.spinRoomPlayer.findFirst({
-      where: { roomId, userId: recipientId, isActive: true },
-    })
+    // SPEED: membership + profile name fetched in parallel.
+    const [inRoom, u] = await Promise.all([
+      db.spinRoomPlayer.findFirst({
+        where: { roomId, userId: recipientId, isActive: true },
+      }),
+      db.user.findUnique({ where: { id: recipientId }, select: { name: true } }),
+    ])
     if (!inRoom) return NextResponse.json({ error: 'recipient_not_in_room' }, { status: 400 })
-    const u = await db.user.findUnique({ where: { id: recipientId }, select: { name: true } })
     recipients = [{ userId: recipientId, name: u?.name ?? 'Someone' }]
   } else {
     // 'all' → every eligible player in the room except the sender (§23);
@@ -186,7 +201,12 @@ export async function POST(req: NextRequest) {
       async (tx) => {
         const debited = await tx.user.updateMany({
           where: { id: me.id, coinBalance: { gte: totalCost } },
-          data: { coinBalance: { decrement: totalCost } },
+          data: {
+            coinBalance: { decrement: totalCost },
+            // Lifetime counters live on the USER row (lifecycle §20/§21) —
+            // merged into the SAME query as the debit (one round-trip less).
+            giftsSentCount: { increment: quantity * recipientCount },
+          },
         })
         if (debited.count === 0) {
           throw new Error('insufficient_coins')
@@ -219,11 +239,6 @@ export async function POST(req: NextRequest) {
             quantity,
             coinsSpent: perRecipientCost,
           })),
-        })
-        // Lifetime counters live on the USER rows (lifecycle §20/§21).
-        await tx.user.update({
-          where: { id: me.id },
-          data: { giftsSentCount: { increment: quantity * recipientCount } },
         })
         await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
         // §28 — aggregated chat entry (never 1000 separate messages/animations).
@@ -259,27 +274,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'insufficient_coins', coinBalance: bal }, { status: 402 })
   }
 
-  // Lifecycle §12: sending a gift counts as room activity (sender side).
-  await touchMemberActivity(roomId, me.id).catch(() => {})
-
   // Wake every room member's SSE stream → fresh snapshot → HUD counters
-  // (coins, gifts received) update without a refresh (§59/§60).
+  // (coins, gifts received) update without a refresh (§59/§60). In-process
+  // and synchronous — the listener work is async and never blocks us.
   emitRoomUpdate(roomId)
 
-  // Supabase broadcast stays the instant cosmetic push (toast/animation);
-  // the SSE snapshot above is the authoritative sync path. §28: one
-  // AGGREGATED gift event — recipients only bump their own counter.
-  // (P2028 hygiene: recipient balances come from ONE findMany, not a
-  // per-recipient findUnique round-trip loop.)
-  const supabase = getClient()
-  if (supabase) {
+  // ── SPEED (gifting-revision): everything below runs AFTER the response is
+  // on the wire — the client gets its confirmation the instant the
+  // transaction commits, while the bookkeeping/broadcast tail (activity
+  // touch, Supabase pushes + their balance reads) rides `after()`. The SAME
+  // fast path serves single-recipient and bulk sends — one route, one
+  // channel, one speed.
+  after(async () => {
+    // Lifecycle §12: sending a gift counts as room activity (sender side).
+    await touchMemberActivity(roomId, me.id).catch(() => {})
+
+    // Supabase broadcast stays the instant cosmetic push (toast/animation);
+    // the SSE snapshot above is the authoritative sync path. §28: one
+    // AGGREGATED gift event — recipients only bump their own counter.
+    // (P2028 hygiene: recipient balances come from ONE findMany, not a
+    // per-recipient findUnique round-trip loop.)
+    const supabase = getClient()
+    if (!supabase) return
     const [senderNameRow, recipientBalRows] = await Promise.all([
       db.user.findUnique({ where: { id: me.id }, select: { name: true } }),
       db.user.findMany({
         where: { id: { in: recipients.map((r) => r.userId) } },
         select: { id: true, coinBalance: true },
       }),
-    ])
+    ]).catch(
+      () => [null, [] as { id: string; coinBalance: number }[]] as const
+    )
     const balanceById = new Map(recipientBalRows.map((u) => [u.id, u.coinBalance]))
     const ch = supabase.channel(`room:${roomId}`)
     void ch.send({
@@ -307,7 +332,7 @@ export async function POST(req: NextRequest) {
         payload: { userId: r.userId, coinBalance: balanceById.get(r.userId) ?? 0 },
       })
     }
-  }
+  })
 
   return NextResponse.json({
     ok: true,

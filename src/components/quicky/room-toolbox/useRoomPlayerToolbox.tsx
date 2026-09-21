@@ -107,6 +107,9 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
 
   // ── open(player) — THE reusable entry point. Any surface, any game:
   // a user id comes in, the tool box opens (unless a room guard blocks it).
+  // SELF-OPEN (gifting-revision): tapping YOUR OWN surface (seat / yard
+  // avatar) opens the toolbox in self mode — Gift yourself + View Profile
+  // (PlayerInteractionSheet renders the reduced self layout).
   const open = useCallback(
     (p: ToolboxPlayer, el?: HTMLElement | null) => {
       const blocked = beforeOpen?.(p)
@@ -114,12 +117,13 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
         toast(blocked)
         return
       }
-      if (p.userId === meId) {
-        toast("That's you! Tap someone else to interact.")
-        return
-      }
       setInteraction({
-        player: { userId: p.userId, displayName: p.displayName, avatar: p.avatar ?? null },
+        player: {
+          userId: p.userId,
+          displayName: p.displayName,
+          avatar: p.avatar ?? null,
+          isMe: p.userId === meId,
+        },
         anchor: resolveAnchor ? resolveAnchor(el ?? null) : null,
       })
     },
@@ -228,7 +232,9 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
 
   // ── Gifts — optimistic spend, server truth, realtime broadcast. The gift
   // endpoint is the SHARED room-gift API (every game posts to the same
-  // route) — only the broadcast/reconcile sinks are room-specific.
+  // route) — only the broadcast/reconcile sinks are room-specific. Works
+  // for SELF-gifts too (gifting-revision — the server accepts me as the
+  // recipient; I pay the price and also collect the recipient reward).
   const sendGift = useCallback(
     async (recipientId: string, gift: CatalogGift): Promise<boolean> => {
       if (!roomId) return false

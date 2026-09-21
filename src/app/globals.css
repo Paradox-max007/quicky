@@ -65,6 +65,10 @@
   --qk-purple: #B8A4FF;
   --qk-gold: #F5C570;
   --qk-text: #F5F5F7;
+  /* Readable text ON the accent color (notification modals painted in the
+     theme color). Coral accent → white text. */
+  --qk-on-accent: #FFFFFF;
+  --qk-on-accent-soft: rgba(255, 255, 255, 0.82);
 }
 
 /* Light theme — swaps tokens and remaps the common white-alpha utility
@@ -79,6 +83,8 @@ html[data-theme='light'] {
   --qk-purple: #7A5CFF;
   --qk-gold: #B8860B;
   --qk-text: #16161D;
+  --qk-on-accent: #FFFFFF;
+  --qk-on-accent-soft: rgba(255, 255, 255, 0.85);
   color-scheme: light;
 }
 html[data-theme='light'] .text-white { color: var(--qk-text); }
@@ -103,6 +109,8 @@ html[data-theme='midnight'] {
   --qk-accent: #FF2D55;
   --qk-accent-light: #FF5E7E;
   --qk-text: #E8E8F0;
+  --qk-on-accent: #FFFFFF;
+  --qk-on-accent-soft: rgba(255, 255, 255, 0.82);
 }
 html[data-theme='coral'] {
   --qk-bg: #1A0F12;
@@ -111,6 +119,8 @@ html[data-theme='coral'] {
   --qk-accent: #FF2D55;
   --qk-accent-light: #FF5E7E;
   --qk-text: #FFE8E8;
+  --qk-on-accent: #FFFFFF;
+  --qk-on-accent-soft: rgba(255, 244, 240, 0.85);
 }
 html[data-theme='lavender'] {
   --qk-bg: #13101A;
@@ -119,6 +129,8 @@ html[data-theme='lavender'] {
   --qk-accent: #B8A4FF;
   --qk-accent-light: #D0C3FF;
   --qk-text: #F0EAFF;
+  --qk-on-accent: #241B4A;
+  --qk-on-accent-soft: rgba(36, 27, 74, 0.82);
 }
 html[data-theme='gold'] {
   --qk-bg: #15110A;
@@ -127,6 +139,8 @@ html[data-theme='gold'] {
   --qk-accent: #F5C570;
   --qk-accent-light: #FFDD9A;
   --qk-text: #FFF4E0;
+  --qk-on-accent: #2A1E08;
+  --qk-on-accent-soft: rgba(42, 30, 8, 0.8);
 }
 
 :root {

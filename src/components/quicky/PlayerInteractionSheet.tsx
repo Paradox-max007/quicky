@@ -1,6 +1,7 @@
 'use client'
 
-// Quicky — PlayerInteractionSheet (v3 PRD §40-§46, §55-§59, §81-§85)
+// Quicky — PlayerInteractionSheet (v3 PRD §40-§46, §55-§59, §81-§85 —
+// gifting-revision: SELF mode)
 // A lightweight, contextual interaction panel for a table player — NOT a
 // full profile page:
 //   • MOBILE (<1024px): bottom sheet, safe-area aware (§81); the gift section
@@ -8,6 +9,10 @@
 //   • DESKTOP (≥1024px): anchored popover positioned from the clicked card's
 //     real bounding rect (§84 — no hardcoded top/left), flipping above the
 //     card when there is no room below (§83).
+//   • SELF MODE (gifting-revision): tapping YOUR OWN card opens the panel
+//     with exactly two options — GIFT (the same catalog; the server accepts
+//     self-gifts) and VIEW PROFILE. Tag/Message/Mention/Friend are hidden —
+//     they never made sense for yourself.
 // Content: photo + name → Tag / Message / Profile actions (§42-§45) →
 // SEND A GIFT catalog, DB-DRIVEN (§47: categories + gifts from the backend,
 // nothing hardcoded), select → confirm Send (§57/§58), insufficient balance
@@ -15,9 +20,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Tag, MessageCircle, AtSign, User, UserPlus, UserMinus, Send, ShoppingBag } from 'lucide-react'
+import { X, Tag, MessageCircle, AtSign, User, UserPlus, UserMinus, Send, ShoppingBag, Gift } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
+import { cacheGet, cacheSet } from '@/lib/quicky/cache'
 
 export type CatalogGift = {
   id: string
@@ -30,9 +36,16 @@ export type CatalogGift = {
 
 export type CatalogCategory = { id: string; name: string; slug: string; icon: string; sortOrder: number }
 
-// v3 §71 — gift definitions change rarely: cache the catalog client-side for
-// the session. The SERVER still validates price/active state on every send.
+// v3 §71 — gift definitions change rarely: cache the catalog client-side
+// (session Map + the persistent localStorage layer, shared key with the
+// bulk GiftSheet) so the sheet paints instantly on open. The SERVER still
+// validates price/active state on every send.
 let catalogCache: { categories: CatalogCategory[]; gifts: CatalogGift[] } | null = null
+
+/** Persistent cache keys (shared with GiftSheet — one catalog, one cache). */
+const CATALOG_GIFTS_KEY = 'gifts_catalog'
+const CATALOG_CATS_KEY = 'gifts_categories'
+const CATALOG_TTL_MS = 5 * 60_000
 
 export type InteractionPlayer = {
   userId: string
@@ -97,15 +110,27 @@ export function PlayerInteractionSheet({
         setGifts(catalogCache.gifts)
         return
       }
-      setLoading(true)
+      // Persistent localStorage cache — instant paint (Capacitor: survives
+      // app restarts), then a background refresh keeps it honest.
+      const cachedGifts = cacheGet<CatalogGift[]>(CATALOG_GIFTS_KEY)
+      const cachedCats = cacheGet<CatalogCategory[]>(CATALOG_CATS_KEY)
+      if (cachedGifts?.length) {
+        setGifts(cachedGifts)
+        setCategories(cachedCats ?? [])
+      } else {
+        setLoading(true)
+      }
       try {
         const res = await api.spinBottle.gifts.catalog()
         const next = { categories: res.categories ?? [], gifts: (res.catalog ?? []) as CatalogGift[] }
+        if (!next.gifts.length && cachedGifts?.length) return // keep cached rows
         catalogCache = next
+        cacheSet(CATALOG_GIFTS_KEY, next.gifts, CATALOG_TTL_MS)
+        cacheSet(CATALOG_CATS_KEY, next.categories, CATALOG_TTL_MS)
         setCategories(next.categories)
         setGifts(next.gifts)
       } catch {
-        toast.error('Could not load gifts')
+        if (!cachedGifts?.length) toast.error('Could not load gifts')
       } finally {
         setLoading(false)
       }
@@ -137,7 +162,11 @@ export function PlayerInteractionSheet({
     try {
       const ok = await onSendGift(player.userId, selected)
       if (ok) {
-        toast.success(`${selected.icon} ${selected.name} sent to ${player.displayName}`)
+        toast.success(
+          player.isMe
+            ? `${selected.icon} ${selected.name} sent to you`
+            : `${selected.icon} ${selected.name} sent to ${player.displayName}`
+        )
         setSelected(null)
         onClose()
       }
@@ -161,6 +190,7 @@ export function PlayerInteractionSheet({
   }, [mode, anchor, player])
 
   const insufficient = !!selected && selected.priceCoins > coinBalance
+  const isMe = !!player?.isMe
 
   const body = player ? (
     <div className="flex flex-col gap-3 min-h-0">
@@ -177,47 +207,69 @@ export function PlayerInteractionSheet({
         </div>
         <div className="min-w-0">
           <p className="font-black text-sm truncate">{player.displayName}</p>
-          <p className="text-[11px] text-white/45">At your table</p>
+          <p className="text-[11px] text-white/45">{isMe ? 'You · self-gift time' : 'At your table'}</p>
         </div>
         <button className="ml-auto p-2 rounded-full hover:bg-white/10" onClick={onClose} aria-label="Close">
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Top actions (mentions PRD §75: Tag / Message / Mention / Profile /
-          Gifts) — independent rows; Mention prefills the Room Chat composer
-          with @DisplayName and NEVER auto-sends (§29). */}
-      <div className="grid grid-cols-5 gap-2">
-        <button className="sbr-ix-action" onClick={() => onTag?.(player)}>
-          <Tag className="w-4 h-4" />
-          <span>Tag</span>
-        </button>
-        <button className="sbr-ix-action" onClick={() => onMessage?.(player)}>
-          <MessageCircle className="w-4 h-4" />
-          <span>Message</span>
-        </button>
-        <button className="sbr-ix-action" onClick={() => onMention?.(player)} data-testid="ix-mention">
-          <AtSign className="w-4 h-4" />
-          <span>Mention</span>
-        </button>
-        <button
-          className="sbr-ix-action"
-          onClick={() => onToggleFriend?.(player)}
-          disabled={friendBusy}
-          data-testid="ix-friend"
-        >
-          {isFriend ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-          <span>{isFriend ? 'Unfriend' : 'Friend'}</span>
-        </button>
-        <button className="sbr-ix-action" onClick={() => onProfile?.(player)}>
-          <User className="w-4 h-4" />
-          <span>Profile</span>
-        </button>
-      </div>
+      {isMe ? (
+        /* SELF MODE (gifting-revision): exactly two options — Gift (jumps
+           straight to the catalog below) and View Profile. */
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="sbr-ix-action"
+            onClick={() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })}
+            data-testid="ix-self-gift"
+          >
+            <Gift className="w-4 h-4" />
+            <span>Gift</span>
+          </button>
+          <button className="sbr-ix-action" onClick={() => onProfile?.(player)} data-testid="ix-self-profile">
+            <User className="w-4 h-4" />
+            <span>View Profile</span>
+          </button>
+        </div>
+      ) : (
+        /* Top actions (mentions PRD §75: Tag / Message / Mention / Profile /
+            Gifts) — independent rows; Mention prefills the Room Chat composer
+            with @DisplayName and NEVER auto-sends (§29). */
+        <div className="grid grid-cols-5 gap-2">
+          <button className="sbr-ix-action" onClick={() => onTag?.(player)}>
+            <Tag className="w-4 h-4" />
+            <span>Tag</span>
+          </button>
+          <button className="sbr-ix-action" onClick={() => onMessage?.(player)}>
+            <MessageCircle className="w-4 h-4" />
+            <span>Message</span>
+          </button>
+          <button className="sbr-ix-action" onClick={() => onMention?.(player)} data-testid="ix-mention">
+            <AtSign className="w-4 h-4" />
+            <span>Mention</span>
+          </button>
+          <button
+            className="sbr-ix-action"
+            onClick={() => onToggleFriend?.(player)}
+            disabled={friendBusy}
+            data-testid="ix-friend"
+          >
+            {isFriend ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+            <span>{isFriend ? 'Unfriend' : 'Friend'}</span>
+          </button>
+          <button className="sbr-ix-action" onClick={() => onProfile?.(player)}>
+            <User className="w-4 h-4" />
+            <span>Profile</span>
+          </button>
+        </div>
+      )}
 
-      {/* Gift catalog (§46) — independently scrollable (§82) */}
+      {/* Gift catalog (§46) — independently scrollable (§82). Works for
+          SELF-gifts too (gifting-revision). */}
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Send a gift</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-white/50">
+          {isMe ? 'Gift yourself' : 'Send a gift'}
+        </p>
         <p className="text-[11px] text-white/60 font-semibold tabular-nums">🪙 {coinBalance.toLocaleString('en-US')}</p>
       </div>
       <div ref={listRef} className="sbr-ix-gifts">
@@ -268,11 +320,17 @@ export function PlayerInteractionSheet({
         ) : (
           <button className="sbr-ix-send w-full justify-center" onClick={send} disabled={sending}>
             <Send className="w-4 h-4" />
-            {sending ? 'Sending…' : `Send ${selected.icon} ${selected.name} — 🪙 ${selected.priceCoins}`}
+            {sending
+              ? 'Sending…'
+              : isMe
+                ? `Send ${selected.icon} ${selected.name} to myself — 🪙 ${selected.priceCoins}`
+                : `Send ${selected.icon} ${selected.name} — 🪙 ${selected.priceCoins}`}
           </button>
         )
       ) : (
-        <p className="text-[11px] text-white/40 text-center">Pick a gift, then confirm — no accidental spends.</p>
+        <p className="text-[11px] text-white/40 text-center">
+          {isMe ? 'Treat yourself — pick a gift, then send.' : 'Pick a gift, then confirm — no accidental spends.'}
+        </p>
       )}
     </div>
   ) : null

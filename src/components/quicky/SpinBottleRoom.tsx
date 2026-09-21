@@ -780,7 +780,10 @@ export function SpinBottleRoom({
                     y={pos.y}
                     joinedAt={p.joinedAt}
                     spotlight={inSpotlight}
-                    interactive={!dueling && !p.isMe}
+                    // gifting-revision: OWN seat is tappable too — the
+                    // toolbox opens in self mode (Gift yourself + View
+                    // Profile). Only the duel spotlight still guards it (§85).
+                    interactive={!dueling}
                     onTap={(el) => openInteraction(p, el)}
                   />
                 )

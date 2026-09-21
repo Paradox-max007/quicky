@@ -78,17 +78,18 @@ export function NotificationsScreen() {
     <SettingsSubScreen title="Notifications">
       <div className="px-5 py-5">
         {/* ── IN-GAME NOTIFICATIONS ────────────────────────────────────────────
-            Gates the in-game alert layer (GameAlertCenter): Ludo turn prompts
-            with Dismiss + Go-to-Game while off the game screen, and private
-            game-chat message modals (one-line preview + Reply) when the user
-            is not in that sender's chat. ALWAYS available — it is a gameplay
-            surface, not a marketing preference, so it stays OUTSIDE the
-            premium block below. */}
+            Gates the PERSONAL-MESSAGE side of the in-game alert layer
+            (GameAlertCenter): private game-chat message modals (one-line
+            preview + Reply) when the user is not in that sender's chat.
+            GAMEPLAY alerts (turn prompts, decision drawers) are NEVER muted
+            by this switch — a live round can not be silenced. ALWAYS
+            available — it is a gameplay surface, not a marketing preference,
+            so it stays OUTSIDE the premium block below. */}
         <div className="bg-white/5 rounded-2xl border border-white/8 overflow-hidden mb-4">
           <ToggleRow
             icon={<Gamepad2 className="w-4 h-4 text-[var(--qk-accent-light)]" />}
             label="In-game Notifications"
-            description="Turn alerts & private game messages while playing"
+            description="Private game messages only — game rounds always alert"
             value={settings?.notifGameEvents ?? true}
             onChange={(v) => toggle('notifGameEvents', v)}
           />
