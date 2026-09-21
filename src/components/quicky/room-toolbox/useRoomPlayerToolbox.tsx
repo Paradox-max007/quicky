@@ -14,7 +14,7 @@
 //   · the bulk gift sheet (GiftSheet) + the DB-driven gift catalog
 //   · the relationship layer (friend list + add/remove with optimistic UI)
 //   · Message → platform-correct personal chat navigation
-//     (Capacitor dedicated screen / desktop-shell Chats page / web panel)
+//     (Capacitor dedicated screen / web + desktop-shell room chat panel)
 //   · Mention → prefills the Room Chat composer (@Name, never auto-sends)
 //   · Profile → the app's real profile route with the room as back target
 //   · ghost cleanup — a player who left can never keep a popup alive
@@ -30,7 +30,6 @@ import { Capacitor } from '@capacitor/core'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore, type AppView } from '@/store/quicky'
 import { useGameChatStore } from '@/store/game-chat'
-import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import {
   PlayerInteractionSheet,
   type CatalogGift,
@@ -97,7 +96,6 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
   } = opts
 
   const isNativeCapacitor = Capacitor.isNativePlatform()
-  const isDeskShell = useIsDesktopShell() === true
 
   const [interaction, setInteraction] = useState<{
     player: InteractionPlayer
@@ -142,8 +140,11 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
   // ── Message — platform-correct personal chat (one copy for every game):
   //   · CAPACITOR → the dedicated full-screen chat; back stack personal →
   //     contacts → room (returnView preserved by the store).
-  //   · DESKTOP SHELL → the Chats page with that conversation already open.
-  //   · WEB → the room's own chat panel swaps to 'personal' (embedded).
+  //   · WEB + DESKTOP SHELL (≥1024px) → the room's own chat panel swaps to
+  //     'personal' (embedded GameChatScreen in the right chat sidebar — the
+  //     game table never unmounts, stays playable + realtime). Back chain:
+  //     chat → contacts → Room Chat. The old desktop-shell openChats('game')
+  //     full-page redirect is GONE (same rule as useRoomContactsNav §23/§24).
   const handleMessage = useCallback(
     (p: InteractionPlayer) => {
       setInteraction(null)
@@ -152,15 +153,12 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
       qk.pinGameChatPeer(peer)
       if (isNativeCapacitor) {
         qk.openGameChat(peer, 'game-chat-contacts')
-      } else if (isDeskShell) {
-        useGameChatStore.getState().openConversation(peer)
-        qk.openChats('game')
       } else {
         useGameChatStore.getState().openConversation(peer)
         qk.setRoomChatPanel('personal')
       }
     },
-    [isNativeCapacitor, isDeskShell]
+    [isNativeCapacitor]
   )
 
   // ── Mention — prefills the Room Chat composer, never auto-sends.
