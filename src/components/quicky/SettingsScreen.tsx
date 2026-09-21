@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
+import { cacheRemove } from '@/lib/quicky/cache'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -55,6 +56,9 @@ export function SettingsScreen() {
     try {
       await api.auth.logout().catch(() => {})
     } finally {
+      // Drop the cached device session too — a logout must not auto-boot
+      // back into the account on the next app start (cache layer).
+      cacheRemove('user_cache_v1')
       setUser(null)
       setView('auth')
       setShowLogoutConfirm(false)

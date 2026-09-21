@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from 'framer-motion'
 import { useQuickyStore, DiscoveryCandidate } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
+import { cacheGet, cacheSet } from '@/lib/quicky/cache'
 import { toast } from 'sonner'
 import { Heart, X, Star, RotateCcw, MapPin, BadgeCheck, Crown, Sparkles, Lock, Ruler, GraduationCap, Wine, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -19,16 +20,22 @@ export function DiscoveryFeed() {
   const showMatchCelebration = useQuickyStore((s) => s.showMatchCelebration)
   const showPaywall = useQuickyStore((s) => s.showPaywall)
 
-  // Warm cache: paint the last-known deck instantly, refresh() revalidates
+  // Warm cache: paint the last-known deck instantly, refresh() revalidates.
+  // (Cache layer — localStorage persists in the Capacitor WebView, so the
+  // deck survives app restarts and cold starts.)
   const [queue, setQueue] = useState<DiscoveryCandidate[]>(() => {
+    const cached = cacheGet<{ queue: DiscoveryCandidate[] }>('discovery_cache_v1', { allowStale: true })
+    if (cached?.queue && Array.isArray(cached.queue)) return cached.queue
+    // legacy pre-cache-layer key (same shape, kept so devices upgrade cleanly)
     try {
       const parsed = JSON.parse(localStorage.getItem('qk_discovery_cache_v1') ?? 'null')
-      return Array.isArray(parsed?.queue) ? parsed.queue : []
-    } catch {
-      return []
-    }
+      if (Array.isArray(parsed?.queue)) return parsed.queue
+    } catch {}
+    return []
   })
   const [limits, setLimits] = useState<{ likes: number | 'unlimited'; superLikes: number; quicky: number | 'unlimited'; isPremium: boolean } | null>(() => {
+    const cached = cacheGet<{ limits: { likes: number | 'unlimited'; superLikes: number; quicky: number | 'unlimited'; isPremium: boolean } }>('discovery_cache_v1', { allowStale: true })
+    if (cached?.limits) return cached.limits
     try {
       const parsed = JSON.parse(localStorage.getItem('qk_discovery_cache_v1') ?? 'null')
       return parsed?.limits ?? null
@@ -43,6 +50,8 @@ export function DiscoveryFeed() {
   // Swiping is optimistic: the card leaves immediately and the API call
   // happens in the background, so slow networks never block the next swipe.
   const pendingSwipes = useRef<{ toUserId: string; type: 'like' | 'superlike' | 'pass'; candidate: DiscoveryCandidate }[]>([])
+  // Last swiped card (for Rewind — restored to the FRONT of the local deck).
+  const lastSwipedRef = useRef<{ candidate: DiscoveryCandidate; type: 'like' | 'superlike' | 'pass' } | null>(null)
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const flushing = useRef(false)
 
@@ -103,13 +112,33 @@ export function DiscoveryFeed() {
     }
   }, [flushPending])
 
-  const refresh = async () => {
+  // STABLE REFRESH (the "profile refreshes on its own" fix): the server
+  // deck is re-scored + jittered on EVERY request, so the old full
+  // `setQueue(res.queue)` re-ordered the visible deck whenever the feed
+  // remounted (tab switches, app resume, WebView reloads) — the profile on
+  // screen changed without a swipe. Now the revalidate MERGES: the local
+  // deck order is preserved, candidates that are gone server-side (already
+  // swiped, blocked, filtered out) drop, and brand-new candidates are
+  // APPENDED. A full replace only happens when the local deck is empty
+  // (first run / caught up) — exactly when the user EXPECTS new faces.
+  const refresh = async (mode: 'revalidate' | 'replace' = 'revalidate') => {
     try {
       const res = await api.discovery()
-      setQueue(res.queue)
+      if (mode === 'replace') {
+        setQueue(res.queue)
+      } else {
+        setQueue((prev) => {
+          if (prev.length === 0) return res.queue
+          const nextIds = new Set(res.queue.map((c: DiscoveryCandidate) => c.id))
+          const kept = prev.filter((c) => nextIds.has(c.id))
+          const keptIds = new Set(kept.map((c) => c.id))
+          const added = res.queue.filter((c: DiscoveryCandidate) => !keptIds.has(c.id))
+          return [...kept, ...added]
+        })
+      }
       setLimits(res.limits)
       try {
-        localStorage.setItem('qk_discovery_cache_v1', JSON.stringify({ queue: res.queue.slice(0, 10), limits: res.limits }))
+        cacheSet('discovery_cache_v1', { queue: res.queue.slice(0, 10), limits: res.limits })
       } catch {}
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to load discovery')
@@ -135,6 +164,7 @@ export function DiscoveryFeed() {
 
     // Optimistic: queue the swipe, decrement local counters, advance immediately
     pendingSwipes.current.push({ toUserId: candidate.id, type, candidate })
+    lastSwipedRef.current = { candidate, type }
     scheduleFlush()
     setLimits((l) =>
       l
@@ -149,14 +179,21 @@ export function DiscoveryFeed() {
     return true
   }
 
+  // Rewind: the last swiped card comes back to the FRONT of the local deck
+  // (server swipe undone) — no full refresh, so the deck never re-orders
+  // underneath the user.
   const rewind = async () => {
     try {
       // Make sure queued swipes are saved first, so we rewind the true last swipe
       await flushPending()
       const res = await api.swipe('', 'rewind')
       if (res.ok) {
+        const back = lastSwipedRef.current?.candidate
+        if (back) {
+          setQueue((q) => [back, ...q.filter((c) => c.id !== back.id)])
+          setTopKey((k) => k + 1)
+        }
         toast.success('Last swipe undone')
-        refresh()
       }
     } catch (e: any) {
       if (e.status === 402) showPaywall({ kind: 'generic' })
@@ -236,7 +273,7 @@ export function DiscoveryFeed() {
             <Sparkles className="w-12 h-12 text-white/20 mb-3" />
             <h2 className="text-xl font-bold">You're all caught up</h2>
             <p className="text-white/50 text-sm mt-1">Check back later for more people in your area.</p>
-            <button onClick={refresh} className="mt-4 bg-coral-gradient rounded-full px-4 py-2 text-sm font-medium">
+            <button onClick={() => refresh('replace')} className="mt-4 bg-coral-gradient rounded-full px-4 py-2 text-sm font-medium">
               Refresh
             </button>
           </div>

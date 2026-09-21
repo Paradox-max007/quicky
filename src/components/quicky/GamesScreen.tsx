@@ -49,7 +49,9 @@ export function GamesScreen() {
         aria-hidden
       />
 
-      <header className="shrink-0 safe-area-top px-4 pt-3 pb-3 relative z-10 flex items-center gap-2">
+      {/* app-safe-top: inside the native shell the WebView is already below
+          the status bar — env() would double-count it (see globals.css). */}
+      <header className="shrink-0 app-safe-top px-4 pt-3 pb-3 relative z-10 flex items-center gap-2">
         <button
           onClick={() => {
             const back = gamesReturnView ?? 'community'

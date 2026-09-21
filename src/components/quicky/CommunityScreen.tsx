@@ -188,8 +188,9 @@ export function CommunityScreen() {
 
   return (
     <div className="w-full h-full relative flex flex-col bg-[var(--qk-bg)] text-white overflow-hidden">
-      {/* Header */}
-      <header className="shrink-0 safe-area-top px-5 pt-3 pb-2 flex items-center justify-between">
+      {/* Header — app-safe-top: native shell already sits below the status
+          bar; raw env() double-counts it (see globals.css). */}
+      <header className="shrink-0 app-safe-top px-5 pt-3 pb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Community</h1>
         <div className="flex items-center gap-2">
           <button

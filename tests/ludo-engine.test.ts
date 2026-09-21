@@ -88,6 +88,60 @@ check('finish step is off-ring', trackCellForStep('red', 56) === null)
   }
 }
 
+// ── Finished-token home placement (the wrong-colored-home fix) ──────────────
+section('Finished tokens land in their OWN colored home (renderer +0.5 contract)')
+{
+  // The renderer centers a token at (slot.row + 0.5, slot.col + 0.5); the
+  // board center block spans rows/cols 6..9 with the four colored center
+  // triangles green TOP, yellow RIGHT, blue BOTTOM, red LEFT. Each finished
+  // pile's VISUAL center (slot + 0.5) must sit inside its own triangle.
+  // Point-in-triangle via barycentric sign tests in cell units.
+  const tri = (a: number[], b: number[], c: number[], p: number[]) => {
+    const s = (a[0] - c[0]) * (p[1] - c[1]) - (a[1] - c[1]) * (p[0] - c[0])
+    const t1 = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+    const t2 = (c[0] - b[0]) * (p[1] - b[1]) - (c[1] - b[1]) * (p[0] - b[0])
+    return (s >= 0 && t1 >= 0 && t2 >= 0) || (s <= 0 && t1 <= 0 && t2 <= 0)
+  }
+  const ownTriangle: Record<string, number[][]> = {
+    // red LEFT: (6,6) (9,6) (7.5,7.5) — vertices (row,col)
+    red: [[6, 6], [9, 6], [7.5, 7.5]],
+    // green TOP: (6,6) (6,9) (7.5,7.5)
+    green: [[6, 6], [6, 9], [7.5, 7.5]],
+    // yellow RIGHT: (6,9) (9,9) (7.5,7.5)
+    yellow: [[6, 9], [9, 9], [7.5, 7.5]],
+    // blue BOTTOM: (9,6) (9,9) (7.5,7.5)
+    blue: [[9, 6], [9, 9], [7.5, 7.5]],
+  }
+  const notOwn: Record<string, string> = { red: 'blue', green: 'yellow', yellow: 'red', blue: 'green' }
+  for (const color of ['red', 'green', 'yellow', 'blue'] as const) {
+    const [a, b, c] = ownTriangle[color]
+    for (let idx = 0; idx < 4; idx++) {
+      const p = tokenPlacement(color, idx, FINISH_STEP)
+      const visual = [p.row + 0.5, p.col + 0.5] // renderer contract
+      check(`${color} token ${idx + 1} finished pile sits in its own triangle`, tri(a, b, c, visual))
+      const [na, nb, nc] = ownTriangle[notOwn[color]]
+      check(`${color} token ${idx + 1} finished pile is NOT in the ${notOwn[color]} triangle`, !tri(na, nb, nc, visual))
+    }
+    // The finishing hop itself must end inside the own triangle (movement
+    // path derives from the same tokenPlacement — one assertion covers it).
+    const path = movementPath(color, 0, 55, FINISH_STEP)
+    const last = path[path.length - 1]
+    check(`${color} movement path lands in its own triangle`, tri(a, b, c, [last.row + 0.5, last.col + 0.5]))
+    // Piles of different colors never collide.
+  }
+  {
+    // Cross-color collision: no two colors' finished slots may share a cell.
+    const all: string[] = []
+    for (const color of ['red', 'green', 'yellow', 'blue'] as const) {
+      for (let idx = 0; idx < 4; idx++) {
+        const p = tokenPlacement(color, idx, FINISH_STEP)
+        all.push(`${p.row.toFixed(2)},${p.col.toFixed(2)}`)
+      }
+    }
+    check('all 16 finished slots are distinct', new Set(all).size === 16)
+  }
+}
+
 // ── Starting tokens (PRD §13) ────────────────────────────────────────────────
 section('Starting a token (PRD §13)')
 {

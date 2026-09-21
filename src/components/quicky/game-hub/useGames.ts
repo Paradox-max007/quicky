@@ -8,12 +8,23 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/quicky/api-client'
+import { cacheGet, cacheSet } from '@/lib/quicky/cache'
 import type { GameDef } from './types'
 
 const ACTIVE_PLAYERS_POLL_MS = 30_000
+/** Catalog cache TTL — the game list rarely changes; 5 min of instant paint
+ *  (Capacitor localStorage persists it across app restarts). */
+const GAMES_CACHE_TTL_MS = 5 * 60_000
+const GAMES_CACHE_KEY = 'games_catalog_v1'
 
 export function useGames() {
-  const [games, setGames] = useState<GameDef[] | null>(null)
+  // LOCAL-BOOT: paint the cached catalog instantly (stale is fine — the
+  // revalidate below lands within a beat and replaces it), so the Games
+  // screen opens with its cards, not a skeleton, on repeat visits.
+  const [games, setGames] = useState<GameDef[] | null>(() => {
+    const cached = cacheGet<GameDef[]>(GAMES_CACHE_KEY, { allowStale: true })
+    return Array.isArray(cached) ? cached : null
+  })
   const [failed, setFailed] = useState(false)
 
   const load = useCallback(async () => {
@@ -22,21 +33,29 @@ export function useGames() {
     try {
       const res = await api.games.list()
       setGames(res.games ?? [])
+      cacheSet(GAMES_CACHE_KEY, res.games ?? [], GAMES_CACHE_TTL_MS)
     } catch {
       setFailed(true)
     }
   }, [])
 
-  // Initial fetch: the effect never calls setState synchronously (react-hooks
-  // v6 set-state-in-effect) — the fetch resolves first, then state updates.
+  // Initial fetch: revalidate against the server (cache layer: instant paint
+  // above, fresh data here). The effect never calls setState synchronously
+  // (react-hooks v6 set-state-in-effect) — the fetch resolves first, then
+  // state updates.
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
         const res = await api.games.list()
-        if (!cancelled) setGames(res.games ?? [])
+        if (!cancelled) {
+          setGames(res.games ?? [])
+          cacheSet(GAMES_CACHE_KEY, res.games ?? [], GAMES_CACHE_TTL_MS)
+        }
       } catch {
-        if (!cancelled) setFailed(true)
+        // Offline: keep whatever the cache painted; only mark failed when
+        // there is nothing to show at all (§79: never a blank screen).
+        if (!cancelled && games === null) setFailed(true)
       }
     })()
     return () => {

@@ -130,18 +130,23 @@ export function GameMessageAlert() {
     const chat = useGameChatStore.getState()
     // Prefer the fully-resolved peer from the conversations list (avatar +
     // display name); fall back to the raw sender id with the shown name.
+    // (Reply-fallback fix: the outer reactive `peer` — not a self-reference
+    // to the object being built — fills the name/avatar when the snapshot
+    // didn't have the row yet.)
     const rowPeer = current.conversationId
       ? chat.list.find((c) => c.conversationId === current.conversationId)?.peer
       : undefined
-    const peer = rowPeer
+    const target = rowPeer
       ? { peerUserId: rowPeer.id, peerName: rowPeer.name, peerAvatar: rowPeer.avatar }
-      : { peerUserId: current.senderId, peerName: peer?.name ?? null, peerAvatar: peer?.avatar ?? null }
+      : peer
+        ? { peerUserId: peer.id, peerName: peer.name, peerAvatar: peer.avatar }
+        : { peerUserId: current.senderId, peerName: null, peerAvatar: null }
     // Back arrow returns to whatever screen the user was on. From a chat
     // screen (another peer's conversation) return to THAT chat's own return
     // view instead of the chat view itself — never a dead game-chat screen.
     const returnView =
       qk.view === 'game-chat' ? qk.gameChatReturnView || 'spin-bottle' : qk.view
-    qk.openGameChat(peer, returnView)
+    qk.openGameChat(target, returnView)
     setAlert(null)
   }
 

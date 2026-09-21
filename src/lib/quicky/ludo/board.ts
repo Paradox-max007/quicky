@@ -119,16 +119,29 @@ export const YARD_SLOTS: readonly { row: number; col: number }[] = [
 
 /** Center-block finished slot layout — COLOR-SPECIFIC (Unified PRD fix).
  *
- * The old shared FINISHED_SLOTS put EVERY color's finished tokens on the
- * same four center spots: a finished RED token and a finished BLUE token
- * stacked directly on top of each other and became unreadable. Now each
- * color's four tokens gather in a tight 2×2 mini-cluster inside the
- * quadrant of the center block its HOME PATH enters from (red west ·
- * green north · yellow east · blue south), so finished piles of different
- * colors sit in their own corner of the triangle and never collide.
+ * The four colored center triangles are: green TOP, yellow RIGHT, blue
+ * BOTTOM, red LEFT (LudoBoard CENTER_TRIS) — each color's home path walks
+ * straight into its OWN triangle (red from the west, green from the north,
+ * yellow from the east, blue from the south).
  *
- * Slot coordinates are token-center units (same convention as YARD_SLOTS);
- * the renderer scales {row,col} to any board size. */
+ * THE WRONG-HOME FIX: the renderer centers a token at (slot.row + 0.5,
+ * slot.col + 0.5) — the same +0.5 it applies to track/yard cells. The old
+ * slot values were authored as intended VISUAL centers (red "6.92" = 0.58
+ * cells left of the 7.5 board center), so the +0.5 shifted every finished
+ * cluster half a cell RIGHT and DOWN — red's pile landed in the blue
+ * triangle, green's in yellow's, and so on: "coins reaching home go to a
+ * different colored home". Slots are now authored in CELL units so the
+ * rendered pile lands at each triangle's centroid (1.0 cell from the board
+ * center along its axis):
+ *
+ *   red   → visual center (7.5, 6.5) → slots finishedCluster(cx=6.0, cy=7.0)
+ *   green → visual center (6.5, 7.5) → slots finishedCluster(cx=7.0, cy=6.0)
+ *   yellow→ visual center (7.5, 8.5) → slots finishedCluster(cx=8.0, cy=7.0)
+ *   blue  → visual center (8.5, 7.5) → slots finishedCluster(cx=7.0, cy=8.0)
+ *
+ * Different colors' piles never collide and never read as another color's
+ * home. Coordinates are in CELL units (renderer adds +0.5).
+ */
 function finishedCluster(cx: number, cy: number): { row: number; col: number }[] {
   const d = 0.22 // half the 0.44-cell cluster pitch
   return [
@@ -140,14 +153,18 @@ function finishedCluster(cx: number, cy: number): { row: number; col: number }[]
 }
 
 export const FINISHED_SLOTS: Record<LudoColor, readonly { row: number; col: number }[]> = {
-  // RED home path walks row 7 west → east → the red pile sits left-of-center.
-  red: finishedCluster(6.92, 7.5),
-  // GREEN home path walks col 7 north → south → the green pile sits above center.
-  green: finishedCluster(7.5, 6.92),
-  // YELLOW home path walks row 7 east → west → the yellow pile sits right-of-center.
-  yellow: finishedCluster(8.08, 7.5),
-  // BLUE home path walks col 7 south → north → the blue pile sits below center.
-  blue: finishedCluster(7.5, 8.08),
+  // RED home path walks row 7 west → east → the red pile sits in the LEFT
+  // (red) center triangle. Slot center (7.0, 6.0) renders at (7.5, 6.5).
+  red: finishedCluster(6.0, 7.0),
+  // GREEN home path walks col 7 north → south → the green pile sits in the
+  // TOP (green) triangle. Slot center (6.0, 7.0) renders at (6.5, 7.5).
+  green: finishedCluster(7.0, 6.0),
+  // YELLOW home path walks row 7 east → west → the yellow pile sits in the
+  // RIGHT (yellow) triangle. Slot center (7.0, 8.0) renders at (7.5, 8.5).
+  yellow: finishedCluster(8.0, 7.0),
+  // BLUE home path walks col 7 south → north → the blue pile sits in the
+  // BOTTOM (blue) triangle. Slot center (8.0, 7.0) renders at (8.5, 7.5).
+  blue: finishedCluster(7.0, 8.0),
 }
 
 export function tokenPlacement(color: LudoColor, tokenIndex: number, position: number): TokenPlacement {
@@ -165,8 +182,9 @@ export function tokenPlacement(color: LudoColor, tokenIndex: number, position: n
   if (track) return { kind: 'track', row: track.row, col: track.col }
   const home = homeCellForStep(color, position)
   if (home) return { kind: 'home', row: home.row, col: home.col }
-  // Unreachable (position validated by rules.ts) — park at center.
-  return { kind: 'finished', row: 7.25, col: 7.25 }
+  // Unreachable (position validated by rules.ts) — park at the board center
+  // (cell-slot 7,7 renders at the 7.5/7.5 midpoint).
+  return { kind: 'finished', row: 7, col: 7 }
 }
 
 // ── Static cell classification for rendering ────────────────────────────────

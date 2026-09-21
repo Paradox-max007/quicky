@@ -14,6 +14,7 @@ import {
   Gamepad2 } from 'lucide-react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
+import { cacheRemove } from '@/lib/quicky/cache'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { EditProfileScreen } from '../EditProfileScreen'
@@ -103,6 +104,8 @@ export function SettingsDesktop() {
     try {
       await api.auth.logout().catch(() => {})
     } finally {
+      // Drop the cached device session (cache layer) — no auto-boot back in.
+      cacheRemove('user_cache_v1')
       setUser(null)
       setView('auth')
     }

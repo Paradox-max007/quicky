@@ -67,7 +67,9 @@ export function UnifiedChatsScreen() {
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white" data-testid="unified-chats-screen">
-      <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2.5 flex flex-col gap-3 border-b border-white/10 bg-[var(--qk-bg)]/80 backdrop-blur">
+      {/* app-safe-top: native shell already sits below the status bar — raw
+          env() double-counts it (see globals.css). */}
+      <header className="shrink-0 app-safe-top px-3 pt-2.5 pb-2.5 flex flex-col gap-3 border-b border-white/10 bg-[var(--qk-bg)]/80 backdrop-blur">
         <div className="flex items-center gap-2 px-0.5">
           <button onClick={() => setView('discovery')} className="p-2 -ml-2 rounded-full hover:bg-white/10" aria-label="Back">
             <ArrowLeft className="h-5 w-5" />
