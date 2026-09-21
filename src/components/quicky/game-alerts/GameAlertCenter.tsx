@@ -5,8 +5,9 @@
 // Mounted ONCE in AppRoot above every screen. It renders, for every game
 // registered in turn-alert-sources.ts, the "your game needs you" card
 // (Dismiss + Go to Game — Spin-the-Bottle-decision-drawer choreography,
-// Ludo-revision buttons), plus the private game-chat message modal
-// (one-line preview + Reply → that sender's chat screen).
+// Ludo-revision buttons), plus the private game-chat message TOP DRAWER
+// (same slide-down + swipe choreography, theme-accent paint — one-line
+// preview + Reply → that sender's chat screen).
 //
 // GATES — split by notification KIND (notification-policy revision):
 //   1. GAMEPLAY alerts (turn cards) are ALWAYS ON while the user plays on

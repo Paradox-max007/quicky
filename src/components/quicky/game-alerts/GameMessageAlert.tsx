@@ -3,15 +3,23 @@
 // Quicky — GAME MESSAGE ALERT (in-game notification layer, private messages)
 //
 // When a PRIVATE game-chat message arrives and the user is NOT in that
-// sender's chat screen, a small modal pops with the SENDER'S CACHED PROFILE
-// (image + name — persisted in localStorage so it paints even before the
-// conversation list arrives) and the message preview — ONE LINE only, never
-// the full body — plus a Reply button.
+// sender's chat screen, a TOP DRAWER slides down with the SENDER'S CACHED
+// PROFILE (image + name — persisted in localStorage so it paints even before
+// the conversation list arrives) and the message preview — ONE LINE only,
+// never the full body — plus a Reply button.
 //
-// THEME (notification-policy revision): the modal is painted in the ACTIVE
-// THEME's accent color (Golden Hour → a gold modal; Lavender Dream →
-// lavender…) with the matching readable text color (--qk-on-accent), so the
-// popup always reads perfectly on every theme.
+// DRAWER CHOREOGRAPHY (notification-drawer revision): EXACTLY the same
+// popup system as the gameplay notifications (GameDecisionDrawer /
+// TurnAlertCard): slides down from the top over whatever screen the user
+// is on (300ms easeInOut), drag-down-to-dismiss with the shared threshold
+// (offset > 90px or velocity > 600 — swipe works on Capacitor, mobile web
+// and every mobile surface), auto-dismisses after AUTO_DISMISS_MS, and
+// carries NO backdrop — the game underneath stays FULLY visible and
+// playable ("do not overly disturb the gameplay"). The only difference
+// from the gameplay drawers is the PAINT: this one wears the ACTIVE
+// THEME's accent color (Golden Hour → a gold drawer; Lavender Dream →
+// lavender…) with the matching readable text colors (--qk-on-accent), so
+// the two kinds stay instantly distinguishable at a glance.
 //
 // REPLY NAVIGATION: Reply opens that sender's chat screen directly; the back
 // stack is chat → contacts → the game — hitting back from the chat lands on
@@ -31,13 +39,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MessageCircle } from 'lucide-react'
+import { MessageCircle } from 'lucide-react'
 import { useQuickyStore, type AppView } from '@/store/quicky'
 import { useGameChatStore, subscribeGameChatIncoming, type GameChatMessage } from '@/store/game-chat'
 import { cacheGet, cacheSet } from '@/lib/quicky/cache'
 import { hapticNotification } from '@/lib/capacitor'
 
-/** Modal self-dismisses after this long (one tap anywhere dismisses sooner). */
+/** Drawer self-dismisses after this long (a swipe or the Dismiss button
+ *  hides it sooner). Same "non-intrusive" pacing for every surface. */
 const AUTO_DISMISS_MS = 9_000
 
 /** localStorage key for the persisted sender-profile cache (qk: prefix). */
@@ -198,7 +207,7 @@ export function GameMessageAlert() {
     return () => clearTimeout(t)
   }, [alert])
 
-  // Escape closes the modal.
+  // Escape closes the drawer (keyboards attached to tablets etc.).
   useEffect(() => {
     if (!alert) return
     const onKey = (e: KeyboardEvent) => {
@@ -238,111 +247,111 @@ export function GameMessageAlert() {
   return (
     <AnimatePresence>
       {alert && (
-        <>
-          <motion.div
-            key="msg-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[238] bg-black/45 backdrop-blur-[2px]"
-            onClick={() => setAlert(null)}
-            aria-hidden
-          />
-          <motion.div
-            key={alert.id}
-            initial={{ scale: 0.92, opacity: 0, y: 10 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="fixed inset-x-0 top-1/2 z-[239] mx-auto w-[min(92vw,22rem)] -translate-y-1/2"
-            role="dialog"
-            aria-label="New game message"
-            data-testid="game-message-alert"
+        <motion.div
+          key={alert.id}
+          // IDENTICAL choreography to the gameplay drawers (GameDecisionDrawer
+          // §83/§84 + TurnAlertCard): slide-down 300ms, drag down to dismiss
+          // with the shared threshold — below it, snap back. NO backdrop:
+          // the game/table underneath stays visible and fully playable.
+          initial={{ y: '-120%', opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: '-120%', opacity: 0 }}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          drag="y"
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.55 }}
+          onDragEnd={(_, info) => {
+            if (info.offset.y > 90 || info.velocity.y > 600) setAlert(null)
+          }}
+          className="fixed top-[max(env(safe-area-inset-top),0.5rem)] inset-x-0 z-[232] mx-auto w-[min(94vw,26rem)]"
+          role="dialog"
+          aria-label="New game message"
+          data-testid="game-message-alert"
+        >
+          {/* THEME-COLORED drawer: the active theme's accent as the
+              background + its matching readable text color — identical
+              geometry and choreography to the gameplay cards, only the
+              paint differs. Golden Hour → gold drawer with deep-brown
+              text; Midnight → coral with white. */}
+          <div
+            className="relative border border-white/25 rounded-3xl shadow-2xl p-4 flex items-center gap-3.5"
+            style={{ background: 'var(--qk-accent)' }}
           >
-            {/* THEME-COLORED modal: the active theme's accent as the
-                background + its matching readable text color. Golden Hour →
-                gold modal with deep-brown text; Midnight → coral with white. */}
+            {/* drag hint — the same affordance as the gameplay drawers, in
+                the on-accent color so it reads on every theme */}
             <div
-              className="relative border border-white/25 rounded-3xl shadow-2xl p-5 flex flex-col items-center text-center gap-3"
-              style={{ background: 'var(--qk-accent)' }}
-            >
+              className="absolute top-1.5 left-1/2 -translate-x-1/2 h-1 w-10 rounded-full"
+              style={{ background: 'var(--qk-on-accent)', opacity: 0.25 }}
+              aria-hidden
+            />
+
+            {/* The sender's CACHED profile image (list row when live, the
+                persisted cache otherwise) — never an anonymous placeholder
+                when we have ever seen this sender before. */}
+            <div className="relative shrink-0">
+              {peer?.avatar ? (
+                <img
+                  src={peer.avatar}
+                  alt=""
+                  className="w-16 h-16 rounded-2xl object-cover border border-white/40 shadow-md"
+                />
+              ) : (
+                <span
+                  className="w-16 h-16 rounded-2xl bg-black/15 flex items-center justify-center text-2xl"
+                  aria-hidden
+                >
+                  💬
+                </span>
+              )}
+              <span className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-white border border-black/10 flex items-center justify-center">
+                <MessageCircle className="w-3.5 h-3.5" style={{ color: 'var(--qk-accent)' }} aria-hidden />
+              </span>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <p
+                className="text-[10px] font-black tracking-[0.18em] uppercase"
+                style={{ color: 'var(--qk-on-accent-soft)' }}
+              >
+                New game message
+              </p>
+              <p className="font-black text-base leading-tight truncate" style={{ color: 'var(--qk-on-accent)' }}>
+                {peer?.name ?? 'New message'}
+              </p>
+              {/* ONE line, truncated — the full message lives in the chat */}
+              <p
+                className="text-xs font-semibold mt-0.5 truncate"
+                style={{ color: 'var(--qk-on-accent-soft)' }}
+                data-testid="game-message-preview"
+              >
+                {previewLine(alert) || 'Sent you a message'}
+              </p>
+            </div>
+
+            {/* Same vertical action stack as the gameplay turn card:
+                the primary action on top, dismiss below. */}
+            <div className="flex flex-col gap-1.5 shrink-0">
+              <button
+                onClick={reply}
+                className="bg-white rounded-xl px-3.5 py-2 text-xs font-black tracking-wide active:scale-95 transition shadow-md"
+                style={{ color: 'var(--qk-accent)' }}
+                aria-label={`Reply to ${peer?.name ?? 'sender'}`}
+                data-testid="game-message-reply"
+              >
+                Reply
+              </button>
               <button
                 onClick={() => setAlert(null)}
-                className="absolute top-3 right-3 hover:opacity-100 active:scale-90 transition"
-                style={{ color: 'var(--qk-on-accent)', opacity: 0.65 }}
+                className="bg-black/25 border border-white/25 rounded-xl px-3.5 py-1.5 text-[11px] font-bold active:scale-95 transition"
+                style={{ color: 'var(--qk-on-accent)' }}
                 aria-label="Dismiss message notification"
                 data-testid="game-message-dismiss"
               >
-                <X className="w-4 h-4" />
+                Dismiss
               </button>
-
-              {/* The sender's CACHED profile image (list row when live, the
-                  persisted cache otherwise) — never an anonymous placeholder
-                  when we have ever seen this sender before. */}
-              <div className="relative shrink-0">
-                {peer?.avatar ? (
-                  <img
-                    src={peer.avatar}
-                    alt=""
-                    className="w-16 h-16 rounded-2xl object-cover border border-white/40 shadow-md"
-                  />
-                ) : (
-                  <span
-                    className="w-16 h-16 rounded-2xl bg-black/15 flex items-center justify-center text-2xl"
-                    aria-hidden
-                  >
-                    💬
-                  </span>
-                )}
-                <span
-                  className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-white border border-black/10 flex items-center justify-center"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" style={{ color: 'var(--qk-accent)' }} aria-hidden />
-                </span>
-              </div>
-
-              <div className="min-w-0 w-full">
-                <p
-                  className="text-[10px] font-black tracking-[0.18em] uppercase"
-                  style={{ color: 'var(--qk-on-accent-soft)' }}
-                >
-                  New game message
-                </p>
-                <p className="font-black text-base leading-tight truncate" style={{ color: 'var(--qk-on-accent)' }}>
-                  {peer?.name ?? 'New message'}
-                </p>
-                {/* ONE line, truncated — the full message lives in the chat */}
-                <p
-                  className="text-sm font-semibold mt-1 truncate"
-                  style={{ color: 'var(--qk-on-accent-soft)' }}
-                  data-testid="game-message-preview"
-                >
-                  {previewLine(alert) || 'Sent you a message'}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2.5 w-full">
-                <button
-                  onClick={reply}
-                  className="flex-1 bg-white rounded-xl px-4 py-2.5 text-sm font-black tracking-wide active:scale-95 transition shadow-md"
-                  style={{ color: 'var(--qk-accent)' }}
-                  aria-label={`Reply to ${peer?.name ?? 'sender'}`}
-                  data-testid="game-message-reply"
-                >
-                  Reply
-                </button>
-                <button
-                  onClick={() => setAlert(null)}
-                  className="bg-black/25 border border-white/25 rounded-xl px-4 py-2.5 text-sm font-bold active:scale-95 transition"
-                  style={{ color: 'var(--qk-on-accent)' }}
-                  aria-label="Dismiss message notification"
-                >
-                  Dismiss
-                </button>
-              </div>
             </div>
-          </motion.div>
-        </>
+          </div>
+        </motion.div>
       )}
     </AnimatePresence>
   )
