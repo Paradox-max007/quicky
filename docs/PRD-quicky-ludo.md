@@ -1012,13 +1012,38 @@ must remain easily reachable.
 
 REMOVED. The user NEVER taps a roll button: the dice are a SERVER action.
 After the turn arms, the server auto-rolls for the active player after a short
-beat (TURN_AUTOROLL_DELAY_MS = 1.5s). The 3D die FLOATS over the board while it
-rolls, settles on the server's number, then fades away — the number stays
+beat (TURN_AUTOROLL_DELAY_MS = 1.5s) - BUT the next roll ALSO honours
+ROLL_SPACING_MS (the full client dice sequence + a clean gap): a no-move roll
+passes the turn instantly server-side, and the next player's auto-roll would
+otherwise land ~1.75s later, CUTTING the previous dice animation mid-flight
+(the die never lands, the round bar flickers, and only interactive 6-rolls are
+ever readable - the reported "turn is not switching" symptom). With the
+spacing gate EVERY roll - passes, third-six cancellations, extra 6-rolls -
+completes its enter-roll-settle-hold-exit sequence on EVERY device, and the
+seat rotation reads like a real table. The 3D die FLOATS over the board while it
+rolls, settles on the server's number, then fades away - the number stays
 visible in the slim bottom round-bar hint ("Alex: rolled 6") until the round
-moves on. The move window is a 45s VISIBLE timer (TURN_MOVE_TIMEOUT_MS = 45s):
+moves on, and the bar ANNOUNCES the outcome of every roll ("no moves - turn
+passes" / "three sixes - turn cancelled" / "rolled a 6 - rolls again" /
+"moved - turn passes" / "out of time - turn passes") so no turn switch is
+ever silent. The move window is a 30s VISIBLE timer (TURN_MOVE_TIMEOUT_MS = 30s):
 tap a coin and it moves immediately (no cooldown); if the window expires the
 chance is skipped server-side and the skipped player's device shows a small
 center popup "CHANCE MISSED" WITHOUT a backdrop while the game continues.
+
+Turn-switch hard rules (server-authoritative, strict seat rotation):
+  - strict seat-order rotation RED-GREEN-YELLOW-BLUE, wrapping, skipping
+    empty/left seats - every player's turn is armed, visible and announced;
+  - a rolled 6 grants an extra roll to the SAME player only after they MOVE
+    (classic rule); three consecutive 6s cancel the third and pass;
+  - GHOST SWEEP - a game-state player whose room membership row is gone
+    (re-join churn elsewhere, inactivity sweep, crashed client) is removed
+    from the game on the next server touch: tokens off the board, turn
+    advances if it was theirs. A game that falls below 2 active players
+    reverts to the lobby AND the room row follows (WAITING) - a running
+    room can never become a join-locked zombie;
+  - re-joining with your OWN seat (app restart, Play Now re-tap) RESUMES the
+    running room instead of ghosting yourself into a fresh one.
 
 (Original spec — Large touch target:
 

@@ -31,6 +31,7 @@
 
 import { db } from '@/lib/db'
 import { cancelRoomTimers, forfeitRoundFor } from './spin-bottle'
+import { detachLudoPlayer } from './ludo-server'
 import { emitRoomUpdate } from './spin-events'
 
 // Thresholds are env-tunable so QA can shrink them in dev; the production
@@ -95,6 +96,24 @@ export async function deleteRoomCompletely(roomId: string): Promise<boolean> {
   return ok
 }
 
+/**
+ * §16 game-aware forfeit: resolve whatever the player was inside BEFORE
+ * their membership row is deactivated. Spin Bottle: the pending spin round
+ * is resolved. Ludo: the player is detached from the authoritative game
+ * state (tokens off the board §41, turn advances §43) — without this the
+ * sweep produced GHOST players whose turns kept burning 30s windows.
+ */
+async function forfeitForMember(roomId: string, userId: string) {
+  const room = await db.spinRoom
+    .findUnique({ where: { id: roomId }, select: { gameType: true } })
+    .catch(() => null)
+  if (room?.gameType === 'ludo') {
+    await detachLudoPlayer(roomId, userId).catch(() => {})
+    return
+  }
+  await forfeitRoundFor(roomId, userId).catch(() => {})
+}
+
 async function deactivateMember(roomId: string, userId: string, name: string | null) {
   await db.spinRoomPlayer.updateMany({
     where: { roomId, userId, leftAt: null },
@@ -130,7 +149,7 @@ export async function runRoomCleanup(): Promise<CleanupStats> {
   const touchedRooms = new Set<string>()
   for (const m of staleMembers) {
     // §16: resolve/cancel any round that depends on this player FIRST.
-    await forfeitRoundFor(m.roomId, m.userId).catch(() => {})
+    await forfeitForMember(m.roomId, m.userId).catch(() => {})
     const u = await db.user.findUnique({ where: { id: m.userId }, select: { name: true } })
     await deactivateMember(m.roomId, m.userId, u?.name ?? null).catch(() => {})
     await recordClosure(m.roomId, [m.userId], 'inactivity')
@@ -195,7 +214,7 @@ export async function runRoomCleanup(): Promise<CleanupStats> {
       if (now - startedAt.getTime() >= SINGLETON_MS) {
         // §10: system removes the remaining player, room is discarded.
         const only = room.players[0]
-        await forfeitRoundFor(roomId, only.userId).catch(() => {})
+        await forfeitForMember(roomId, only.userId).catch(() => {})
         const u = await db.user.findUnique({ where: { id: only.userId }, select: { name: true } })
         await deactivateMember(roomId, only.userId, u?.name ?? null).catch(() => {})
         await recordClosure(roomId, [only.userId], 'singleton')

@@ -9,11 +9,14 @@
 
 import {
   BOARD_SIZE,
+  DICE_SEQ_TOTAL_MS,
   FINISH_STEP,
   HOME_ENTRY,
   LUDO_MAX_PLAYERS,
   RING_SIZE,
+  ROLL_SPACING_MS,
   SEAT_COLORS,
+  TURN_AUTOROLL_DELAY_MS,
   isSafeRingCell,
 } from '../src/lib/quicky/ludo/constants'
 import {
@@ -343,6 +346,85 @@ section('Roll record + turn id (ROUND-4 multiplayer PRD)')
 section('Game limits (PRD §5/§6)')
 check('max players is exactly 4', LUDO_MAX_PLAYERS === 4)
 check('finish step is 56 (51 ring + 5 home)', FINISH_STEP === 56 && HOME_ENTRY === 51)
+
+// ── Roll pacing + turn rotation (the "turn is not switching" fix) ───────────
+section('Roll pacing — every roll fully visible (ROLL_SPACING)')
+{
+  // The next auto-roll must never fire while the previous roll's dice
+  // animation is still on screen: deadline >= lastRoll.rolledAt +
+  // ROLL_SPACING_MS, whichever arm path was taken.
+  const s0 = startGame(createGameState([P('a', 0), P('b', 2)]), () => 0)
+  check('ROLL_SPACING covers the full dice sequence + gap', ROLL_SPACING_MS >= DICE_SEQ_TOTAL_MS)
+
+  // 1) No-move roll: the turn passes instantly, but the NEXT player's
+  // auto-roll waits for the animation gate — not the bare 1.5s beat.
+  const r3 = rollDice(s0, s0.currentPlayerId!, 'act-p1', d(3))
+  if (r3.ok) {
+    const gate = r3.state.lastRoll!.rolledAt + ROLL_SPACING_MS
+    check('no-move pass: next roll gated past the animation', r3.state.turnDeadlineAt === gate)
+    check('no-move pass: next roll NOT at the bare arming beat', r3.state.turnDeadlineAt! > r3.state.lastRoll!.rolledAt + TURN_AUTOROLL_DELAY_MS)
+  }
+
+  // 2) Extra roll after a 6-move: the 6 lands and is READ before the re-roll.
+  const s1 = setToken(s0, 'red-1', { state: 'track', position: 10 })
+  const six = rollDice(s1, s1.currentPlayerId!, 'act-p2', d(6))
+  const mv = six.ok ? moveToken(six.state, six.state.currentPlayerId!, 'red-1', 'act-p2m') : null
+  if (mv?.ok) {
+    const gate = mv.state.lastRoll!.rolledAt + ROLL_SPACING_MS
+    check('6-move: re-roll waits for the animation gate', mv.state.turnDeadlineAt === gate)
+  }
+
+  // 3) A LATE move (long after the roll): the arming beat wins — snappy.
+  const T0 = 100_000
+  const s2 = startGame(createGameState([P('a', 0), P('b', 2)]), () => 0, T0)
+  const sTrack = setToken(s2, 'red-1', { state: 'track', position: 10 })
+  const late = { ...sTrack, dice: { value: 4, rolledBy: 'a', rolledAt: T0 + 5_000 }, lastRoll: { rollId: 'roll_late', playerId: 'a', value: 4, rolledAt: T0 + 5_000 } }
+  const lateMv = moveToken(late, 'a', 'red-1', 'act-p3', T0 + 25_000)
+  if (lateMv.ok) {
+    check('late move: next roll follows the arming beat (snappy)', lateMv.state.turnDeadlineAt === T0 + 25_000 + TURN_AUTOROLL_DELAY_MS)
+  }
+}
+
+section('Turn rotation — strict seat order, no player skipped (§58)')
+{
+  // Deterministic rotation: force non-6 rolls so every roll passes instantly;
+  // walk 6 full rounds and assert the EXACT seat order a→b→a→b (2P diagonal
+  // seats 0/2 — the mode-table layout the join flow assigns).
+  const s0 = startGame(createGameState([P('a', 0), P('b', 2)]), () => 0)
+  const first = s0.currentPlayerId
+  const other = first === 'a' ? 'b' : 'a'
+  const order: string[] = [first]
+  let st: LudoGameState | null = s0
+  for (let i = 0; i < 11 && st; i++) {
+    const r = rollDice(st, st.currentPlayerId!, `rot-${i}`, d(2)) // 2 = never legal from the yard
+    if (!r.ok) break
+    st = r.state
+    order.push(st.currentPlayerId!)
+  }
+  const expect = [first, other, first, other, first, other, first, other, first, other, first, other]
+  check('2P rotation strictly alternates for 6 full rounds', JSON.stringify(order) === JSON.stringify(expect))
+
+  // 4P rotation: seats 0,1,2,3 in order (mod empty) — the same walk over a
+  // full table must cycle red→green→yellow→blue.
+  const s4 = startGame(createGameState([P('a', 0), P('b', 1), P('c', 2), P('dd', 3)]), () => 0)
+  const seq: string[] = []
+  let st4: LudoGameState | null = s4
+  for (let i = 0; i < 12 && st4; i++) {
+    seq.push(st4.currentPlayerId!)
+    const r = rollDice(st4, st4.currentPlayerId!, `rot4-${i}`, d(2))
+    if (!r.ok) break
+    st4 = r.state
+  }
+  const uniq = [...new Set(seq)]
+  check('4P rotation visits all four seats', uniq.length === 4)
+  const seatOf = (id: string) => [0, 1, 2, 3].find((s) => (s === 0 ? 'a' : s === 1 ? 'b' : s === 2 ? 'c' : 'dd') === id)
+  check('4P rotation follows seat order (RED→GREEN→YELLOW→BLUE)', seq.every((id, i) => (i === 0 ? true : (seatOf(id)! > seatOf(seq[Math.max(0, i - 1)])! || seatOf(id) === Math.min(...uniq.map(seatOf)!)))))
+
+  // Nobody hogs: 12 consecutive turns, each of the 4 players gets exactly 3.
+  const counts: Record<string, number> = {}
+  for (const id of seq) counts[id] = (counts[id] ?? 0) + 1
+  check('12 turns split 3/3/3/3 — no player hogs the rotation', Object.values(counts).every((n) => n === 3))
+}
 
 console.log(`\n═══ Ludo engine tests: ${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

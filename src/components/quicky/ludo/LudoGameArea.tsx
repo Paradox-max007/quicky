@@ -115,6 +115,12 @@ export function LudoGameArea({
   // dead-waiting behind a resting one either).
   const dice = useDiceSequencer(game?.lastRoll ?? null, game?.dice?.value != null)
   const prevVersionRef = useRef<number>(0)
+  // ROLL OUTCOME (the readable-rotation fix) — remembers WHICH roll was
+  // consumed by a token move (the animation effect sets it on the version
+  // diff where a coin advanced). Lets the round bar say "no moves · turn
+  // passes" / "three sixes · cancelled" / "rolls again" instead of the
+  // rotation flipping silently between players.
+  const movedWithRollRef = useRef<string | null>(null)
 
   // A light haptic the moment the die ENTERS — every device feels every
   // roll (the sequencer guarantees it fires once per rollId, never twice).
@@ -232,6 +238,8 @@ export function LudoGameArea({
     })
 
     const path = movementPath(mover.color, mover.index, moverFrom, mover.position)
+    // This move consumed the CURRENT roll — tag it for the outcome line.
+    movedWithRollRef.current = dice.hint?.rollId ?? null
     // The coin LIFTS and hops square by square (real board-game feel):
     // the moving flag drives the continuous hop cycle on the token dot.
     const startHop = setTimeout(() => setMovingId(mover!.id), wait)
@@ -301,8 +309,25 @@ export function LudoGameArea({
     const h = dice.hint
     if (!h) return null
     const p = game?.players.find((pl) => pl.userId === h.playerId)
-    return { name: p?.displayName ?? 'Player', value: h.value, isMe: h.playerId === meId }
+    return { name: p?.displayName ?? 'Player', value: h.value, isMe: h.playerId === meId, rollId: h.rollId, playerId: h.playerId }
   }, [dice.hint, game?.players, meId])
+
+  // ROLL OUTCOME — WHY the turn is (or is not) moving on, derived from the
+  // authoritative state: consumed roll + who holds the turn now + whether a
+  // move ate it + the last event. Shown by the round bar under/next to the
+  // rolled number so every pass in the rotation is READ, not just seen.
+  const rollOutcome: 'no_moves' | 'six_cancelled' | 'extra_roll' | 'moved_pass' | 'moved_extra' | 'timed_out' | null = useMemo(() => {
+    if (!game || !lastRoll) return null
+    const rec = game.lastRoll
+    if (!rec || rec.rollId !== lastRoll.rollId) return null // displayed roll isn't the state's roll
+    if (game.dice.value != null) return null // interactive — "pick a coin" covers it
+    if (game.lastEvent?.type === 'turn_skipped') return 'timed_out'
+    if (movedWithRollRef.current === rec.rollId) {
+      return rec.value === 6 ? 'moved_extra' : 'moved_pass'
+    }
+    if (game.currentPlayerId === rec.playerId) return 'extra_roll'
+    return rec.value === 6 ? 'six_cancelled' : 'no_moves'
+  }, [game, lastRoll])
 
   // ── Turn phase (§30/§32) ──────────────────────────────────────────────────
   const roomStatus = snapshot.status
@@ -511,6 +536,7 @@ export function LudoGameArea({
       <LudoRoundBar
         phase={phase}
         lastRoll={lastRoll}
+        rollOutcome={rollOutcome}
         moveDeadlineAt={game?.moveDeadlineAt ?? null}
         serverSkewMs={snapshot.serverNow ? snapshot.serverNow - Date.now() : 0}
         currentPlayerName={currentPlayer?.displayName ?? '…'}

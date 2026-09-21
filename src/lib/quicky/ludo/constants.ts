@@ -62,13 +62,12 @@ export function isSafeRingCell(ringIndex: number): boolean {
 // ── Tuning (server-authoritative timings; Ludo PRD §42/§103) ────────────────
 /** §14 REVISED — the dice are a SERVER ACTION: there is no roll button. The
  * server auto-rolls for the active player this long after the turn arms —
- * long enough for the turn change to read and the PREVIOUS dice animation
- * to leave the table (earliest possible move = the reveal beat at 3.5s; the
- * die exits at 5.25s; 1.5s + 250ms grace lands the next roll just after the
- * exit — clean table, snappy cadence), then the dice fly (ROUND-4 §16).
- * TURN-ROTATION NOTE: this delay arms for EVERY seat change — 2P and 4P
- * alike — so the roll alternates player-to-player; only a rolled 6 keeps
- * the turn (§16). */
+ * the "new player's turn" reading beat (the name/colour change must be
+ * readable before the die starts flying). TURN-ROTATION: this beat arms for
+ * EVERY seat change — 2P and 4P alike — so the roll alternates
+ * player-to-player; only a rolled 6 keeps the turn (§16).
+ * NOTE: this is the MINIMUM wait only — the next roll ALSO honours
+ * ROLL_SPACING_MS (below) so the previous die's animation always completes. */
 export const TURN_AUTOROLL_DELAY_MS = 1_500
 /** §44 REVISED — 30s VISIBLE move window once a dice is pending. When it
  * expires the chance is cancelled/skipped and the game moves forward.
@@ -112,6 +111,22 @@ export const DICE_HOLD_MS = 1_400
 export const DICE_EXIT_MS = 350
 /** Total dice sequence — exported for QA + tests. */
 export const DICE_SEQ_TOTAL_MS = DICE_ENTER_MS + DICE_ROLL_MS + DICE_SETTLE_MS + DICE_HOLD_MS + DICE_EXIT_MS
+/**
+ * ROLL SPACING (the "turn is not switching" fix) — the minimum gap between
+ * two consecutive roll EVENTS, whatever players they belong to. A no-move
+ * roll passes the turn INSTANTLY server-side (correct classic Ludo); without
+ * this gate the next player's auto-roll landed ~1.75s later — BEFORE the
+ * previous roll's dice animation (5.25s enter→exit) had even LANDED, so the
+ * sequencer cut every no-move roll mid-flight: the die never settled, the
+ * round bar flickered between players, and the only readable rolls were the
+ * interactive ones (a 6) — which then CHAIN (§16 extra roll), making it look
+ * like ONE player hogs every turn and the rotation never switches. Gating
+ * the next roll on the previous sequence's completion makes EVERY roll —
+ * including instant passes and third-six cancellations — fully visible on
+ * every device, and the seat rotation reads exactly like a real table:
+ * roll → land on the number → "no moves, turn passes" → NEXT player.
+ * Sized on the shared client choreography: full sequence + a clean gap. */
+export const ROLL_SPACING_MS = DICE_SEQ_TOTAL_MS + 250
 /**
  * THE SYNC ANCHOR (Unified PRD §41 sync revision): the beat inside the dice
  * sequence at which the die lands on the SERVER value. Exactly on this beat

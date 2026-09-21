@@ -199,6 +199,49 @@ export async function ensureLudoRuntime(roomId: string): Promise<void> {
   // player (§14 revised); a move deadline passed with a pending dice →
   // discard it and skip the chance (§44 — the game always moves forward).
   if (room.status === 'PLAYING' && state?.status === 'playing' && state.currentPlayerId) {
+    // ── GHOST SWEEP (the "turn stuck on one player" hardening) ──
+    // A game-state player whose room membership row is GONE (killed by a
+    // re-join elsewhere through endOtherMemberships, the inactivity sweep,
+    // or a crashed client that never called leave) still "holds" a seat in
+    // the engine: the rotation kept handing THEM turns that nobody could
+    // play, each burning the full 30s move window while everyone else
+    // watched a seemingly frozen game. Reconciling here — on every tick /
+    // stream attach — removes the ghost's tokens (§41) and advances the
+    // turn if it was theirs (§43), whichever path orphaned the member row.
+    const members = await db.spinRoomPlayer.findMany({
+      where: { roomId, leftAt: null, isActive: true },
+      select: { userId: true },
+    })
+    const activeIds = new Set(members.map((m) => m.userId))
+    const ghosts = state.players.filter((p) => p.status !== 'left' && !activeIds.has(p.userId))
+    if (ghosts.length > 0) {
+      let st = state
+      for (const ghost of ghosts) {
+        st = engineRemovePlayer(st, ghost.userId, `ghost_${Date.now()}_${ghost.userId}`, Date.now()).state
+      }
+      if (await writeGameStateCas(roomId, st, state.version)) {
+        if (st.status === 'playing') {
+          scheduleWatchdog(roomId, st)
+        } else {
+          // The removal dropped the game below 2 active players → back to
+          // the lobby (§5). The ROOM row MUST follow, or it stays
+          // join-locked as PLAYING forever with a dead waiting game inside
+          // (a zombie room nobody can enter or continue).
+          await db.spinRoom
+            .updateMany({
+              where: { id: roomId, status: 'PLAYING' },
+              data: { status: 'WAITING', startedAt: null, lastActivityAt: new Date() },
+            })
+            .catch(() => {})
+        }
+        for (const ghost of ghosts) {
+          emitRoomUpdate(roomId, 'LUDO_PLAYER_LEFT', { roomId, userId: ghost.userId, game: st })
+        }
+        emitRoomUpdate(roomId)
+      }
+      return // the authoritative state changed under us — the next pass
+             // (≤3s tick) picks up the roll/move deadlines from here
+    }
     const now = Date.now()
     const rollLate = state.dice.value == null && state.turnDeadlineAt != null && now >= state.turnDeadlineAt + WATCHDOG_GRACE_MS
     const moveLate = state.dice.value != null && state.moveDeadlineAt != null && now >= state.moveDeadlineAt + WATCHDOG_GRACE_MS
@@ -384,7 +427,20 @@ export async function detachLudoPlayer(roomId: string, userId: string): Promise<
     const out = engineRemovePlayer(state, userId, `leave_${Date.now()}`)
     if (await writeGameStateCas(roomId, out.state, state.version)) {
       emitRoomUpdate(roomId, 'LUDO_PLAYER_LEFT', { roomId, userId })
-      if (out.state.status === 'playing') scheduleWatchdog(roomId, out.state)
+      if (out.state.status === 'playing') {
+        scheduleWatchdog(roomId, out.state)
+      } else {
+        // The leaver dropped the game below 2 active players → back to the
+        // lobby (§5). The ROOM row must follow the game state, or the room
+        // stays join-locked as PLAYING forever with a dead game inside
+        // (zombie room: nobody can join §98, nothing can ever start again).
+        await db.spinRoom
+          .updateMany({
+            where: { id: roomId, status: 'PLAYING' },
+            data: { status: 'WAITING', startedAt: null, lastActivityAt: new Date() },
+          })
+          .catch(() => {})
+      }
       emitRoomUpdate(roomId)
     }
   } else {

@@ -26,6 +26,7 @@ import {
   TURN_AUTOROLL_DELAY_MS,
   TURN_MOVE_TIMEOUT_MS,
   DICE_REVEAL_MS,
+  ROLL_SPACING_MS,
   colorForSeat,
   isSafeRingCell,
 } from './constants'
@@ -125,6 +126,25 @@ function nextPlayerAfter(state: LudoGameState, seat: number): LudoPlayer | null 
   return idx === -1 ? active[0] : active[idx]
 }
 
+/**
+ * ROLL PACING — when the next auto-roll may fire (the "turn is not
+ * switching" root fix). TWO gates, whichever is LATER:
+ *   · the arming beat (TURN_AUTOROLL_DELAY_MS after `now`): the reading
+ *     window for the turn change itself (§14 revised), and
+ *   · the animation gate (lastRoll.rolledAt + ROLL_SPACING_MS): never start
+ *     a new roll while the previous die — on ANY player's turn — is still
+ *     inside its enter→exit sequence on the clients. Without the second
+ *     gate, instant no-move passes cycled the turn every ~1.75s, each new
+ *     rollId CUT the previous dice animation mid-flight, and the rotation
+ *     read as "stuck on one player" (only interactive 6-rolls survived
+ *     long enough to be seen). With it, every roll completes, lands and is
+ *     read on every device before the next one flies — classic table pace.
+ */
+function armRollDeadline(state: LudoGameState, now: number): number {
+  const lastRollAt = state.lastRoll?.rolledAt ?? 0
+  return Math.max(now + TURN_AUTOROLL_DELAY_MS, lastRollAt + ROLL_SPACING_MS)
+}
+
 function armTurn(state: LudoGameState, playerId: string | null, now: number) {
   state.currentPlayerId = playerId
   // ROUND-4 (multiplayer PRD §28) — every armed turn carries a stable id:
@@ -134,7 +154,8 @@ function armTurn(state: LudoGameState, playerId: string | null, now: number) {
   state.moveDeadlineAt = null
   // §14 revised — the deadline is the SERVER'S OWN auto-roll beat: the user
   // never rolls, the server throws the dice for them after this delay.
-  state.turnDeadlineAt = playerId ? now + TURN_AUTOROLL_DELAY_MS : null
+  // ROLL PACING — the animation gate above keeps the previous roll visible.
+  state.turnDeadlineAt = playerId ? armRollDeadline(state, now) : null
 }
 
 /**
@@ -253,10 +274,11 @@ export function rollDice(
   if (legal.length === 0) {
     if (value === 6) {
       // §16 — no legal move after a 6 → the player rolls again (server
-      // auto-rolls after the short beat — still no user action required).
+      // auto-rolls after the beat — still no user action required). ROLL
+      // PACING: the gate makes THIS 6 land and be read before the re-roll.
       state.dice = { value: null, rolledBy: null, rolledAt: null }
       state.moveDeadlineAt = null
-      state.turnDeadlineAt = now + TURN_AUTOROLL_DELAY_MS
+      state.turnDeadlineAt = armRollDeadline(state, now)
       events.push({ type: 'extra_turn', playerId })
     } else {
       // No legal move, no 6 → the turn passes automatically.
@@ -367,11 +389,12 @@ export function moveToken(
   }
 
   // §16 — a 6 grants another roll to the SAME player (server auto-rolls —
-  // the user only ever picks a token).
+  // the user only ever picks a token). ROLL PACING: the re-roll waits for
+  // the animation gate so the 6 that earned it is fully seen first.
   if (dice === 6) {
     state.dice = { value: null, rolledBy: null, rolledAt: null }
     state.moveDeadlineAt = null
-    state.turnDeadlineAt = now + TURN_AUTOROLL_DELAY_MS
+    state.turnDeadlineAt = armRollDeadline(state, now)
     events.push({ type: 'extra_turn', playerId })
   } else {
     const next = nextPlayerAfter(state, seatOf(state, playerId))

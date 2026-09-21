@@ -29,6 +29,7 @@ import { maybeRunCleanupLazy } from '@/lib/quicky/room-cleanup'
 import { endOtherMemberships } from '@/lib/quicky/room-assignment'
 import { activeLudoPlayerCount, assignLudoRoomAndSeat, normalizeLudoMode } from '@/lib/quicky/ludo-assignment'
 import { scheduleLudoCountdown, seatedLudoPlayers } from '@/lib/quicky/ludo-server'
+import { touchMemberActivity } from '@/lib/quicky/room-activity'
 import { createGameState } from '@/lib/quicky/ludo/rules'
 import type { Prisma } from '@prisma/client'
 
@@ -51,6 +52,44 @@ export async function POST(req: NextRequest) {
     where: { id: me.id },
     select: { name: true, gender: true },
   })
+
+  // ── Step 0 — RESUME (the "turn stuck on one player" root fix) ──────────
+  // The user already holds a seat in a Ludo room of THIS mode (they re-tapped
+  // Play Now after backgrounding the app, cold-starting, or navigating the
+  // landing mid-game). The OLD flow fell through to endOtherMemberships —
+  // which ended their seat in the RUNNING room (ghost player: tokens stay on
+  // the board, the rotation keeps handing them 30s turns nobody plays) and
+  // then seated them in a FRESH room, stranding the opponent. §98 (join lock)
+  // exists for OTHER players arriving midway; a player returning to their
+  // OWN seat is a reconnect, not a join. Straight back, zero churn.
+  const ownLudoRoom = await db.spinRoomPlayer.findFirst({
+    where: {
+      userId: me.id,
+      leftAt: null,
+      isActive: true,
+      room: {
+        gameType: 'ludo',
+        maxPlayers: mode,
+        status: { in: ['WAITING', 'STARTING', 'PLAYING'] },
+      },
+    },
+    select: { roomId: true, seatIndex: true },
+  })
+  if (ownLudoRoom) {
+    const resume = await buildLudoSnapshot(ownLudoRoom.roomId, me.id)
+    if (resume) {
+      // Presence stamp so the room doesn't read them as disconnected.
+      void touchMemberActivity(ownLudoRoom.roomId, me.id).catch(() => {})
+      return NextResponse.json({
+        ok: true,
+        roomId: ownLudoRoom.roomId,
+        mode,
+        createdNewRoom: false,
+        resumed: true,
+        snapshot: resume,
+      })
+    }
+  }
 
   // 1. End any other active membership for this user (single-room rule).
   await endOtherMemberships(me.id)

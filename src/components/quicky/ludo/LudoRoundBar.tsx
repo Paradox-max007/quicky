@@ -30,9 +30,29 @@ export type TurnPhase =
   | 'their_turn'
   | 'finished'
 
+/** WHY the displayed roll ended the way it did — the readable-rotation
+ * layer: every turn pass in the seat rotation is ANNOUNCED, never silent. */
+export type RollOutcome =
+  | 'no_moves'
+  | 'six_cancelled'
+  | 'extra_roll'
+  | 'moved_pass'
+  | 'moved_extra'
+  | 'timed_out'
+
+const OUTCOME_TEXT: Record<RollOutcome, string> = {
+  no_moves: 'no moves · turn passes',
+  six_cancelled: 'three sixes · turn cancelled',
+  extra_roll: 'rolled a 6 · rolls again',
+  moved_pass: 'moved · turn passes',
+  moved_extra: 'moved · rolls again',
+  timed_out: 'out of time · turn passes',
+}
+
 export const LudoRoundBar = memo(function LudoRoundBar({
   phase,
   lastRoll,
+  rollOutcome,
   moveDeadlineAt,
   serverSkewMs,
   currentPlayerName,
@@ -44,6 +64,8 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   phase: TurnPhase
   /** The last dice result of the round — persists until the round moves on. */
   lastRoll: { name: string; value: number; isMe: boolean } | null
+  /** Why the displayed roll resolved — shown once the number has landed. */
+  rollOutcome?: RollOutcome | null
   /** Server-epoch move deadline (dice pending) — drives the visible 30s timer. */
   moveDeadlineAt: number | null
   /** serverNow - clientNow, from the snapshot. */
@@ -90,9 +112,12 @@ export const LudoRoundBar = memo(function LudoRoundBar({
   else main = `${currentPlayerName}'s turn — rolling the dice…`
 
   // The action hint ("pick a coin" / "deciding") — the countdown itself no
-  // longer lives here; it rides the roll chip (next to the number).
+  // longer lives here; it rides the roll chip (next to the number). The
+  // roll OUTCOME (no moves / cancelled / rolls again) takes priority: the
+  // rotation reads like a real table — every pass is announced.
   let action: string | null = null
-  if (phase === 'my_move' && rollRevealed) action = 'pick a coin'
+  if (rollRevealed && rollOutcome) action = OUTCOME_TEXT[rollOutcome]
+  else if (phase === 'my_move' && rollRevealed) action = 'pick a coin'
   else if (phase === 'their_turn' && rollRevealed && moveDeadlineAt != null) action = 'deciding'
 
   // Product revision — the choice countdown renders NEXT TO the rolled
