@@ -197,6 +197,8 @@ export function LudoRoom({
     avatar: p.avatar,
     gender: p.gender as string | null | undefined,
     seatIndex: p.seatIndex as number | undefined,
+    // Room-chat settings: players with mentions OFF lose the Mention action.
+    mentionDisabled: p.mentionsEnabled === false,
   }))
   const toolbox = useRoomPlayerToolbox({
     roomId,
@@ -205,7 +207,6 @@ export function LudoRoom({
     coinBalance: economy.coinBalance,
     mode: isDesktop ? 'popover' : 'sheet',
     returnView: 'ludo-room',
-    broadcastGift: (p) => useLudoRoomStore.getState().broadcastGift(p),
     onCoinBalance: setCoinBalance,
     onReconcile: () => void useLudoRoomStore.getState().reconcile(),
     onOpenCoinStore: () => setShowCoinStore(true),
@@ -367,6 +368,7 @@ export function LudoRoom({
             messages={chat}
             players={chatPlayers}
             meId={meId}
+            roomId={roomId}
             onSend={sendChat}
             sending={sendingChat}
             kbOpen={kbHeight > 0}

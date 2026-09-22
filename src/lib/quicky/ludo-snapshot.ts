@@ -8,6 +8,7 @@
 
 import { db } from '@/lib/db'
 import { colorForSeat } from './ludo/constants'
+import { parseGiftMetadata, type RoomSnapshot } from './spin-snapshot'
 import type { LudoGameState } from './ludo/types'
 
 export type LudoPlayerSummary = {
@@ -25,6 +26,9 @@ export type LudoPlayerSummary = {
   /** Present in the authoritative game state (playing/waiting rooms). */
   inGame: boolean
   gameStatus: string | null
+  /** Room-chat mention privacy: false → nobody in THIS room can mention
+   *  this player (toolbox + picker + server-side mention filtering). */
+  mentionsEnabled: boolean
 }
 
 export type LudoRoomSnapshot = {
@@ -47,14 +51,7 @@ export type LudoRoomSnapshot = {
   }
   serverNow: number
   viewer: { coinBalance: number; kissPoints: number; giftsReceived: number }
-  recentMessages: {
-    id: string
-    userId: string
-    text: string
-    kind: string
-    createdAt: string
-    mentions?: { userId: string; displayName: string }[]
-  }[]
+  recentMessages: RoomSnapshot['recentMessages']
 }
 
 /** A member whose ping is older than this renders as disconnected (§42). */
@@ -90,7 +87,7 @@ export async function buildLudoSnapshot(roomId: string, viewerId: string): Promi
       },
     }),
     db.spinRoomMessage.findMany({
-      where: { roomId, kind: { in: ['user', 'join', 'leave'] } },
+      where: { roomId, kind: { in: ['user', 'join', 'leave', 'gift'] } },
       orderBy: { createdAt: 'desc' },
       take: 80,
     }),
@@ -124,6 +121,7 @@ export async function buildLudoSnapshot(roomId: string, viewerId: string): Promi
       captures: gp?.captures ?? 0,
       inGame: !!gp && gp.status !== 'left',
       gameStatus: gp?.status ?? null,
+      mentionsEnabled: p.mentionsEnabled,
     }
   })
 
@@ -131,7 +129,9 @@ export async function buildLudoSnapshot(roomId: string, viewerId: string): Promi
   const meGame = game?.players.find((p) => p.userId === viewerId) ?? null
 
   // Recent chat (last 80) — the SAME room-chat storage Spin Bottle uses
-  // (Ludo PRD §35/§79: no duplicated chat architecture), user/join/leave only.
+  // (Ludo PRD §35/§79: no duplicated chat architecture), user/join/leave +
+  // gift cards (gifting-revision: the gift rows render as the special
+  // "You received N × 🎁" card with a send-back button).
   // Mentions depend on `msgs`, so they run as two tight follow-ups (usually
   // zero: rooms with no mentions touch nothing).
   const mentionRows = msgs.length > 0
@@ -162,6 +162,7 @@ export async function buildLudoSnapshot(roomId: string, viewerId: string): Promi
       kind: m.kind,
       createdAt: m.createdAt.toISOString(),
       mentions: mentionsByMsgId.get(m.id) ?? [],
+      metadata: parseGiftMetadata(m.metadata),
     }))
 
   return {

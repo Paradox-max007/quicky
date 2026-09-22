@@ -172,13 +172,24 @@ export async function POST(req: NextRequest) {
   const recipientReward = Math.floor((unitPrice * quantity * recipientCount * 0.5) / recipientCount)
   const perRecipientCost = unitPrice * quantity
 
+  // Gifting-revision (PNG icons): the RESOLVED display icon — image URL for
+  // iconType "image" rows (admin-uploaded PNG artwork), the legacy emoji
+  // otherwise. Every client surface (chat card, drawers, fly animation,
+  // sheets) renders through this one value so PNG gifts and emoji gifts are
+  // indistinguishable to the UI.
+  const itemIcon = giftDef.iconType === 'image' || giftDef.iconType === 'png' ? (giftDef.iconValue ?? giftDef.emoji) : giftDef.emoji
+  const itemIconType = giftDef.iconType === 'image' || giftDef.iconType === 'png' ? giftDef.iconType : 'emoji'
+
   const firstName = recipients[0]?.name ?? 'you'
   const metadata = JSON.stringify({
     itemId: giftDef.id,
     itemName: giftDef.name,
     itemEmoji: giftDef.emoji,
+    itemIcon,
+    itemIconType,
     recipientId: recipients.length === 1 ? recipients[0].userId : null,
     recipientName: recipients.length === 1 ? firstName : null,
+    recipientNames: recipients.map((r) => r.name),
     recipientCount,
     recipientIds: recipients.map((r) => r.userId),
     quantity,
@@ -242,7 +253,10 @@ export async function POST(req: NextRequest) {
         })
         await tx.coinLedger.create({ data: { userId: me.id, delta: -totalCost, reason: 'gift_sent', meta: metadata } })
         // §28 — aggregated chat entry (never 1000 separate messages/animations).
-        await tx.spinRoomMessage.create({
+        // The row id rides the broadcast so every client synthesizes the
+        // realtime gift card with the REAL id → the SSE snapshot merge that
+        // follows replaces it seamlessly (no duplicate flash).
+        const giftMsg = await tx.spinRoomMessage.create({
           data: {
             roomId,
             userId: me.id,
@@ -255,7 +269,7 @@ export async function POST(req: NextRequest) {
           },
         })
         const fresh = await tx.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } })
-        return fresh?.coinBalance ?? 0
+        return { coinBalance: fresh?.coinBalance ?? 0, giftMessageId: giftMsg.id }
       },
       // Headroom for the batched writes on a slow network — still far below
       // the loop's unbounded runtime that triggered P2028.
@@ -320,11 +334,14 @@ export async function POST(req: NextRequest) {
         itemId: giftDef.id,
         itemName: giftDef.name,
         itemEmoji: giftDef.emoji,
+        itemIcon,
+        itemIconType,
         quantity,
         recipientCount,
+        giftMessageId: newBalance.giftMessageId,
       },
     })
-    void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: me.id, coinBalance: newBalance } })
+    void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: me.id, coinBalance: newBalance.coinBalance } })
     for (const r of recipients) {
       void ch.send({
         type: 'broadcast',
@@ -336,7 +353,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    coinBalance: newBalance,
+    coinBalance: newBalance.coinBalance,
     recipientCount,
     quantity,
     totalCost,

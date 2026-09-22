@@ -15,6 +15,7 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { cn } from '@/lib/utils'
+import { GiftIcon } from '@/components/quicky/GiftIcon'
 
 type AdminCategory = {
   id: string
@@ -206,8 +207,20 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
             </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
-                Icon (emoji)
-                <input className="qk-input" value={giftForm.icon} onChange={(e) => setGiftForm({ ...giftForm, icon: e.target.value })} placeholder="🌹" maxLength={8} />
+                Icon (emoji or PNG URL)
+                <input className="qk-input" value={giftForm.icon} onChange={(e) => setGiftForm({ ...giftForm, icon: e.target.value })} placeholder="🌹 or https://…/rose.png" maxLength={600} />
+                <span className="text-[10px] text-white/35 font-normal">Paste an image URL (https://, data:image or /path.png) for a PNG gift icon — anything else is treated as an emoji.</span>
+              </label>
+              <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
+                <span>Preview</span>
+                <span className="h-[38px] rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  <GiftIcon
+                    icon={giftForm.icon || '🎁'}
+                    iconType={/^(https?:\/\/|data:image\/|\/)/i.test(giftForm.icon.trim()) ? 'image' : 'emoji'}
+                    className="h-7 w-7 text-2xl"
+                    imgClassName="h-7 w-7"
+                  />
+                </span>
               </label>
               <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
                 Price (coins)
@@ -275,7 +288,14 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
             )}
             {gifts.map((g) => (
               <div key={g.id} className="bg-[var(--qk-card)] border border-white/10 rounded-2xl px-3.5 py-3 flex items-center gap-3">
-                <span className="text-2xl w-9 text-center" aria-hidden>{g.emoji}</span>
+                <span className="w-9 h-9 flex items-center justify-center shrink-0" aria-hidden>
+                  <GiftIcon
+                    icon={g.iconType === 'image' || g.iconType === 'png' ? (g.iconValue ?? g.emoji) : g.emoji}
+                    iconType={g.iconType}
+                    className="h-7 w-7 text-2xl"
+                    imgClassName="h-7 w-7"
+                  />
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-sm truncate">{g.name}</p>
                   <p className="text-[11px] text-white/45 truncate">

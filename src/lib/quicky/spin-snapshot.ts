@@ -17,6 +17,9 @@ export type RoomPlayerSummary = {
   avatar: string | null
   gender: string | null
   kissPoints: number
+  /** Room-chat mention privacy: false → nobody in THIS room can mention
+   *  this player (toolbox + picker + server-side mention filtering). */
+  mentionsEnabled: boolean
 }
 
 export type RoomSnapshot = {
@@ -84,7 +87,51 @@ export type RoomSnapshot = {
     kind: string
     createdAt: string
     mentions?: { userId: string; displayName: string }[]
+    /** kind === 'gift' rows carry the gift payload (icon/name/quantity/
+     *  recipients) parsed from the DB JSON — drives the special gift card. */
+    metadata?: {
+      itemId?: string
+      itemName?: string
+      itemEmoji?: string
+      itemIcon?: string
+      itemIconType?: string
+      recipientId?: string | null
+      recipientName?: string | null
+      recipientIds?: string[]
+      recipientNames?: string[]
+      recipientCount?: number
+      quantity?: number
+      bulk?: boolean
+    } | null
   }[]
+}
+
+// Room-lifecycle closure dialog kept in room.ts — snapshot helpers below.
+
+/** Parse a gift row's JSON metadata (defensive — a corrupt row renders as
+ *  a plain legacy chip instead of exploding the whole snapshot). */
+export function parseGiftMetadata(raw: string | null): RoomSnapshot['recentMessages'][number]['metadata'] {
+  if (!raw) return null
+  try {
+    const v = JSON.parse(raw)
+    if (!v || typeof v !== 'object') return null
+    return {
+      itemId: typeof v.itemId === 'string' ? v.itemId : undefined,
+      itemName: typeof v.itemName === 'string' ? v.itemName : undefined,
+      itemEmoji: typeof v.itemEmoji === 'string' ? v.itemEmoji : undefined,
+      itemIcon: typeof v.itemIcon === 'string' ? v.itemIcon : undefined,
+      itemIconType: typeof v.itemIconType === 'string' ? v.itemIconType : undefined,
+      recipientId: typeof v.recipientId === 'string' ? v.recipientId : null,
+      recipientName: typeof v.recipientName === 'string' ? v.recipientName : null,
+      recipientIds: Array.isArray(v.recipientIds) ? v.recipientIds.filter((x: unknown) => typeof x === 'string') : [],
+      recipientNames: Array.isArray(v.recipientNames) ? v.recipientNames.filter((x: unknown) => typeof x === 'string') : [],
+      recipientCount: Number.isFinite(v.recipientCount) ? v.recipientCount : undefined,
+      quantity: Number.isFinite(v.quantity) ? v.quantity : undefined,
+      bulk: !!v.bulk,
+    }
+  } catch {
+    return null
+  }
 }
 
 export async function buildRoomSnapshot(roomId: string, viewerId: string): Promise<RoomSnapshot | null> {
@@ -130,6 +177,7 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
       avatar: photo?.url ?? null,
       gender: p.user.gender,
       kissPoints: p.user.kissPoints,
+      mentionsEnabled: p.mentionsEnabled,
     }
   })
 
@@ -158,11 +206,12 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
       }
     : null
 
-  // Recent chat (last 80) — v2.1 §48/§56: ONLY real user messages and
-  // join/leave chips. Legacy game/system log rows in the DB are filtered
-  // out here so old records can never flood the chat.
+  // Recent chat (last 80) — v2.1 §48/§56: real user messages, join/leave
+  // chips AND gift cards (gifting-revision: the aggregated gift rows render
+  // as the special "You received N × 🎁 from …" card with a send-back
+  // button). Legacy game/system log rows stay filtered out.
   const msgs = await db.spinRoomMessage.findMany({
-    where: { roomId, kind: { in: ['user', 'join', 'leave'] } },
+    where: { roomId, kind: { in: ['user', 'join', 'leave', 'gift'] } },
     orderBy: { createdAt: 'desc' },
     take: 80,
   })
@@ -194,6 +243,7 @@ export async function buildRoomSnapshot(roomId: string, viewerId: string): Promi
       kind: m.kind,
       createdAt: m.createdAt.toISOString(),
       mentions: mentionsByMsgId.get(m.id) ?? [],
+      metadata: parseGiftMetadata(m.metadata),
     }))
 
   // myTurnIs / iAmTarget / iAmSpinner

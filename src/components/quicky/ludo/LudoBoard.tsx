@@ -146,6 +146,7 @@ function BoardCells({
               table the full stage). Tapping it opens the SHARED toolbox. */}
           {owner?.userId && (
             <button
+              data-room-seat={owner.userId}
               className={`ldo-yard-avatar ldo-ya-${yardCorner(o)}${turnColor === color ? ' ldo-ya-active' : ''}${owner.isMe ? ' ldo-ya-me' : ''}`}
               style={{ '--yard-color': COLOR_VARS[color].main } as React.CSSProperties}
               onClick={(e) => onPlayerTap?.(owner, e.currentTarget)}

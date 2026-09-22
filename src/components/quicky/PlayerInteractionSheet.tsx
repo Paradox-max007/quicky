@@ -24,12 +24,16 @@ import { X, Tag, MessageCircle, AtSign, User, UserPlus, UserMinus, Send, Shoppin
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { cacheGet, cacheSet } from '@/lib/quicky/cache'
+import { GiftIcon } from '@/components/quicky/GiftIcon'
 
 export type CatalogGift = {
   id: string
   categoryId: string | null
   name: string
   icon: string
+  /** Gifting-revision: 'image'/'png' → icon is a URL (admin-uploaded PNG
+   *  artwork); 'emoji' (or absent) → the icon string is the emoji glyph. */
+  iconType?: string
   priceCoins: number
   tier?: string
 }
@@ -52,6 +56,9 @@ export type InteractionPlayer = {
   displayName: string
   avatar: string | null
   isMe?: boolean
+  /** Room-chat settings: this player turned mentions OFF for this room —
+   *  the Mention action is hidden (the server drops the rows anyway). */
+  mentionDisabled?: boolean
 }
 
 type Props = {
@@ -71,12 +78,15 @@ type Props = {
   friendBusy?: boolean
   onToggleFriend?: (p: InteractionPlayer) => void
   onBuyCoins: () => void
-  /** Parent performs the optimistic coin move + API call; resolves false on failure. */
-  onSendGift: (recipientId: string, gift: CatalogGift) => Promise<boolean>
+  /** Parent performs the optimistic coin move + API call; resolves false on
+   *  failure. quantity = the chip selection (gifting-revision, default 1). */
+  onSendGift: (recipientId: string, gift: CatalogGift, quantity: number) => Promise<boolean>
 }
 
 const POPOVER_W = 300
 const POPOVER_EST_H = 430
+/** Same quantity chips as the group gifting (GiftSheet §21) — 1 default. */
+const QUANTITY_CHIPS = [1, 10, 50, 100, 1000] as const
 
 export function PlayerInteractionSheet({
   player,
@@ -98,8 +108,14 @@ export function PlayerInteractionSheet({
   const [gifts, setGifts] = useState<CatalogGift[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<CatalogGift | null>(null)
+  const [quantity, setQuantity] = useState<number>(1)
   const [sending, setSending] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+
+  // Reset the quantity whenever a new player/target opens (1 by default).
+  useEffect(() => {
+    setQuantity(1)
+  }, [player?.userId])
 
   useEffect(() => {
     setSelected(null)
@@ -160,14 +176,15 @@ export function PlayerInteractionSheet({
     if (!player || !selected || sending) return
     setSending(true)
     try {
-      const ok = await onSendGift(player.userId, selected)
+      const ok = await onSendGift(player.userId, selected, quantity)
       if (ok) {
         toast.success(
           player.isMe
-            ? `${selected.icon} ${selected.name} sent to you`
-            : `${selected.icon} ${selected.name} sent to ${player.displayName}`
+            ? `${selected.icon} ${quantity > 1 ? `${quantity} × ` : ''}${selected.name} sent to you`
+            : `${selected.icon} ${quantity > 1 ? `${quantity} × ` : ''}${selected.name} sent to ${player.displayName}`
         )
         setSelected(null)
+        setQuantity(1)
         onClose()
       }
     } finally {
@@ -189,8 +206,9 @@ export function PlayerInteractionSheet({
     return { left, bottom: stage.bottom - card.top + 10, width: POPOVER_W }
   }, [mode, anchor, player])
 
-  const insufficient = !!selected && selected.priceCoins > coinBalance
+  const insufficient = !!selected && selected.priceCoins * quantity > coinBalance
   const isMe = !!player?.isMe
+  const mentionHidden = !!player?.mentionDisabled
 
   const body = player ? (
     <div className="flex flex-col gap-3 min-h-0">
@@ -234,8 +252,10 @@ export function PlayerInteractionSheet({
       ) : (
         /* Top actions (mentions PRD §75: Tag / Message / Mention / Profile /
             Gifts) — independent rows; Mention prefills the Room Chat composer
-            with @DisplayName and NEVER auto-sends (§29). */
-        <div className="grid grid-cols-5 gap-2">
+            with @DisplayName and NEVER auto-sends (§29). Room-chat settings:
+            players with mentions OFF for this room lose the Mention action
+            (the grid reflows to 4 columns). */
+        <div className={`grid ${mentionHidden ? 'grid-cols-4' : 'grid-cols-5'} gap-2`}>
           <button className="sbr-ix-action" onClick={() => onTag?.(player)}>
             <Tag className="w-4 h-4" />
             <span>Tag</span>
@@ -244,10 +264,12 @@ export function PlayerInteractionSheet({
             <MessageCircle className="w-4 h-4" />
             <span>Message</span>
           </button>
-          <button className="sbr-ix-action" onClick={() => onMention?.(player)} data-testid="ix-mention">
-            <AtSign className="w-4 h-4" />
-            <span>Mention</span>
-          </button>
+          {!mentionHidden && (
+            <button className="sbr-ix-action" onClick={() => onMention?.(player)} data-testid="ix-mention">
+              <AtSign className="w-4 h-4" />
+              <span>Mention</span>
+            </button>
+          )}
           <button
             className="sbr-ix-action"
             onClick={() => onToggleFriend?.(player)}
@@ -285,16 +307,21 @@ export function PlayerInteractionSheet({
               </p>
               <div className="grid grid-cols-4 gap-1.5">
                 {group.gifts.map((g) => {
-                  const affordable = g.priceCoins <= coinBalance
+                  const affordable = g.priceCoins * Math.max(1, selected?.id === g.id ? quantity : 1) <= coinBalance
                   const isSel = selected?.id === g.id
                   return (
                     <button
                       key={g.id}
                       onClick={() => setSelected(isSel ? null : g)}
                       className={`sbr-ix-gift ${isSel ? 'sbr-ix-gift-sel' : ''}${affordable ? '' : ' sbr-ix-gift-poor'}`}
-                      title={`${g.name} — ${g.priceCoins} coins`}
+                      title={`${g.name} — ${g.priceCoins} coins each`}
                     >
-                      <span className="text-lg leading-none" aria-hidden>{g.icon}</span>
+                      <GiftIcon
+                        icon={g.icon}
+                        iconType={g.iconType}
+                        className="h-5 w-5 text-lg"
+                        imgClassName="h-5 w-5"
+                      />
                       <span className="text-[9px] font-bold truncate w-full">{g.name}</span>
                       <span className="text-[9px] text-amber-300/90 font-semibold tabular-nums">🪙 {g.priceCoins}</span>
                     </button>
@@ -304,6 +331,24 @@ export function PlayerInteractionSheet({
             </div>
           ))
         )}
+
+        {/* QUANTITY CHIPS (gifting-revision) — same set as the group gifting,
+            always visible, 1 pre-selected: pick the gift, pick the count, send. */}
+        <div className="mt-3" data-testid="ix-quantity-block">
+          <p className="text-[10px] text-white/50 mb-1.5 font-bold uppercase tracking-wider">Quantity</p>
+          <div className="flex gap-1.5">
+            {QUANTITY_CHIPS.map((q) => (
+              <button
+                key={q}
+                onClick={() => setQuantity(q)}
+                className={`sbr-ix-qty${quantity === q ? ' sbr-ix-qty-sel' : ''}`}
+                data-testid={`ix-qty-${q}`}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Selection → confirm (§57/§58) or Not enough coins → Buy Coins (§55) */}
@@ -311,7 +356,8 @@ export function PlayerInteractionSheet({
         insufficient ? (
           <div className="flex flex-col gap-2">
             <p className="text-xs font-semibold text-rose-300 text-center">
-              Not enough coins for {selected.icon} {selected.name} (🪙 {selected.priceCoins})
+              Not enough coins for {quantity > 1 ? `${quantity} × ` : ''}{selected.icon} {selected.name} (🪙{' '}
+              {(selected.priceCoins * quantity).toLocaleString('en-US')})
             </p>
             <button className="sbr-sheet-btn-stay w-full justify-center" onClick={onBuyCoins}>
               <ShoppingBag className="w-4 h-4" /> Buy Coins
@@ -323,13 +369,17 @@ export function PlayerInteractionSheet({
             {sending
               ? 'Sending…'
               : isMe
-                ? `Send ${selected.icon} ${selected.name} to myself — 🪙 ${selected.priceCoins}`
-                : `Send ${selected.icon} ${selected.name} — 🪙 ${selected.priceCoins}`}
+                ? `Send ${quantity > 1 ? `${quantity} × ` : ''}${selected.icon} ${selected.name} to myself — 🪙 ${(
+                    selected.priceCoins * quantity
+                  ).toLocaleString('en-US')}`
+                : `Send ${quantity > 1 ? `${quantity} × ` : ''}${selected.icon} ${selected.name} — 🪙 ${(
+                    selected.priceCoins * quantity
+                  ).toLocaleString('en-US')}`}
           </button>
         )
       ) : (
         <p className="text-[11px] text-white/40 text-center">
-          {isMe ? 'Treat yourself — pick a gift, then send.' : 'Pick a gift, then confirm — no accidental spends.'}
+          {isMe ? 'Treat yourself — pick a gift, then send.' : 'Pick a gift, pick the count, then confirm.'}
         </p>
       )}
     </div>

@@ -26,13 +26,35 @@
 // everything (§41).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle, Volume2, VolumeX, Settings, ArrowLeft, Gift, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 import { useQuickyStore } from '@/store/quicky'
+import { useGiftAlertStore } from '@/store/gift-alerts'
+import { useGiftBackStore } from '@/store/gift-back'
+import { api } from '@/lib/quicky/api-client'
+import { isMentionSoundEnabled, setMentionSoundEnabled } from '@/lib/quicky/mention-sound'
+import { GiftIcon } from '@/components/quicky/GiftIcon'
 
 export type RoomMention = { userId: string; displayName: string }
+
+/** Gift chat-card metadata — mirrors the server's gift message JSON payload. */
+export type GiftChatMeta = {
+  itemId?: string
+  itemName?: string
+  itemEmoji?: string
+  itemIcon?: string
+  itemIconType?: string
+  recipientId?: string | null
+  recipientName?: string | null
+  recipientIds?: string[]
+  recipientNames?: string[]
+  recipientCount?: number
+  quantity?: number
+  bulk?: boolean
+}
 
 export type RoomMessage = {
   id: string
@@ -42,9 +64,18 @@ export type RoomMessage = {
   createdAt: string
   replyTo?: { id: string; name: string; text: string } | null
   mentions?: RoomMention[]
+  /** kind === 'gift' rows: the gift payload (icon/name/quantity/recipients). */
+  metadata?: GiftChatMeta | null
 }
 
-export type ChatPlayer = { userId: string; displayName: string; avatar: string | null }
+export type ChatPlayer = {
+  userId: string
+  displayName: string
+  avatar: string | null
+  /** Room-chat settings: this player turned mentions OFF for this room —
+   *  the @ picker never offers them. */
+  mentionDisabled?: boolean
+}
 
 const NAME_COLORS = ['#c4b5fd', '#93c5fd', '#f0abfc', '#6ee7b7', '#fdba74', '#fca5a5']
 
@@ -314,6 +345,7 @@ export function RoomChatPanel({
   messages,
   players,
   meId,
+  roomId,
   onSend,
   sending,
   kbOpen = false,
@@ -328,6 +360,8 @@ export function RoomChatPanel({
   messages: RoomMessage[]
   players: ChatPlayer[]
   meId: string
+  /** The room this chat belongs to (mention settings + gift-back sheet). */
+  roomId?: string | null
   onSend: (
     text: string,
     replyTo?: RoomMessage['replyTo'],
@@ -360,6 +394,55 @@ export function RoomChatPanel({
   const atBottomRef = useRef(true)
   const [newBelow, setNewBelow] = useState(0)
 
+  // ── EXPANDABLE CHAT (room-chat-settings revision, mobile only — the
+  // ≥1024px sidebar is always "expanded" and the grabber is display:none).
+  // Drag the handle UP → the sheet grows to a near-full drawer (settings +
+  // speaker tools appear); drag DOWN (or tap the chevron) → back to normal.
+  // Switching to contacts/personal or opening the keyboard collapses it so
+  // those views keep the standard sheet geometry.
+  const [expanded, setExpanded] = useState(false)
+  const handleDragRef = useRef(0)
+  useEffect(() => {
+    if (panel !== 'room' || kbOpen) setExpanded(false)
+  }, [panel, kbOpen])
+
+  // ── CHAT SETTINGS SUB-PANEL (in-panel surface — NEVER a separate page:
+  // desktop keeps the shell mounted, mobile keeps the room mounted). Back
+  // returns to whatever the chat section was showing (room / contacts /
+  // personal — those views stay mounted underneath the overlay).
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [soundOn, setSoundOn] = useState(() => isMentionSoundEnabled())
+  const meMentionDisabled = players.find((p) => p.userId === meId)?.mentionDisabled
+  const [meMentionsOn, setMeMentionsOn] = useState(meMentionDisabled !== true)
+  const [mentionBusy, setMentionBusy] = useState(false)
+  // Re-sync the mention toggle when the snapshot refreshes the players list
+  // (the server confirms the write / another device flipped it).
+  useEffect(() => {
+    setMeMentionsOn(meMentionDisabled !== true)
+  }, [meMentionDisabled])
+
+  const toggleMentions = async (on: boolean) => {
+    if (!roomId || mentionBusy) return
+    setMentionBusy(true)
+    const prev = meMentionsOn
+    setMeMentionsOn(on) // optimistic — the picker reacts instantly
+    try {
+      await api.spinBottle.roomMentions(roomId, on)
+      toast.success(on ? 'Mentions are back on for this room' : 'Nobody can mention you in this room now')
+    } catch (e: any) {
+      setMeMentionsOn(prev)
+      toast.error(e?.message ?? 'Could not update mention settings')
+    } finally {
+      setMentionBusy(false)
+    }
+  }
+
+  const toggleSound = () => {
+    const next = !soundOn
+    setSoundOn(next)
+    setMentionSoundEnabled(next)
+  }
+
   // ── Mention state ─────────────────────────────────────────────────────────
   // candidates = players picked this session whose tokens still exist in the
   // text. Metadata is RE-DERIVED from the text at render/send time (§33).
@@ -369,10 +452,9 @@ export function RoomChatPanel({
 
   // §34/§36: trailing "@query" before the caret → picker with local filter.
   const mentionQuery = useMemo(() => {
-    // react-hooks/refs: the caret ref read here is intentional — the picker
-    // query derives from the LIVE caret position; the ref updates in the
-    // same onChange that sets `text`, so it is fresh on every recompute.
-    // eslint-disable-next-line react-hooks/refs
+    // the caret ref read here is intentional — the picker query derives from
+    // the LIVE caret position; the ref updates in the same onChange that
+    // sets `text`, so it is fresh on every recompute.
     const before = text.slice(0, caretRef.current || text.length)
     const m = before.match(/(^|\s)@([A-Za-z0-9_]*)$/)
     return m ? m[2] : null
@@ -382,11 +464,17 @@ export function RoomChatPanel({
   // §35/§62/§87: picker candidates come from the AUTHORITATIVE room players
   // (the same list the table renders). A player who left is gone from the
   // picker instantly — no ghost mentions (§106/§112). Self-mention excluded.
+  // Room-chat settings: players who turned mentions OFF for this room are
+  // never offered (the server would drop the mention row anyway).
   const pickerPlayers = useMemo(() => {
     if (mentionQuery === null) return []
     const q = mentionQuery.toLowerCase()
     return players.filter(
-      (p) => p.userId !== meId && p.displayName && p.displayName.toLowerCase().includes(q)
+      (p) =>
+        p.userId !== meId &&
+        !p.mentionDisabled &&
+        p.displayName &&
+        p.displayName.toLowerCase().includes(q)
     )
   }, [mentionQuery, players, meId])
   const pickerOpen = mentionQuery !== null
@@ -547,10 +635,75 @@ export function RoomChatPanel({
   // personal → contacts → room (§15).
   const roomContent = (
     <div style={panel === 'room' ? { display: 'contents' } : { display: 'none' }}>
-      {/* mobile sheet grabber */}
-      <div className="sbr-chat-grabber" aria-hidden />
+      {/* EXPANDABLE CHAT drag handle (mobile only — display:none ≥1024px).
+          Drag UP past the threshold → expand; drag DOWN / tap → collapse.
+          The chevron mirrors the state so the affordance is discoverable. */}
+      <motion.div
+        className="sbr-chat-grabber-wrap"
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0.7, bottom: 0.7 }}
+        dragMomentum={false}
+        onDragStart={() => {
+          handleDragRef.current = Date.now()
+        }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y < -46 || info.velocity.y < -420) setExpanded(true)
+          else if (info.offset.y > 46 || info.velocity.y > 420) setExpanded(false)
+        }}
+        onClick={() => {
+          // Tap toggles — but never right after a drag (the pointerup would
+          // double-fire and undo the drag's verdict).
+          if (Date.now() - handleDragRef.current < 300) return
+          setExpanded((v) => !v)
+        }}
+        role="button"
+        aria-label={expanded ? 'Collapse chat' : 'Expand chat'}
+        data-testid="room-chat-expand-handle"
+      >
+        <div className="sbr-chat-grabber" aria-hidden />
+        <ChevronDown
+          className={`sbr-chat-grabber-chevron${expanded ? ' sbr-chevron-flipped' : ''}`}
+          size={13}
+          aria-hidden
+        />
+      </motion.div>
 
-      {/* web sidebar header (§80 — unchanged) */}
+      {/* MOBILE tools row — appears ONLY in the expanded state, mirroring the
+          desktop web sidebar header: mention-sound speaker + chat settings. */}
+      {expanded && (
+        <div className="sbr-chat-tools" data-testid="room-chat-tools">
+          <h2 className="sbr-chat-tools-title">
+            Table Activity &amp; Chat
+            <span className="sbr-chat-online">{players.length} Online</span>
+          </h2>
+          <div className="sbr-chat-tools-actions">
+            <button
+              type="button"
+              onClick={toggleSound}
+              className={soundOn ? 'sbr-chat-tool-on' : ''}
+              title={soundOn ? 'Mention sound on' : 'Mention sound off'}
+              aria-label={soundOn ? 'Mute mention notification sound' : 'Unmute mention notification sound'}
+              aria-pressed={soundOn}
+              data-testid="room-chat-sound"
+            >
+              {soundOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              title="Chat settings"
+              aria-label="Chat settings"
+              data-testid="room-chat-settings"
+            >
+              <Settings size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* web sidebar header (§80) — speaker + gear are now LIVE controls
+          (mention sound toggle + the same in-panel settings surface). */}
       <div className="sbr-chat-head">
         <span className="sbr-chat-live-dot" aria-hidden />
         <h2 className="sbr-chat-head-title">
@@ -573,8 +726,24 @@ export function RoomChatPanel({
               )}
             </button>
           )}
-          <button type="button" title="Sound effects" aria-label="Sound effects">🔊</button>
-          <button type="button" title="Table settings" aria-label="Table settings">⚙️</button>
+          <button
+            type="button"
+            onClick={toggleSound}
+            className={soundOn ? 'sbr-chat-tool-on' : ''}
+            title={soundOn ? 'Mention sound on' : 'Mention sound off'}
+            aria-label={soundOn ? 'Mute mention notification sound' : 'Unmute mention notification sound'}
+            aria-pressed={soundOn}
+          >
+            {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            title="Chat settings"
+            aria-label="Chat settings"
+          >
+            <Settings size={14} />
+          </button>
         </div>
       </div>
 
@@ -594,6 +763,28 @@ export function RoomChatPanel({
                     {m.text}
                   </span>
                 </div>
+              )
+            }
+            // GIFT CARD (gifting-revision): the special "You received N × 🎁
+            // from {sender}" timeline row with a send-back button — the
+            // recipient-facing centerpiece of the gift experience. Everyone
+            // else sees the lighter "{sender} gifted {recipient}" variant.
+            if (m.kind === 'gift') {
+              const meta = m.metadata
+              const iAmRecipient =
+                !!meta &&
+                (meta.recipientId === meId || (meta.recipientIds ?? []).includes(meId))
+              const sender = playerFor(m.userId)
+              const senderName = m.userId === meId ? 'You' : (sender?.displayName ?? 'Someone')
+              return (
+                <GiftChatCard
+                  key={m.id}
+                  message={m}
+                  sender={m.userId === meId ? null : sender}
+                  senderName={senderName}
+                  iAmRecipient={iAmRecipient}
+                  roomId={roomId ?? null}
+                />
               )
             }
             if (m.kind !== 'user') return null
@@ -831,13 +1022,291 @@ export function RoomChatPanel({
   )
 
   return (
-    <div className={`sbr-chat${kbOpen ? ' sbr-kb-open' : ''}`} data-testid={`room-chat-panel-${panel}`}>
+    <div
+      className={`sbr-chat${kbOpen ? ' sbr-kb-open' : ''}${expanded ? ' sbr-chat-expanded' : ''}`}
+      data-testid={`room-chat-panel-${panel}`}
+    >
       {/* §4/§74/§118: ONE shell — the other states are normal children of
           THIS panel; the room content above stays mounted underneath. */}
       {roomContent}
       {/* 'dating' renders the parent-provided embedded ChatView (§57) */}
       {panel !== 'room' && panelContent}
+
+      {/* ═══ PANEL-TOP GIFT DRAWER (gifting-revision) — shows a received-gift
+          notification INSIDE the chat shell ONLY while the Room Chat list is
+          NOT showing (contacts / personal / dating open — the room content
+          above is display:none so the timeline card can't be seen). While
+          the Room Chat list is open the timeline gift card IS the
+          notification (no drawer — "do not overly disturb"). Off the game
+          screen entirely, the global GameGiftAlert top drawer covers it. */}
+      {panel !== 'room' && <PanelGiftDrawer />}
+
+      {/* ═══ CHAT SETTINGS SUB-PANEL (in-panel surface — never a separate
+          page). Sits ON TOP of everything the chat section is showing
+          (room content stays mounted underneath); the back arrow returns
+          to exactly that previous surface. ═══ */}
+      <AnimatePresence>
+        {settingsOpen && (
+          <motion.div
+            key="room-chat-settings"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="sbr-chat-settings"
+            data-testid="room-chat-settings-panel"
+          >
+            <div className="sbr-chat-settings-head">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Back to chat"
+                data-testid="room-chat-settings-back"
+              >
+                <ArrowLeft size={17} />
+              </button>
+              <h3>Chat Settings</h3>
+            </div>
+
+            <div className="sbr-chat-settings-body">
+              {/* Mention privacy — per-room, server-enforced */}
+              <div className="sbr-setting-row">
+                <div className="sbr-setting-copy">
+                  <p className="sbr-setting-title">Allow mentions in this room</p>
+                  <p className="sbr-setting-sub">
+                    When off, nobody at this table can mention you — the Mention action
+                    and the @ picker hide your name.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={meMentionsOn}
+                  disabled={mentionBusy || !roomId}
+                  onClick={() => void toggleMentions(!meMentionsOn)}
+                  className={`sbr-switch${meMentionsOn ? ' sbr-switch-on' : ''}`}
+                  data-testid="room-chat-mentions-toggle"
+                >
+                  <span className="sbr-switch-knob" />
+                </button>
+              </div>
+
+              {/* Mention notification sound — local preference */}
+              <div className="sbr-setting-row">
+                <div className="sbr-setting-copy">
+                  <p className="sbr-setting-title">Mention notification sound</p>
+                  <p className="sbr-setting-sub">
+                    A soft chime whenever someone mentions you — even outside the game
+                    screen.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={soundOn}
+                  onClick={toggleSound}
+                  className={`sbr-switch${soundOn ? ' sbr-switch-on' : ''}`}
+                  data-testid="room-chat-sound-toggle"
+                >
+                  <span className="sbr-switch-knob" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
+  )
+}
+
+// ─── Panel-top gift drawer (in-shell notification while Room Chat hidden) ────
+function PanelGiftDrawer() {
+  const events = useGiftAlertStore((s) => s.events)
+  const dismiss = useGiftAlertStore((s) => s.dismiss)
+  const openGiftBack = useGiftBackStore((s) => s.openGiftBack)
+  const event = events.length > 0 ? events[0] : null
+
+  return (
+    <AnimatePresence>
+      {event && (
+        <motion.div
+          key={event.id}
+          initial={{ y: '-115%', opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: '-115%', opacity: 0 }}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          drag="y"
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.5 }}
+          onDragEnd={(_, info) => {
+            if (info.offset.y > 70 || info.velocity.y > 500) dismiss(event.id)
+          }}
+          className="sbr-chat-gift-drawer"
+          role="dialog"
+          aria-label="Gift received"
+          data-testid="room-chat-gift-drawer"
+        >
+          <div
+            className="sbr-chat-gift-drawer-card"
+            style={{ background: 'var(--qk-accent)' }}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return
+              dismiss(event.id)
+            }}
+          >
+            <div className="sbr-chat-gift-drawer-avatar">
+              {event.senderAvatar ? (
+                <img src={event.senderAvatar} alt="" />
+              ) : (
+                <span aria-hidden>🎁</span>
+              )}
+              <span className="sbr-chat-gift-drawer-badge">
+                <Gift size={11} aria-hidden />
+              </span>
+            </div>
+            <div className="sbr-chat-gift-drawer-copy">
+              <p className="sbr-chat-gift-drawer-eyebrow">Gift received</p>
+              <p className="sbr-chat-gift-drawer-line">
+                {event.senderName} sent you{' '}
+                {event.quantity > 1 ? `${event.quantity}× ` : ''}
+                <GiftIcon
+                  icon={event.itemIcon}
+                  iconType={event.itemIconType}
+                  className="h-3.5 w-3.5 text-sm"
+                  imgClassName="h-3.5 w-3.5"
+                />
+                <span className="truncate">{event.itemName ?? 'a gift'}</span>
+              </p>
+            </div>
+            <div className="sbr-chat-gift-drawer-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  openGiftBack(
+                    { id: event.senderId, name: event.senderName, avatar: event.senderAvatar ?? null },
+                    event.roomId
+                  )
+                  dismiss(event.id)
+                }}
+                className="sbr-chat-gift-drawer-send"
+                data-testid="room-chat-gift-send-back"
+              >
+                <Gift size={12} aria-hidden /> Send Gift
+              </button>
+              <button
+                type="button"
+                onClick={() => dismiss(event.id)}
+                className="sbr-chat-gift-drawer-dismiss"
+                aria-label="Dismiss gift notification"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// ─── Gift chat card (the timeline special effect) ─────────────────────────────
+function GiftChatCard({
+  message,
+  sender,
+  senderName,
+  iAmRecipient,
+  roomId,
+}: {
+  message: RoomMessage
+  sender?: ChatPlayer | null
+  senderName: string
+  iAmRecipient: boolean
+  roomId: string | null
+}) {
+  const openGiftBack = useGiftBackStore((s) => s.openGiftBack)
+  const meta = message.metadata
+  const quantity = Math.max(1, meta?.quantity ?? 1)
+  const itemName = meta?.itemName ?? 'a gift'
+  const icon = meta?.itemIcon ?? meta?.itemEmoji ?? '🎁'
+  const iconType = meta?.itemIconType ?? 'emoji'
+  const recipientLabel =
+    meta?.recipientCount && meta.recipientCount > 1
+      ? `${meta.recipientCount} players`
+      : (meta?.recipientName ?? 'someone')
+
+  const sendBack = () => {
+    if (!sender) return
+    openGiftBack({ id: sender.userId, name: sender.displayName, avatar: sender.avatar }, roomId)
+  }
+
+  if (!iAmRecipient) {
+    // Spectator variant — light, centered, no actions (same slot as the
+    // join/leave chips, but with the gift shimmer).
+    return (
+      <div className="sbr-gift-row">
+        <div className="sbr-gift-chip" data-testid="room-chat-gift-chip">
+          <span className="sbr-gift-chip-icon">
+            <GiftIcon icon={icon} iconType={iconType} className="h-4 w-4 text-base" imgClassName="h-4 w-4" />
+          </span>
+          <span>
+            <b>{senderName}</b> gifted {recipientLabel} {quantity > 1 ? `${quantity}× ` : ''}
+            {itemName}
+            {quantity > 1 ? 's' : ''}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  // RECIPIENT variant — the full special-effect card with the send-back CTA.
+  return (
+    <motion.div
+      className="sbr-gift-card"
+      initial={{ scale: 0.92, opacity: 0, y: 10 }}
+      animate={{ scale: 1, opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+      data-testid="room-chat-gift-card"
+    >
+      <span className="sbr-gift-spark sbr-gift-spark-a" aria-hidden>✨</span>
+      <span className="sbr-gift-spark sbr-gift-spark-b" aria-hidden>✨</span>
+      <div className="sbr-gift-card-inner">
+        <div className="sbr-gift-avatar">
+          {sender?.avatar ? (
+            <img src={sender.avatar} alt="" />
+          ) : (
+            <span aria-hidden>🎁</span>
+          )}
+        </div>
+        <div className="sbr-gift-copy">
+          <p className="sbr-gift-eyebrow">You received a gift</p>
+          <p className="sbr-gift-line">
+            <motion.span
+              className="sbr-gift-icons"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.15, type: 'spring', stiffness: 360, damping: 16 }}
+            >
+              <GiftIcon icon={icon} iconType={iconType} className="h-5 w-5 text-xl" imgClassName="h-5 w-5" />
+              {quantity > 1 && <b className="sbr-gift-count">×{quantity.toLocaleString('en-US')}</b>}
+            </motion.span>
+            <span className="sbr-gift-from">
+              from <b>{senderName}</b>
+            </span>
+          </p>
+        </div>
+        {sender && (
+          <button
+            type="button"
+            className="sbr-gift-sendback"
+            onClick={sendBack}
+            data-testid="room-chat-gift-send-back"
+          >
+            <Gift size={13} aria-hidden />
+            Send gift back
+          </button>
+        )}
+      </div>
+    </motion.div>
   )
 }
 

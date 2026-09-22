@@ -166,7 +166,22 @@ export type RoomChannel = {
     mentions?: { userId: string; displayName: string }[]
   }) => void
   sendKiss: (payload: { spinId: string; choice: 'yes' | 'no' }) => void
-  sendGift: (payload: { senderId: string; senderName: string; recipientId: string; recipientName: string; itemId: string; itemName: string; itemEmoji: string; quantity: number }) => void
+  sendGift: (payload: {
+    senderId: string
+    senderName: string
+    recipientId: string
+    recipientName: string
+    itemId: string
+    itemName: string
+    itemEmoji: string
+    quantity: number
+    /** Gifting-revision: resolved display icon (URL for PNG gifts) + type. */
+    itemIcon?: string
+    itemIconType?: string
+    /** Server gift chat row id — clients synthesize the gift card with the
+     *  REAL id so the snapshot merge dedupes seamlessly. */
+    giftMessageId?: string
+  }) => void
   unsubscribe: () => Promise<void>
 }
 

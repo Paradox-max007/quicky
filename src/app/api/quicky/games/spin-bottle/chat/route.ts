@@ -82,10 +82,15 @@ export async function POST(req: NextRequest) {
   ]
   const activeMembers = await db.spinRoomPlayer.findMany({
     where: { roomId, leftAt: null, isActive: true },
-    select: { userId: true },
+    select: { userId: true, mentionsEnabled: true },
   })
   const activeIds = new Set(activeMembers.map((m) => m.userId))
-  const validMentionIds: string[] = wantedMentionIds.filter((id) => activeIds.has(id))
+  // Room-chat settings: a member with mentionsEnabled=false can NOT be
+  // mentioned in THIS room — the mention row is never created, so no
+  // notification ever fires (their toolbox hides Mention + the @ picker
+  // filters their name on every client; this is the authoritative guard).
+  const mentionableIds = new Set(activeMembers.filter((m) => m.mentionsEnabled).map((m) => m.userId))
+  const validMentionIds: string[] = wantedMentionIds.filter((id) => activeIds.has(id) && mentionableIds.has(id))
 
   const member = await db.spinRoomPlayer.findFirst({ where: { roomId, userId: me.id, leftAt: null } })
   if (!member) return NextResponse.json({ error: 'Not in room' }, { status: 403 })

@@ -39,6 +39,23 @@ function cleanIcon(v: unknown): string | undefined {
   return Array.from(s).slice(0, 4).join('') // ≤4 glyphs, emoji-safe
 }
 
+/** Gifting-revision (PNG icons): an icon value that is a URL (http(s)://,
+ *  data:image/… or an app-relative /… path) marks an IMAGE icon — stored as
+ *  iconType "image" + iconValue = URL, with the 🎁 emoji kept as the legacy
+ *  fallback for old readers. Anything else stays an emoji (≤4 glyphs). */
+function isImageIconUrl(v: string): boolean {
+  return /^(https?:\/\/|data:image\/|\/)/i.test(v) && v.length <= 600
+}
+
+function iconPatch(v: unknown): { emoji?: string; iconType?: string; iconValue?: string } | undefined {
+  if (v === undefined) return undefined
+  const s = String(v).trim()
+  if (!s) return undefined
+  if (isImageIconUrl(s)) return { iconType: 'image', iconValue: s }
+  const emoji = Array.from(s).slice(0, 4).join('')
+  return { emoji, iconType: 'emoji', iconValue: emoji }
+}
+
 export async function POST(req: NextRequest) {
   const gate = await requireAdmin()
   if (gate.error) return gate.error
@@ -73,7 +90,7 @@ export async function POST(req: NextRequest) {
     if (!name) return NextResponse.json({ error: 'name_required' }, { status: 400 })
     const price = Math.floor(Number(data.priceCoins))
     if (!Number.isFinite(price) || price < 0) return NextResponse.json({ error: 'invalid_price' }, { status: 400 })
-    const icon = cleanIcon(data.icon) ?? '🎁'
+    const icon = iconPatch(data.icon) ?? { emoji: '🎁', iconType: 'emoji', iconValue: '🎁' }
     if (data.categoryId) {
       const cat = await db.giftCategory.findUnique({ where: { id: String(data.categoryId) } })
       if (!cat) return NextResponse.json({ error: 'invalid_category' }, { status: 400 })
@@ -83,9 +100,9 @@ export async function POST(req: NextRequest) {
         category: 'gift',
         categoryId: data.categoryId ? String(data.categoryId) : null,
         name: name.slice(0, 40),
-        emoji: icon,
-        iconType: 'emoji',
-        iconValue: icon,
+        emoji: icon.emoji ?? '🎁',
+        iconType: icon.iconType ?? 'emoji',
+        iconValue: icon.iconValue ?? icon.emoji ?? '🎁',
         coinPrice: price,
         tier: price >= 250 ? 'premium' : 'default',
         isActive: data.isActive !== false,
@@ -126,11 +143,13 @@ export async function PATCH(req: NextRequest) {
     const patch: any = {}
     if (data.name !== undefined) patch.name = String(data.name).trim().slice(0, 40)
     if (data.icon !== undefined) {
-      const i = cleanIcon(data.icon)
-      if (i) {
-        patch.emoji = i
-        patch.iconType = 'emoji'
-        patch.iconValue = i
+      const icon = iconPatch(data.icon)
+      if (icon) {
+        // PNG/image icons: iconType+iconValue carry the URL; emoji keeps a
+        // glyph fallback so legacy readers still render SOMETHING.
+        if (icon.emoji !== undefined) patch.emoji = icon.emoji
+        patch.iconType = icon.iconType
+        patch.iconValue = icon.iconValue
       }
     }
     if (data.priceCoins !== undefined) {

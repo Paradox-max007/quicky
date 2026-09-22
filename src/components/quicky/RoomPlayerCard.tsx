@@ -129,6 +129,7 @@ export function RoomPlayerCard({
   return (
     <motion.div
       ref={wrapRef}
+      data-room-seat={player.userId}
       className={`sbr-seat ${spotlight ? 'sbr-seat-dueling' : ''}${nameAbove ? ' sbr-name-top' : ''}${interactive ? ' sbr-seat-tappable' : ''}`}
       onClick={interactive ? () => onTap?.(wrapRef.current!) : undefined}
       role={interactive ? 'button' : undefined}

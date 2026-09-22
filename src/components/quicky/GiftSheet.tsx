@@ -36,6 +36,8 @@ import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { toast } from 'sonner'
 import type { CatalogGift } from './PlayerInteractionSheet'
 import { normalizeGenderClient } from './gender'
+import { GiftIcon } from './GiftIcon'
+import { launchGiftFly } from './gift-fly/GiftFlyLayer'
 
 type Player = { userId: string; displayName: string; gender?: string | null; seatIndex?: number }
 
@@ -125,7 +127,16 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, o
     try {
       const res = await api.spinBottle.gifts.sendBulk(roomId, giftDef.id, filter, quantity)
       if (res?.ok) {
-        // §28 — aggregated success, single animation, immediate balance update
+        // §28 — aggregated success, single animation, immediate balance update.
+        // The icons fan out from MY seat to every eligible recipient's seat
+        // (gifting-revision: the fly animation for group gifting too).
+        launchGiftFly({
+          fromUserId: meId || undefined,
+          toUserIds: eligible.map((p) => p.userId),
+          icon: giftDef.icon,
+          iconType: giftDef.iconType,
+          quantity,
+        })
         toast.success(
           `🎁 You sent ${quantity} ${giftDef.name}${quantity > 1 ? 's' : ''} to ${res.recipientCount} ${res.recipientCount === 1 ? 'player' : 'players'}`,
           { description: `−${(res.totalCost ?? totalCost).toLocaleString()} coins` }
@@ -234,7 +245,7 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, o
                     : 'bg-white/5 border-white/10 hover:bg-white/10'
                 )}
               >
-                <span className="text-2xl leading-none">{gift.icon}</span>
+                <GiftIcon icon={gift.icon} iconType={gift.iconType} className="h-7 w-7" imgClassName="h-7 w-7" />
                 <span className="text-[9px] text-white/60 font-medium truncate w-full text-center">{gift.name}</span>
                 <div className="flex items-center gap-0.5">
                   <span className="text-[var(--qk-gold)] text-[9px]">🪙</span>
@@ -323,7 +334,7 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, o
               <span className="text-sm">Sending…</span>
             ) : giftDef && recipientCount > 0 ? (
               <>
-                <span>{giftDef.icon}</span>
+                <GiftIcon icon={giftDef.icon} iconType={giftDef.iconType} className="h-4 w-4 text-base" imgClassName="h-4 w-4" />
                 <span>
                   Send {quantity} {giftDef.name}
                   {quantity > 1 ? 's' : ''} × {recipientCount}

@@ -30,7 +30,10 @@ import { api } from '@/lib/quicky/api-client'
 import { joinRoomChannel, type RoomChannel } from '@/lib/quicky/realtime'
 import { useQuickyStore } from '@/store/quicky'
 import { alertMentionOnce } from '@/lib/quicky/mention-alerts'
-import type { RoomMessage } from '@/components/quicky/RoomChatPanel'
+import { hapticNotification } from '@/lib/capacitor'
+import { registerGiftEvent } from '@/store/gift-alerts'
+import { launchGiftFly } from '@/components/quicky/gift-fly/GiftFlyLayer'
+import type { RoomMessage, GiftChatMeta } from '@/components/quicky/RoomChatPanel'
 
 export type RoomSnapshot = {
   roomId: string
@@ -49,6 +52,9 @@ export type RoomSnapshot = {
     avatar: string | null
     gender: string | null
     kissPoints: number
+    /** Room-chat mention privacy: false → nobody in THIS room can mention
+     *  this player (toolbox + picker hide them; the server drops the rows). */
+    mentionsEnabled: boolean
   }[]
   /** Games PRD §11/§73 — server-mirrored spin gate (rendering only). */
   canSpin: boolean
@@ -81,6 +87,7 @@ export type RoomSnapshot = {
     kind: string
     createdAt: string
     mentions?: { userId: string; displayName: string }[]
+    metadata?: GiftChatMeta | null
   }[]
 }
 
@@ -192,10 +199,45 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
         ...m,
         mentions: m.mentions ?? [],
         replyTo: prevMap.get(m.id)?.replyTo ?? null,
+        metadata: m.metadata ?? null,
       }))
       const pending = prev.chat.filter((m) => m.id.startsWith('tmp_'))
       return { snapshot: s, chat: [...merged, ...pending] }
     })
+
+    // Gifting-revision resilience: when the realtime broadcast was missed
+    // (Supabase blip), the snapshot's gift rows still register the
+    // recipient notification — deduped by message id, and only FRESH rows
+    // (30s window) so historical timeline cards never re-alert on join.
+    const meId = useQuickyStore.getState().user?.id ?? ''
+    if (meId) {
+      const now = Date.now()
+      for (const m of s.recentMessages) {
+        if (m.kind !== 'gift' || !m.metadata) continue
+        const ids = m.metadata.recipientIds?.length
+          ? m.metadata.recipientIds
+          : m.metadata.recipientId
+            ? [m.metadata.recipientId]
+            : []
+        if (!ids.includes(meId)) continue
+        const ts = Date.parse(m.createdAt)
+        if (!Number.isFinite(ts) || now - ts > 30_000) continue
+        const sender = s.players.find((p) => p.userId === m.userId)
+        registerGiftEvent({
+          id: m.id,
+          roomId: s.roomId,
+          senderId: m.userId,
+          senderName: sender?.displayName ?? 'Someone',
+          senderAvatar: sender?.avatar ?? null,
+          itemId: m.metadata.itemId,
+          itemName: m.metadata.itemName,
+          itemIcon: m.metadata.itemIcon ?? m.metadata.itemEmoji ?? '🎁',
+          itemIconType: m.metadata.itemIconType ?? 'emoji',
+          quantity: Math.max(1, m.metadata.quantity ?? 1),
+          receivedAt: Number.isFinite(ts) ? ts : now,
+        })
+      }
+    }
   }
 
   const handleRoomGone = async () => {
@@ -331,8 +373,76 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
         },
         onGift: (payload) => {
           const p = payload as any
-          if (p?.recipientId === (useQuickyStore.getState().user?.id ?? '')) {
+          const meId = useQuickyStore.getState().user?.id ?? ''
+          const recipientIds: string[] = Array.isArray(p?.recipientIds)
+            ? p.recipientIds
+            : p?.recipientId
+              ? [p.recipientId]
+              : []
+          const forMe = !!meId && recipientIds.includes(meId)
+
+          // 1) Synthesize the gift chat card with the REAL message id (the
+          //    server's broadcast carries it) — the SSE snapshot merge that
+          //    follows replaces it seamlessly, so there is no duplicate flash
+          //    and offline clients still get the row through the snapshot.
+          if (p?.giftMessageId && p?.senderId) {
+            const giftMsg: RoomMessage = {
+              id: String(p.giftMessageId),
+              userId: String(p.senderId),
+              text: p.text ?? '',
+              kind: 'gift',
+              createdAt: p.createdAt ?? new Date().toISOString(),
+              replyTo: null,
+              mentions: [],
+              metadata: {
+                itemId: p.itemId,
+                itemName: p.itemName,
+                itemEmoji: p.itemEmoji,
+                itemIcon: p.itemIcon ?? p.itemEmoji,
+                itemIconType: p.itemIconType ?? 'emoji',
+                recipientId: p.recipientId ?? null,
+                recipientName: p.recipientName ?? null,
+                recipientIds,
+                recipientNames: Array.isArray(p.recipientNames) ? p.recipientNames : [],
+                recipientCount: Number.isFinite(p.recipientCount) ? p.recipientCount : recipientIds.length,
+                quantity: Math.max(1, Number(p?.quantity ?? 1)),
+                bulk: !!p.bulk,
+              },
+            }
+            set((prev) => {
+              if (prev.chat.some((m) => m.id === giftMsg.id)) return prev
+              return { chat: [...prev.chat, giftMsg] }
+            })
+          }
+
+          // 2) Recipient-side experience: economy bump + notification inbox
+          //    (drawer surfaces decide per-view) + the fly animation from the
+          //    SENDER's seat to MY seat. The SENDER skips the fly here — they
+          //    already launched it locally at send time.
+          if (forMe && p?.senderId !== meId) {
             get().bumpEconomy({ giftsReceived: Math.max(1, Number(p?.quantity ?? 1)) })
+            void hapticNotification('warning')
+            const sender = get().snapshot?.players.find((pl) => pl.userId === p?.senderId)
+            registerGiftEvent({
+              id: String(p?.giftMessageId ?? `gift_${Date.now()}_${Math.random()}`),
+              roomId: ctl.roomId ?? '',
+              senderId: String(p.senderId ?? ''),
+              senderName: p?.senderName ?? sender?.displayName ?? 'Someone',
+              senderAvatar: sender?.avatar ?? null,
+              itemId: p?.itemId,
+              itemName: p?.itemName,
+              itemIcon: p?.itemIcon ?? p?.itemEmoji ?? '🎁',
+              itemIconType: p?.itemIconType ?? 'emoji',
+              quantity: Math.max(1, Number(p?.quantity ?? 1)),
+              receivedAt: Date.now(),
+            })
+            launchGiftFly({
+              fromUserId: p?.senderId,
+              toUserIds: [meId],
+              icon: p?.itemIcon ?? p?.itemEmoji ?? '🎁',
+              iconType: p?.itemIconType ?? 'emoji',
+              quantity: Math.max(1, Number(p?.quantity ?? 1)),
+            })
           }
         },
         onBalance: (payload) => {

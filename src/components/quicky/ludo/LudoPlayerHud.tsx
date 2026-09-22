@@ -35,6 +35,7 @@ export const LudoPlayerHud = memo(function LudoPlayerHud({
         p ? (
           <div
             key={p.userId}
+            data-room-seat={p.userId}
             className={`ldo-hud-chip${p.userId === currentPlayerId ? ' ldo-active' : ''}${
               p.connection === 'offline' ? ' ldo-offline' : ''
             }${onPlayerTap && p.userId !== meId ? ' ldo-hud-chip-tap' : ''}`}

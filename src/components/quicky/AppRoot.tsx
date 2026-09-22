@@ -44,6 +44,10 @@ import { GameFriendsScreen } from './game-primary/GameFriendsScreen'
 import { useGameWakeLock } from '@/hooks/useGameWakeLock'
 import { GameDecisionDrawer } from './game-chat/GameDecisionDrawer'
 import { GameAlertCenter } from './game-alerts/GameAlertCenter'
+import { GameGiftAlert } from './game-alerts/GameGiftAlert'
+import { GiftFlyLayer } from './gift-fly/GiftFlyLayer'
+import { GiftBackSheet } from './gift-back/GiftBackSheet'
+import { primeMentionSound } from '@/lib/quicky/mention-sound'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
@@ -184,6 +188,14 @@ export function AppRoot() {
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
   }, [user?.settings?.theme])
+
+  // ─── Mention notification sound unlock (room-chat-settings revision) ────
+  // WebAudio needs one user gesture before it may play: prime the context at
+  // the first tap/keystroke so the mention chime works on every later
+  // mention alert, on any screen (in the room or not).
+  useEffect(() => {
+    primeMentionSound()
+  }, [])
 
   // ─── Room runtime restore after refresh (game-chat PRD §100) ────────────
   // The server is authoritative: ask it whether the stored room id still
@@ -503,6 +515,20 @@ export function AppRoot() {
           game-chat message modals (one-line preview + Reply). Gated by the
           "In-game Notifications" setting toggle; mobile/Capacitor only. */}
       <GameAlertCenter />
+
+      {/* Gifting-revision global surfaces:
+          · GameGiftAlert — "You received N × 🎁 from {sender}" top drawer
+            whenever the player is NOT in a room view (mobile off-game-screen
+            OR desktop off-room). Inside a room the chat-shell drawer / the
+            timeline gift card carry it.
+          · GiftFlyLayer — the sender→receiver fly animation overlay (inert,
+            pointer-events-none, paints only while flights are active).
+          · GiftBackSheet — the per-recipient gift sheet opened from the
+            drawers / timeline cards; works on ANY screen (no navigation —
+            the room runtime never detaches). */}
+      <GameGiftAlert />
+      <GiftFlyLayer />
+      <GiftBackSheet />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
           app on desktop and respects safe-area on mobile.

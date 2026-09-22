@@ -558,6 +558,11 @@ model SpinRoomPlayer {
   seatIndex     Int
   // 0..N-1 order in the current turn rotation
   turnIndex     Int
+  // Room-chat mention privacy (room-chat-settings revision): when FALSE,
+  // nobody in THIS room can mention this player — the toolbox hides the
+  // Mention action, the @ composer picker filters their name and the server
+  // drops mention rows targeting them. Per-room (not global) by design.
+  mentionsEnabled Boolean  @default(true)
   // "online" | "reconnecting" | "offline"
   connection    String   @default("online")
   joinedAt      DateTime @default(now())

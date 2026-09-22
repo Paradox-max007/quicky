@@ -273,6 +273,13 @@ export const api = {
           { method: 'POST', body: JSON.stringify({ roomId, itemId, recipientFilter, quantity }) }
         ),
     },
+    /** Room-chat settings: my own mention privacy for ONE room (shared by
+     *  both room games — the membership table is shared). */
+    roomMentions: (roomId: string, enabled: boolean) =>
+      jsonFetch<{ ok: boolean; roomId: string; mentionsEnabled: boolean }>(
+        '/api/quicky/games/spin-bottle/mention-settings',
+        { method: 'POST', body: JSON.stringify({ roomId, enabled }) }
+      ),
   },
   /** Refactor PRD §25/§26/§80 — friendships. */
   friends: {
@@ -411,6 +418,13 @@ export const api = {
           { method: 'POST', body: JSON.stringify({ roomId, itemId, recipientFilter, quantity }) }
         ),
     },
+    /** Room-chat settings: my own mention privacy for ONE room (shared by
+     *  both room games — the membership table is shared). */
+    roomMentions: (roomId: string, enabled: boolean) =>
+      jsonFetch<{ ok: boolean; roomId: string; mentionsEnabled: boolean }>(
+        '/api/quicky/games/spin-bottle/mention-settings',
+        { method: 'POST', body: JSON.stringify({ roomId, enabled }) }
+      ),
     coins: {
       balance: () =>
         jsonFetch<{ coinBalance: number }>('/api/quicky/games/spin-bottle/coins'),

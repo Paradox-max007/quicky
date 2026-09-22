@@ -10,6 +10,7 @@
 
 import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
+import { playMentionSound } from './mention-sound'
 
 export type MentionAlertInput = {
   id: string
@@ -53,6 +54,11 @@ export function alertMentionOnce(m: MentionAlertInput): boolean {
     }
   }
   buzz()
+  // Room-chat-settings revision: the mention chime rides EVERY mention
+  // alert path (in-room channel AND per-user SSE — any screen, game or
+  // not). Switchable via the chat header speaker button / settings panel;
+  // default ON. WebAudio synthesis — no asset, works in the WebView.
+  playMentionSound()
   // §91 copy: "@Luna mentioned you in Club Royale" (+ preview) — in-room the
   // shorter lightweight variant; never expose more than a short preview.
   const title = m.inRoom

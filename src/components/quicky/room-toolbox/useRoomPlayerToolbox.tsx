@@ -18,11 +18,12 @@
 //   · Mention → prefills the Room Chat composer (@Name, never auto-sends)
 //   · Profile → the app's real profile route with the room as back target
 //   · ghost cleanup — a player who left can never keep a popup alive
-//   · gift send — optimistic coin spend, server balance reconcile,
-//     realtime broadcast (injected by the room since the store is per-game)
+//   · gift send — optimistic coin spend, server balance reconcile, the
+//     sender→receiver FLY animation (the room-channel gift push that
+//     drives every OTHER client's visuals comes from the SERVER)
 //
-// Rooms keep ONLY their own specifics: the gift broadcast callback, the
-// economy reconcile callback and (optionally) a guard + popover anchor.
+// Rooms keep ONLY their own specifics: the economy reconcile callback and
+// (optionally) a guard + popover anchor.
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -30,6 +31,7 @@ import { Capacitor } from '@capacitor/core'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore, type AppView } from '@/store/quicky'
 import { useGameChatStore } from '@/store/game-chat'
+import { launchGiftFly } from '@/components/quicky/gift-fly/GiftFlyLayer'
 import {
   PlayerInteractionSheet,
   type CatalogGift,
@@ -43,6 +45,8 @@ export type ToolboxPlayer = {
   avatar?: string | null
   gender?: string | null
   seatIndex?: number
+  /** Room-chat settings: this player turned mentions OFF for this room. */
+  mentionDisabled?: boolean
 }
 
 /** Popover anchor rects (desktop) — identical contract to PlayerInteractionSheet. */
@@ -58,17 +62,6 @@ export type RoomPlayerToolboxOptions = {
   mode: 'sheet' | 'popover'
   /** Profile back target — the room the toolbox was opened FROM. */
   returnView: AppView
-  /** Room realtime gift broadcast (store is per-game → injected). */
-  broadcastGift?: (payload: {
-    senderId: string
-    senderName: string
-    recipientId: string
-    recipientName: string
-    itemId: string
-    itemName: string
-    itemEmoji: string
-    quantity: number
-  }) => void
   /** Economy wiring (store is per-game → injected). */
   onCoinBalance: (n: number) => void
   onReconcile?: () => void
@@ -87,7 +80,6 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
     coinBalance,
     mode,
     returnView,
-    broadcastGift,
     onCoinBalance,
     onReconcile,
     onOpenCoinStore,
@@ -121,6 +113,7 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
           displayName: p.displayName,
           avatar: p.avatar ?? null,
           isMe: p.userId === meId,
+          mentionDisabled: p.mentionDisabled === true,
         },
         anchor: resolveAnchor ? resolveAnchor(el ?? null) : null,
       })
@@ -228,30 +221,30 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
     [friendBusy, friendIds]
   )
 
-  // ── Gifts — optimistic spend, server truth, realtime broadcast. The gift
-  // endpoint is the SHARED room-gift API (every game posts to the same
-  // route) — only the broadcast/reconcile sinks are room-specific. Works
-  // for SELF-gifts too (gifting-revision — the server accepts me as the
-  // recipient; I pay the price and also collect the recipient reward).
+  // ── Gifts — optimistic spend, server truth, FLY ANIMATION (gifting-rev).
+  // The gift endpoint is the SHARED room-gift API (every game posts to the
+  // same route) — the recipient reward, chat card and every other client's
+  // visuals arrive through the SERVER's room-channel broadcast (it carries
+  // the real chat-row id, resolved icon and recipient list), so the toolbox
+  // no longer duplicates that broadcast locally. The sender's own payoff:
+  // the gift icons FLY from MY seat to the RECIPIENT's seat the moment the
+  // server commits (works for SELF-gifts too — the server accepts me as the
+  // recipient; I pay and also collect the recipient reward).
   const sendGift = useCallback(
-    async (recipientId: string, gift: CatalogGift): Promise<boolean> => {
+    async (recipientId: string, gift: CatalogGift, quantity = 1): Promise<boolean> => {
       if (!roomId) return false
-      onCoinBalance(coinBalance - gift.priceCoins) // optimistic HUD spend
+      const qty = Math.max(1, Math.floor(quantity) || 1)
+      onCoinBalance(coinBalance - gift.priceCoins * qty) // optimistic HUD spend
       try {
-        const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id)
+        const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id, qty)
         if (res?.ok) {
           onCoinBalance(res.coinBalance)
-          const me2 = useQuickyStore.getState().user
-          const recipientName = members.find((m) => m.userId === recipientId)?.displayName
-          broadcastGift?.({
-            senderId: me2?.id ?? '',
-            senderName: me2?.name ?? 'Someone',
-            recipientId,
-            recipientName: recipientName ?? 'Someone',
-            itemId: gift.id,
-            itemName: gift.name,
-            itemEmoji: gift.icon,
-            quantity: 1,
+          launchGiftFly({
+            fromUserId: meId || undefined,
+            toUserIds: [recipientId],
+            icon: gift.icon,
+            iconType: gift.iconType,
+            quantity: qty,
           })
           return true
         }
@@ -267,7 +260,7 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
         return false
       }
     },
-    [roomId, coinBalance, members, broadcastGift, onCoinBalance, onReconcile]
+    [roomId, coinBalance, meId, onCoinBalance, onReconcile]
   )
 
   // ── The surfaces — render this ONCE anywhere in the room's tree.
