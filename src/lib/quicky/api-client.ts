@@ -140,7 +140,18 @@ export const api = {
       jsonFetch<{ match: any; me: { id: string; isPremium: boolean }; messages: any[]; readMessageIds?: string[] }>(
         `/api/quicky/matches/${matchId}/messages`
       ),
-    send: (matchId: string, data: { type: 'text' | 'image' | 'video' | 'voice'; text?: string; mediaUrl?: string; durationMs?: number; replyToId?: string }) =>
+    send: (
+      matchId: string,
+      data: {
+        type: 'text' | 'image' | 'video' | 'voice' | 'sticker'
+        text?: string
+        mediaUrl?: string
+        durationMs?: number
+        replyToId?: string
+        /** type === 'sticker' — the server resolves + ownership-checks it. */
+        stickerId?: string
+      }
+    ) =>
       jsonFetch<{ ok: boolean; message: any }>(`/api/quicky/matches/${matchId}/messages`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -254,10 +265,15 @@ export const api = {
       ),
     chat: (roomId: string) =>
       jsonFetch<{ messages: any[] }>(`/api/quicky/games/spin-bottle/chat?roomId=${roomId}`),
-    sendChat: (roomId: string, text: string, mentions?: { userId: string; displayName: string }[]) =>
+    sendChat: (
+      roomId: string,
+      text: string,
+      mentions?: { userId: string; displayName: string }[],
+      stickerId?: string
+    ) =>
       jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
         method: 'POST',
-        body: JSON.stringify({ roomId, text, mentions: mentions ?? [] }),
+        body: JSON.stringify({ roomId, text, mentions: mentions ?? [], stickerId: stickerId ?? null }),
       }),
     gifts: {
       catalog: () =>
@@ -376,10 +392,15 @@ export const api = {
       }),
     chat: (roomId: string) =>
       jsonFetch<{ messages: any[] }>(`/api/quicky/games/spin-bottle/chat?roomId=${roomId}`),
-    sendChat: (roomId: string, text: string, mentions?: { userId: string; displayName: string }[]) =>
+    sendChat: (
+      roomId: string,
+      text: string,
+      mentions?: { userId: string; displayName: string }[],
+      stickerId?: string
+    ) =>
       jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
         method: 'POST',
-        body: JSON.stringify({ roomId, text, mentions: mentions ?? [] }),
+        body: JSON.stringify({ roomId, text, mentions: mentions ?? [], stickerId: stickerId ?? null }),
       }),
     close: (roomId: string) =>
       jsonFetch('/api/quicky/games/spin-bottle/close', {

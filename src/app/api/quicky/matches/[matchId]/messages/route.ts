@@ -127,8 +127,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
               senderId: m.replyTo.senderId,
               type: m.replyTo.type,
               snippet:
-                m.replyTo.text ??
-                (m.replyTo.type === 'quicky' ? 'Quicky' : m.replyTo.type === 'video' ? 'Video' : 'Photo'),
+                m.replyTo.type === 'sticker'
+                  ? `Sticker · ${m.replyTo.text ?? ''}`
+                  : m.replyTo.text ??
+                    (m.replyTo.type === 'quicky' ? 'Quicky' : m.replyTo.type === 'video' ? 'Video' : 'Photo'),
               duration: m.replyTo.quickyDuration,
             }
           : null,
@@ -151,12 +153,36 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
   if (match.status !== 'active') return NextResponse.json({ error: 'Unmatched' }, { status: 410 })
 
   const body = await req.json()
-  const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'system'
-  if (!['text', 'image', 'video', 'voice'].includes(type)) {
+  const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'sticker' | 'system'
+  if (!['text', 'image', 'video', 'voice', 'sticker'].includes(type)) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
   }
-  const text = body.text ? String(body.text).slice(0, 1000) : null
-  const mediaUrl = body.mediaUrl ? String(body.mediaUrl) : null
+
+  // ── Sticker messages: the server resolves the asset AND verifies the
+  // sender owns the sticker's bundle (UserGameStickerBundle) — same rule as
+  // game-chat §75 and room chat. text carries the sticker NAME (previews /
+  // reply snippets); mediaUrl carries the asset reference (image URL or the
+  // emoji glyph itself — the client renders both through the sticker path).
+  let sticker: { id: string; name: string; assetUrl: string } | null = null
+  if (type === 'sticker') {
+    const stickerId = body?.stickerId ? String(body.stickerId) : ''
+    if (!stickerId) return NextResponse.json({ error: 'stickerId required' }, { status: 400 })
+    const row = await db.gameSticker.findUnique({
+      where: { id: stickerId },
+      include: { bundle: { select: { id: true, isActive: true } } },
+    })
+    if (!row || !row.isActive || !row.bundle.isActive) {
+      return NextResponse.json({ error: 'sticker_unavailable' }, { status: 400 })
+    }
+    const owned = await db.userGameStickerBundle.findUnique({
+      where: { userId_bundleId: { userId: me.id, bundleId: row.bundle.id } },
+    })
+    if (!owned) return NextResponse.json({ error: 'sticker_not_owned' }, { status: 403 })
+    sticker = { id: row.id, name: row.name, assetUrl: row.assetUrl }
+  }
+
+  const text = sticker ? sticker.name : body.text ? String(body.text).slice(0, 1000) : null
+  const mediaUrl = sticker ? sticker.assetUrl : body.mediaUrl ? String(body.mediaUrl) : null
   if (!text && !mediaUrl) {
     return NextResponse.json({ error: 'Empty message' }, { status: 400 })
   }
@@ -176,7 +202,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
     })
     if (target && target.matchId === matchId) {
       replyToId = target.id
-      replyTo = { id: target.id, senderId: target.senderId, type: target.type, snippet: target.text ?? target.type, duration: null }
+      replyTo = {
+        id: target.id,
+        senderId: target.senderId,
+        type: target.type,
+        snippet: target.type === 'sticker' ? `Sticker · ${target.text ?? ''}` : (target.text ?? target.type),
+        duration: null,
+      }
     }
   }
 

@@ -33,6 +33,7 @@ import { ComplaintModal } from '../ComplaintModal'
 import { CosmeticAvatar, NameDecorators, chatBubbleStyle, ChatBubbleFrame, type EquippedCosmetic } from '../cosmetics/Cosmetics'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore, type GameChatMessage } from '@/store/game-chat'
+import { StickerPicker } from './StickerPicker'
 import { Component, type ReactNode } from 'react'
 
 const REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🔥'] // §28 picker set
@@ -275,17 +276,12 @@ function GameChatScreenInner({
     }
   }, [embedded])
 
-  // ── sticker tray data (§78) ───────────────────────────────────────────────
-  const [bundles, setBundles] = useState<any[] | null>(null)
-  const loadStickers = useCallback(() => {
-    api.gameChat
-      .stickers()
-      .then((res) => setBundles(res.bundles ?? []))
-      .catch(() => setBundles([]))
-  }, [])
-  useEffect(() => {
-    if (showTray && bundles === null) loadStickers()
-  }, [showTray, bundles, loadStickers])
+  // ── sticker tray (§78) — the tabbed StickerPicker owns its catalog load
+  // (owned stickers + shop) so this screen stays lean.
+  const sendPickedSticker = (s: { id: string; name: string; assetUrl: string }) => {
+    useGameChatStore.getState().sendSticker({ id: s.id, name: s.name, assetUrl: s.assetUrl })
+    setShowTray(false)
+  }
 
   const send = () => {
     if (!draft.trim()) return
@@ -804,7 +800,7 @@ function GameChatScreenInner({
                 exit={{ height: 0, opacity: 0 }}
                 className="shrink-0 overflow-hidden border-t border-white/10 bg-[var(--qk-card)]/95"
               >
-                <div className="px-3 py-2.5 max-h-52 overflow-y-auto flex flex-col gap-2">
+                <div className="px-3 py-2.5 flex flex-col gap-2.5">
                   {/* §68: Quicky Image — the special points-earning send */}
                   <button
                     onClick={() => quickyInputRef.current?.click()}
@@ -819,57 +815,13 @@ function GameChatScreenInner({
                       <span className="block text-[11px] text-white/50">A special ⚡ photo that earns Quicky Points &amp; keeps your streak</span>
                     </span>
                   </button>
-                  {(bundles ?? []).map((b) => (
-                    <div key={b.id}>
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-bold text-white/80">
-                          {b.icon} {b.name}
-                          {b.season ? <span className="text-white/35 font-normal"> · {b.season}</span> : null}
-                        </p>
-                        {b.owned ? (
-                          <span className="text-[10px] font-bold text-emerald-300/90">OWNED</span>
-                        ) : (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await api.gameChat.stickerAction('purchase', b.id)
-                                if (res?.ok) {
-                                  toast.success(`Unlocked ${b.name}!`)
-                                  loadStickers()
-                                }
-                              } catch (e: any) {
-                                if (e?.body?.error === 'insufficient_coins') toast.error('Not enough coins')
-                                else toast.error(e?.message ?? 'Purchase failed')
-                              }
-                            }}
-                            className="text-[10px] font-black px-2 py-1 rounded-full bg-coral-gradient"
-                          >
-                            🪙 {b.priceCoins}
-                          </button>
-                        )}
-                      </div>
-                      {b.owned && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {b.stickers.map((s: any) => (
-                            <button
-                              key={s.id}
-                              onClick={() => {
-                                useGameChatStore.getState().sendSticker({ id: s.id, name: s.name, assetUrl: s.assetUrl })
-                                setShowTray(false)
-                              }}
-                              className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 active:scale-95 transition"
-                              aria-label={`Send ${s.name}`}
-                            >
-                              <StickerAsset sticker={s} />
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {bundles !== null && bundles.length === 0 && (
-                    <p className="text-white/40 text-xs py-3 text-center">No sticker bundles yet — coming soon.</p>
-                  )}
+                  {/* Two-tab sticker picker — My Stickers | Sticker Shop (coin
+                      purchase / claim unlocks) — owns its catalog loading. */}
+                  <StickerPicker
+                    onPick={sendPickedSticker}
+                    className="max-h-60"
+                    pickLabel="Tap a sticker to send it in this chat"
+                  />
                 </div>
               </motion.div>
             )}

@@ -89,6 +89,7 @@ export async function GET() {
       else if (lastMsg.type === 'quicky') preview = '\u{1F4F7} Quicky'
       else if (lastMsg.type === 'image') preview = '\u{1F4F7} Photo'
       else if (lastMsg.type === 'video') preview = '\u{1F3AC} Video'
+      else if (lastMsg.type === 'sticker') preview = `\u{1F381} Sticker${lastMsg.text ? ` \u00b7 ${lastMsg.text}` : ''}`
       else preview = lastMsg.text ?? ''
     }
 

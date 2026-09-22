@@ -5,13 +5,17 @@
 // Admin → Game Content → Stickers: Bundles + Stickers. Full CRUD against
 // /api/quicky/admin/stickers(/bundles) — every request re-checks isAdmin on
 // the SERVER (§127); this UI is convenience, never the security boundary.
-// Bundle form fields per §117 (name, description, icon, league, season,
-// coin price, minimum league points, active, display order); sticker form
-// per §118 (name, bundle, asset, order, active) with §119 asset validation.
+// Bundle form fields: name, description, icon (emoji or uploaded image),
+// unlock method, season/realm/event linkage, coin price, active, display
+// order — the LEAGUE field is gone (admin-console PRD §13.2, user request:
+// sticker sets no longer gate on league progression). Sticker MEDIA can be
+// uploaded right inside the bundle modal (staged → created on save).
+// Sticker form per §118 (name, bundle, asset, order, active) with §119 asset
+// validation + direct image upload.
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud, Images } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
@@ -25,11 +29,9 @@ type Bundle = {
   unlockType?: string
   eventId?: string | null
   event?: { name: string } | null
-  leagueId: string | null
   seasonId: string | null
   realmLevel?: number | null
   winnerPositions?: string | null
-  league?: { name: string } | null
   season?: { name: string } | null
   priceCoins: number
   purchaseEnabled: boolean
@@ -40,13 +42,21 @@ type Bundle = {
   _count?: { stickers: number; owners: number }
 }
 
+/** Sticker image uploaded inside the bundle modal — staged locally, then
+ *  created as GameSticker rows right after the bundle is saved. */
+type StagedSticker = { name: string; assetUrl: string }
+
+/** Bundle icons may be an emoji OR an uploaded image URL. */
+function isImageIcon(icon: string): boolean {
+  return /^https?:\/\//i.test(icon) || icon.startsWith('data:image/') || icon.startsWith('/')
+}
+
 type BundleForm = {
   id?: string
   name: string
   description: string
   icon: string
   unlockType: string
-  leagueId: string
   seasonId: string
   eventId: string
   realmLevel: string
@@ -56,6 +66,9 @@ type BundleForm = {
   rewardEnabled: boolean
   isActive: boolean
   sortOrder: string
+  /** media staged in this modal — uploaded images that become the set's
+   *  stickers the moment the bundle is created/updated. */
+  newStickers: StagedSticker[]
 }
 
 // Games PRD §32 + admin-console PRD §13 — acquisition mechanisms
@@ -77,7 +90,6 @@ const EMPTY_BUNDLE: BundleForm = {
   description: '',
   icon: '✨',
   unlockType: 'coins',
-  leagueId: '',
   seasonId: '',
   eventId: '',
   realmLevel: '',
@@ -87,6 +99,7 @@ const EMPTY_BUNDLE: BundleForm = {
   rewardEnabled: false,
   isActive: true,
   sortOrder: '10',
+  newStickers: [],
 }
 
 function parseBundleWinnerPositions(json: string | null | undefined): { 1: boolean; 2: boolean; 3: boolean } {
@@ -111,7 +124,6 @@ type StickerForm = {
 export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
   const [bundles, setBundles] = useState<Bundle[]>([])
-  const [leagues, setLeagues] = useState<any[]>([])
   const [seasons, setSeasons] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -119,13 +131,13 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const [stickerForm, setStickerForm] = useState<StickerForm | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await api.admin.stickers.bundles()
       setBundles(res.bundles ?? [])
-      setLeagues(res.leagues ?? [])
       setSeasons(res.seasons ?? [])
       setEvents((res as any).events ?? [])
     } catch (e: any) {
@@ -166,7 +178,6 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
       description: bundleForm.description.trim() || undefined,
       icon: bundleForm.icon.trim() || '✨',
       unlockType: bundleForm.unlockType,
-      leagueId: bundleForm.leagueId || null,
       seasonId: bundleForm.seasonId || null,
       eventId: bundleForm.eventId || null,
       realmLevel,
@@ -178,8 +189,34 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
       sortOrder: Math.floor(Number(bundleForm.sortOrder)) || 0,
     }
     try {
-      if (bundleForm.id) await api.admin.stickers.updateBundle(bundleForm.id, data)
-      else await api.admin.stickers.createBundle(data)
+      let bundleId: string | null = null
+      if (bundleForm.id) {
+        await api.admin.stickers.updateBundle(bundleForm.id, data)
+        bundleId = bundleForm.id
+      } else {
+        const res = await api.admin.stickers.createBundle(data)
+        bundleId = (res as any)?.bundle?.id ?? null
+      }
+      // Media staged inside the modal — create the sticker rows right after
+      // the bundle exists (each upload already lives in Supabase Storage).
+      if (bundleId && bundleForm.newStickers.length > 0) {
+        let ok = 0
+        for (const s of bundleForm.newStickers) {
+          try {
+            await api.admin.stickers.createSticker({
+              bundleId,
+              name: s.name,
+              assetUrl: s.assetUrl,
+              sortOrder: 100 + ok,
+              isActive: true,
+            })
+            ok++
+          } catch {
+            // keep going — one failed sticker must not sink the whole set
+          }
+        }
+        if (ok > 0) toast.success(`${ok} sticker${ok > 1 ? 's' : ''} added to the set`)
+      }
       toast.success(bundleForm.id ? 'Bundle updated' : 'Bundle created')
       setBundleForm(null)
       await load()
@@ -252,7 +289,9 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
             )}
           >
             <div className="flex items-start gap-3">
-              <span className="text-2xl" aria-hidden>{b.icon}</span>
+              <span className="w-8 h-8 flex items-center justify-center shrink-0" aria-hidden>
+                {isImageIcon(b.icon) ? <img src={b.icon} alt="" className="w-8 h-8 object-contain" /> : <span className="text-2xl leading-none">{b.icon}</span>}
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-bold text-sm">{b.name}</p>
@@ -263,7 +302,6 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                   {b.unlockType === 'event' && (b as any).event ? ` (${(b as any).event.name})` : ''}
                   {b.unlockType === 'realm' && b.realmLevel ? ` (realm ${b.realmLevel} · ${parseBundleWinnerPositions(b.winnerPositions)[1] ? '1st' : ''}${parseBundleWinnerPositions(b.winnerPositions)[1] && parseBundleWinnerPositions(b.winnerPositions)[2] ? ' + ' : ''}${parseBundleWinnerPositions(b.winnerPositions)[2] ? '2nd' : ''}${parseBundleWinnerPositions(b.winnerPositions)[3] ? ' + 3rd' : ''})` : ''}
                   {' · '}
-                  {b.league ? `League: ${b.league.name} · ` : ''}
                   {b.season ? `Season: ${b.season.name ?? b.season} · ` : ''}
                   {b.purchaseEnabled ? `🪙 ${b.priceCoins}` : ''}
                   {b.purchaseEnabled && b.rewardEnabled ? ' · ' : ''}
@@ -281,7 +319,6 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                         description: b.description ?? '',
                         icon: b.icon,
                         unlockType: (b as any).unlockType ?? 'coins',
-                        leagueId: b.leagueId ?? '',
                         seasonId: b.seasonId ?? '',
                         eventId: (b as any).eventId ?? '',
                         realmLevel: b.realmLevel ? String(b.realmLevel) : '',
@@ -291,6 +328,7 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                         rewardEnabled: b.rewardEnabled,
                         isActive: b.isActive,
                         sortOrder: String(b.sortOrder),
+                        newStickers: [],
                       })
                     }
                     className="p-2 rounded-lg bg-white/10 hover:bg-white/15"
@@ -391,10 +429,54 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
               <Field label="Description">
                 <input value={bundleForm.description} onChange={(e) => setBundleForm({ ...bundleForm, description: e.target.value })} className={inputCls} placeholder="Five sizzling summer kisses…" />
               </Field>
+              {/* Bundle icon — emoji OR uploaded image; live preview beside it. */}
+              <div className="flex items-end gap-2.5">
+                <div className="flex-1 min-w-0">
+                  <Field label="Icon (emoji or image URL)">
+                    <input value={bundleForm.icon} onChange={(e) => setBundleForm({ ...bundleForm, icon: e.target.value })} className={inputCls} placeholder="✨" />
+                  </Field>
+                </div>
+                <span className="w-11 h-11 shrink-0 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden" aria-hidden>
+                  {isImageIcon(bundleForm.icon) ? (
+                    <img src={bundleForm.icon} alt="" className="w-8 h-8 object-contain" />
+                  ) : (
+                    <span className="text-2xl leading-none">{bundleForm.icon || '✨'}</span>
+                  )}
+                </span>
+              </div>
+              <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
+                <UploadCloud className="w-3.5 h-3.5" aria-hidden />
+                {uploading ? 'Uploading icon…' : 'Upload bundle icon image (PNG / WebP / GIF) → Supabase Storage'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    if (file.size > 4 * 1024 * 1024) {
+                      toast.error('Images must be 4 MB or smaller')
+                      return
+                    }
+                    setUploading(true)
+                    void api.admin.assets
+                      .upload(file, 'stickers')
+                      .then((res) => {
+                        setBundleForm((f) => (f ? { ...f, icon: res.url } : f))
+                        toast.success('Icon uploaded', { description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads' })
+                      })
+                      .catch((err: unknown) => {
+                        toast.error(err instanceof Error ? err.message : 'Upload failed')
+                      })
+                      .finally(() => {
+                        setUploading(false)
+                        e.target.value = ''
+                      })
+                  }}
+                />
+              </label>
               <div className="grid grid-cols-2 gap-2.5">
-                <Field label="Icon">
-                  <input value={bundleForm.icon} onChange={(e) => setBundleForm({ ...bundleForm, icon: e.target.value })} className={inputCls} placeholder="✨" />
-                </Field>
                 <Field label="Display Order">
                   <input value={bundleForm.sortOrder} onChange={(e) => setBundleForm({ ...bundleForm, sortOrder: e.target.value })} className={inputCls} inputMode="numeric" />
                 </Field>
@@ -420,14 +502,6 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                     <option value="">— none —</option>
                     {events.map((ev) => (
                       <option key={ev.id} value={ev.id}>{ev.name}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="League">
-                  <select value={bundleForm.leagueId} onChange={(e) => setBundleForm({ ...bundleForm, leagueId: e.target.value })} className={inputCls}>
-                    <option value="">— none —</option>
-                    {leagues.map((l) => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
                     ))}
                   </select>
                 </Field>
@@ -487,6 +561,97 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                   Active
                 </label>
               </div>
+
+              {/* ── Sticker media upload — the whole point of this modal: pick
+                  images from the admin's machine, they upload to Supabase
+                  immediately and become GameSticker rows the moment this
+                  bundle is saved (created bundles get them right away;
+                  existing bundles get them appended). ─────────────────── */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-white/60">
+                    <Images className="w-3.5 h-3.5" aria-hidden /> Sticker media
+                  </span>
+                  {bundleForm.id && (
+                    <span className="text-[10px] font-semibold text-white/35">
+                      {(bundles.find((x) => x.id === bundleForm.id)?.stickers?.length ?? 0)} existing
+                    </span>
+                  )}
+                </div>
+                {bundleForm.newStickers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {bundleForm.newStickers.map((s, i) => (
+                      <div
+                        key={`${s.assetUrl}-${i}`}
+                        className="relative w-14 h-14 rounded-xl bg-white/5 border border-white/10 flex flex-col items-center justify-center gap-0.5 overflow-hidden group"
+                      >
+                        <img src={s.assetUrl} alt={s.name} className="w-10 h-10 object-contain" />
+                        <input
+                          value={s.name}
+                          onChange={(e) =>
+                            setBundleForm((f) =>
+                              f ? { ...f, newStickers: f.newStickers.map((n, j) => (j === i ? { ...n, name: e.target.value } : n)) } : f
+                            )
+                          }
+                          className="w-full px-1 text-[9px] font-semibold text-white/70 bg-transparent border-0 outline-none text-center truncate"
+                          placeholder="name"
+                          maxLength={40}
+                          aria-label={`Name for sticker ${i + 1}`}
+                        />
+                        <button
+                          onClick={() => setBundleForm((f) => (f ? { ...f, newStickers: f.newStickers.filter((_, j) => j !== i) } : f))}
+                          className="absolute top-0.5 right-0.5 w-4.5 h-4.5 rounded-full bg-rose-500/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          style={{ width: 18, height: 18 }}
+                          aria-label={`Remove sticker ${s.name}`}
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
+                  <UploadCloud className="w-3.5 h-3.5" aria-hidden />
+                  {uploading ? 'Uploading…' : 'Upload sticker images (multiple) — added to this set on save'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                    className="hidden"
+                    multiple
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? [])
+                      if (files.length === 0) return
+                      const tooBig = files.find((f) => f.size > 4 * 1024 * 1024)
+                      if (tooBig) {
+                        toast.error('Images must be 4 MB or smaller')
+                        return
+                      }
+                      setUploading(true)
+                      void Promise.all(
+                        files.map(async (file) => {
+                          const res = await api.admin.assets.upload(file, 'stickers')
+                          return { name: file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || 'Sticker', assetUrl: res.url }
+                        })
+                      )
+                        .then((staged) => {
+                          setBundleForm((f) => (f ? { ...f, newStickers: [...f.newStickers, ...staged] } : f))
+                          toast.success(`${staged.length} sticker${staged.length > 1 ? 's' : ''} uploaded`, {
+                            description: 'They join the set when you save this bundle',
+                          })
+                        })
+                        .catch((err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : 'Upload failed')
+                        })
+                        .finally(() => {
+                          setUploading(false)
+                          e.target.value = ''
+                        })
+                    }}
+                  />
+                </label>
+              </div>
+
               <button
                 onClick={() => void saveBundle()}
                 disabled={saving}

@@ -377,6 +377,7 @@ export function LudoRoom({
             meId={meId}
             roomId={roomId}
             onSend={sendChat}
+            onSendSticker={(s) => void useLudoRoomStore.getState().sendSticker(s)}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={toolbox.openGiftSheet}

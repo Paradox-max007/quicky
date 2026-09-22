@@ -138,7 +138,7 @@ export type MatchPreview = {
 export type ChatMessage = {
   id: string
   senderId: string
-  type: 'text' | 'image' | 'video' | 'voice' | 'quicky' | 'system'
+  type: 'text' | 'image' | 'video' | 'voice' | 'quicky' | 'system' | 'sticker'
   text: string | null
   mediaUrl: string | null
   // Voice message duration in ms

@@ -10,7 +10,7 @@ import {
   ArrowLeft, Camera, Send, MoreVertical, BadgeCheck, Crown,
   ImagePlus, X, RotateCcw, Check, CheckCheck, Clock, AlertCircle,
   Reply, Copy, ChevronDown, Mic, Play, Pause, Trash2, Square, Sparkles, Wine,
-  Grid3X3, Gamepad2, Loader2, UserPlus, UserMinus, Ban, Eraser, ShieldAlert,
+  Grid3X3, Gamepad2, Loader2, UserPlus, UserMinus, Ban, Eraser, ShieldAlert, Sticker,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { QUICKY } from '@/lib/quicky/constants'
@@ -19,6 +19,7 @@ import { joinMatchChannel, trackOnline, watchOnline, realtimeConfigured, MatchCh
 import { notifyGameInvite, watchGameInvites, GameInvitePayload } from '@/lib/quicky/game-invites'
 import { requestMicPermission, requestCameraPermission } from '@/lib/quicky/media-permissions'
 import { compressImage } from '@/lib/quicky/image'
+import { StickerPicker } from '@/components/quicky/game-chat/StickerPicker'
 import { QuickyViewer } from './QuickyViewer'
 import { TruthOrDareGame } from './TruthOrDareGame'
 import { NeverHaveIEver } from './NeverHaveIEver'
@@ -168,6 +169,8 @@ export function ChatView({
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [showActions, setShowActions] = useState(false)
+  // Stickers sheet — the two-tab picker (My Stickers | Sticker Shop).
+  const [stickerOpen, setStickerOpen] = useState(false)
   // Refactor PRD §53 — chat actions depend on the relationship: Friend
   // toggle / Block / Clear Chat / Complaint. Fetched when the sheet opens.
   const [rel, setRel] = useState<{ isFriend: boolean; iBlockedThem: boolean; theyBlockedMe: boolean } | null>(null)
@@ -609,6 +612,59 @@ export function ChatView({
     }
   }
 
+  // ── Stickers (two-tab picker sheet): optimistic send + realtime push,
+  // exactly like text. The server resolves the sticker + ownership-checks
+  // the bundle before writing the row (§75 parity with game/room chat).
+  const sendStickerMsg = async (sticker: { id: string; name: string; assetUrl: string }) => {
+    if (!matchId) return
+    setStickerOpen(false)
+    const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tmpId,
+        clientTmp: true,
+        status: 'sending',
+        senderId: meUser?.id ?? '',
+        type: 'sticker' as const,
+        text: sticker.name,
+        mediaUrl: sticker.assetUrl,
+        quickyDuration: null,
+        quickyOpenedAt: null,
+        quickyExpiresAt: null,
+        quickyConsumedAt: null,
+        screenshotFlagged: false,
+        readAt: null,
+        deliveredAt: null,
+        replyTo: replyTo ?? null,
+        reactions: [],
+        createdAt: new Date().toISOString(),
+      },
+    ])
+    nearBottomRef.current = true
+    haptic()
+    const reply = replyTo
+    setReplyTo(null)
+    try {
+      const res = await api.chat.send(matchId, {
+        type: 'sticker',
+        stickerId: sticker.id,
+        replyToId: reply?.id ?? undefined,
+      })
+      if (!res.ok) throw new Error('send failed')
+      setMessages((prev) =>
+        dedupeById(prev.map((m) => (m.id === tmpId ? { ...res.message, status: undefined, clientTmp: false } : m)))
+      )
+      channelRef.current?.sendMessage(res.message)
+    } catch (e: any) {
+      const err = e?.body?.error
+      if (err === 'sticker_not_owned') toast.error('You no longer own this sticker set')
+      else if (err === 'sticker_unavailable') toast.error('This sticker is no longer available')
+      else toast.error('Failed to send sticker')
+      updateMsg(tmpId, (m) => ({ ...m, status: 'failed' }))
+    }
+  }
+
   // Broadcast typing while composing, throttled to one event per 2s
   const onTextChanged = (v: string) => {
     setText(v)
@@ -919,7 +975,10 @@ export function ChatView({
             id: m.id,
             senderId: m.senderId,
             type: m.type,
-            snippet: m.text ?? (m.type === 'quicky' ? 'Quicky' : m.type === 'video' ? 'Video' : 'Photo'),
+            snippet:
+              m.type === 'sticker'
+                ? `Sticker · ${m.text ?? ''}`
+                : m.text ?? (m.type === 'quicky' ? 'Quicky' : m.type === 'video' ? 'Video' : 'Photo'),
             duration: m.quickyDuration ?? null,
           })
           textAreaRef.current?.focus()
@@ -1113,6 +1172,15 @@ export function ChatView({
           aria-label="Record voice message"
         >
           <Mic className="w-[18px] h-[18px]" />
+        </button>
+        <button
+          onClick={() => setStickerOpen(true)}
+          className="shrink-0 w-10 h-10 rounded-full bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 text-[var(--qk-accent-light)] hover:bg-[var(--qk-accent)]/25 active:scale-95 transition-all flex items-center justify-center"
+          aria-label="Send a sticker"
+          title="Stickers"
+          data-testid="chat-stickers-btn"
+        >
+          <Sticker className="w-[18px] h-[18px]" />
         </button>
         <textarea
           ref={textAreaRef}
@@ -1351,6 +1419,46 @@ export function ChatView({
                 >
                   <ChevronDown className="w-4 h-4" /> Cancel
                 </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Stickers sheet — My Stickers | Sticker Shop (coin purchase). Tapping
+          an owned sticker sends it immediately; the sheet closes on send. */}
+      <AnimatePresence>
+        {stickerOpen && (
+          <>
+            <motion.div
+              className="absolute inset-0 bg-black/60 z-40"
+              onClick={() => setStickerOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+              className="absolute left-0 right-0 bottom-0 bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl p-4 z-50 flex flex-col max-h-[70vh]"
+              data-testid="chat-sticker-sheet"
+            >
+              <div className="flex items-center justify-between mb-2.5 shrink-0">
+                <h3 className="font-semibold flex items-center gap-1.5">
+                  <Sticker className="w-4 h-4 text-[var(--qk-accent)]" /> Stickers
+                </h3>
+                <button onClick={() => setStickerOpen(false)} className="text-white/40 hover:text-white" aria-label="Close stickers">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <StickerPicker
+                  onPick={(s) => void sendStickerMsg(s)}
+                  className="max-h-full"
+                  pickLabel="Tap a sticker to send it in this chat"
+                />
               </div>
             </motion.div>
           </>
@@ -1827,6 +1935,36 @@ function MessageBubble({
     return (
       <div className="self-center px-3 py-1.5 rounded-full bg-white/5 text-xs text-white/60 text-center max-w-[80%]">
         {m.text}
+      </div>
+    )
+  }
+
+  // STICKER: the big sticker asset (image URL or emoji glyph) in a light
+  // card — no text bubble. Swipe-to-reply / reactions work via wrap().
+  if (m.type === 'sticker') {
+    const asset = m.mediaUrl ?? '✨'
+    const isImg = /^https?:\/\//i.test(asset) || asset.startsWith('/') || asset.startsWith('data:image/')
+    const sending = isMe && m.clientTmp && m.status === 'sending'
+    const failed = isMe && m.status === 'failed'
+    return wrap(
+      <div className={cn('flex flex-col gap-0.5', isMe ? 'items-end' : 'items-start')}>
+        <div
+          className="rounded-3xl p-1.5 bg-white/5 border border-white/10 overflow-hidden"
+          data-testid={`dm-sticker-${m.id}`}
+        >
+          {isImg ? (
+            <img src={asset} alt={m.text ?? 'sticker'} className="w-24 h-24 object-contain" draggable={false} />
+          ) : (
+            <span className="text-5xl leading-none px-1.5 py-1 block" role="img" aria-label={m.text ?? 'sticker'}>
+              {asset}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 px-1 min-h-[14px]">
+          {sending && <Clock className="w-3 h-3 text-white/40" aria-label="Sending" />}
+          {failed && <AlertCircle className="w-3 h-3 text-rose-400" aria-label="Failed to send" />}
+          {m.text && !(sending || failed) && <span className="text-[10px] text-white/40 truncate max-w-[140px]">{m.text}</span>}
+        </div>
       </div>
     )
   }

@@ -1025,6 +1025,7 @@ export function SpinBottleRoom({
             meId={meId}
             roomId={roomId}
             onSend={sendChat}
+            onSendSticker={(s) => void useGameRoomStore.getState().sendSticker(s)}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={toolbox.openGiftSheet}

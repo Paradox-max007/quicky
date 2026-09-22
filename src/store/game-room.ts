@@ -116,6 +116,8 @@ type GameRoomState = {
     replyTo?: RoomMessage['replyTo'],
     mentions?: { userId: string; displayName: string }[]
   ) => Promise<void>
+  /** Send a sticker into the room chat — server re-validates ownership. */
+  sendSticker: (sticker: { id: string; name: string; assetUrl: string }) => Promise<void>
   reconcile: () => Promise<void>
   bumpEconomy: (delta: Partial<Economy>) => void
   setCoinBalance: (n: number) => void
@@ -337,7 +339,7 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
           const p = payload as any
           if (!p?.userId || (!p?.id && !p?.messageId)) return
           const kind = p.kind || 'user'
-          if (kind !== 'user' && kind !== 'join' && kind !== 'leave') return
+          if (kind !== 'user' && kind !== 'join' && kind !== 'leave' && kind !== 'sticker') return
           const mentions: { userId: string; displayName: string }[] = Array.isArray(p.mentions)
             ? p.mentions
             : []
@@ -349,6 +351,23 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
             createdAt: p.createdAt || new Date().toISOString(),
             replyTo: p.replyTo ?? null,
             mentions,
+            metadata:
+              kind === 'sticker'
+                ? (() => {
+                    // the broadcast rides metadata as a JSON string
+                    const raw = typeof p.metadata === 'string' ? p.metadata : JSON.stringify(p.metadata ?? null)
+                    try {
+                      const v = raw ? JSON.parse(raw) : null
+                      return {
+                        stickerId: typeof v?.stickerId === 'string' ? v.stickerId : undefined,
+                        stickerName: typeof v?.stickerName === 'string' ? v.stickerName : undefined,
+                        stickerAsset: typeof v?.stickerAsset === 'string' ? v.stickerAsset : undefined,
+                      }
+                    } catch {
+                      return null
+                    }
+                  })()
+                : null,
           }
           set((prev) => {
             const withoutTmp = prev.chat.filter(
@@ -542,6 +561,58 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
         }
       } catch (e: any) {
         toast.error(e?.message ?? 'Failed to send')
+        set((prev) => ({ chat: prev.chat.filter((m) => m.id !== tmpId) }))
+      }
+    },
+
+    sendSticker: async (sticker) => {
+      const { roomId, chat } = get()
+      if (!roomId) return
+      const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      const meId = useQuickyStore.getState().user?.id ?? ''
+      // Optimistic sticker row — the asset metadata rides along so the
+      // timeline renders the big sticker immediately.
+      const optimisticMeta = { stickerId: sticker.id, stickerName: sticker.name, stickerAsset: sticker.assetUrl }
+      set({
+        chat: [
+          ...chat,
+          { id: tmpId, userId: meId, text: sticker.name, kind: 'sticker', createdAt: new Date().toISOString(), metadata: optimisticMeta },
+        ],
+      })
+      try {
+        // text rides as the sticker NAME for previews; the server validates
+        // ownership before writing the row.
+        const res = await api.spinBottle.sendChat(roomId, sticker.name, [], sticker.id)
+        if (res?.message) {
+          const confirmed: RoomMessage = {
+            ...res.message,
+            metadata: res.message.metadata ?? optimisticMeta,
+            mentions: [],
+            replyTo: null,
+          }
+          // Realtime: every other client renders the sticker card instantly.
+          ctl.channel?.sendChat({
+            id: confirmed.id,
+            messageId: confirmed.id,
+            userId: confirmed.userId,
+            text: confirmed.text,
+            kind: 'sticker',
+            createdAt: confirmed.createdAt,
+            metadata: JSON.stringify(confirmed.metadata ?? optimisticMeta),
+            replyTo: null,
+            mentions: [],
+          })
+          set((prev) => {
+            const without = prev.chat.filter((m) => m.id !== tmpId)
+            if (without.some((m) => m.id === confirmed.id)) return prev
+            return { chat: [...without, confirmed] }
+          })
+        }
+      } catch (e: any) {
+        const err = e?.body?.error
+        if (err === 'sticker_not_owned') toast.error('You no longer own this sticker set')
+        else if (err === 'sticker_unavailable') toast.error('This sticker is no longer available')
+        else toast.error(e?.message ?? 'Failed to send sticker')
         set((prev) => ({ chat: prev.chat.filter((m) => m.id !== tmpId) }))
       }
     },

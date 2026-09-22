@@ -27,7 +27,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle, Volume2, VolumeX, Settings, ArrowLeft, Gift, ChevronDown } from 'lucide-react'
+import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle, Volume2, VolumeX, Settings, ArrowLeft, Gift, ChevronDown, Sticker } from 'lucide-react'
 import { toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
@@ -37,6 +37,7 @@ import { useGiftBackStore } from '@/store/gift-back'
 import { api } from '@/lib/quicky/api-client'
 import { isMentionSoundEnabled, setMentionSoundEnabled } from '@/lib/quicky/mention-sound'
 import { GiftIcon } from '@/components/quicky/GiftIcon'
+import { StickerPicker } from '@/components/quicky/game-chat/StickerPicker'
 
 export type RoomMention = { userId: string; displayName: string }
 
@@ -56,6 +57,13 @@ export type GiftChatMeta = {
   bulk?: boolean
 }
 
+/** Sticker chat metadata — kind === 'sticker' rows (room chat). */
+export type StickerChatMeta = {
+  stickerId?: string
+  stickerName?: string
+  stickerAsset?: string
+}
+
 export type RoomMessage = {
   id: string
   userId: string
@@ -64,8 +72,9 @@ export type RoomMessage = {
   createdAt: string
   replyTo?: { id: string; name: string; text: string } | null
   mentions?: RoomMention[]
-  /** kind === 'gift' rows: the gift payload (icon/name/quantity/recipients). */
-  metadata?: GiftChatMeta | null
+  /** kind === 'gift' rows: the gift payload (icon/name/quantity/recipients).
+   *  kind === 'sticker' rows: { stickerId, stickerName, stickerAsset }. */
+  metadata?: GiftChatMeta & StickerChatMeta | null
 }
 
 export type ChatPlayer = {
@@ -350,6 +359,7 @@ export function RoomChatPanel({
   sending,
   kbOpen = false,
   onOpenGifts,
+  onSendSticker,
   onOpenGameChats,
   gameChatsUnread = 0,
   panel = 'room',
@@ -371,6 +381,9 @@ export function RoomChatPanel({
   kbOpen?: boolean
   /** v3: opens the gift sheet (DB-driven catalog) — no more dead button. */
   onOpenGifts?: () => void
+  /** Stickers — sends a sticker message into the room chat (the parent's
+   *  store validates ownership on the server). */
+  onSendSticker?: (sticker: { id: string; name: string; assetUrl: string }) => void
   /** Bug-fix PRD §9: web sidebar → Game Contacts panel state. */
   onOpenGameChats?: () => void
   /** Total unread private game chats (badge on the entry button). */
@@ -386,6 +399,7 @@ export function RoomChatPanel({
 }) {
   const [text, setText] = useState('')
   const [emojiOpen, setEmojiOpen] = useState(false)
+  const [stickerOpen, setStickerOpen] = useState(false)
   const [replyTo, setReplyTo] = useState<RoomMessage['replyTo']>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -580,6 +594,7 @@ export function RoomChatPanel({
     setText('')
     setMentionCandidates([])
     setEmojiOpen(false)
+    setStickerOpen(false)
     const rt = replyTo
     setReplyTo(null)
     atBottomRef.current = true
@@ -787,6 +802,49 @@ export function RoomChatPanel({
                 />
               )
             }
+            // STICKER message: the big sticker asset — uploaded image or emoji
+            // glyph — in a light themed bubble. Reply works like text rows.
+            if (m.kind === 'sticker') {
+              const isMe = m.userId === meId
+              const p = playerFor(m.userId)
+              const displayName = isMe ? 'You' : (p?.displayName ?? 'Guest')
+              const asset = m.metadata?.stickerAsset ?? '✨'
+              const isImg = /^https?:\/\//i.test(asset) || asset.startsWith('/') || asset.startsWith('data:image/')
+              return (
+                <div key={m.id}>
+                  <SwipeableBubble onReply={() => startReply(m)} onReact={(emoji) => onSend(emoji)} mine={isMe}>
+                    <div className={`sbr-msg${isMe ? ' me' : ''}`}>
+                      <GiftAvatar player={p} me={isMe} />
+                      <div className="sbr-msg-body">
+                        <p className="sbr-msg-meta">
+                          <span
+                            className="sbr-msg-name"
+                            style={{ color: isMe ? 'var(--qk-accent, #ff2d55)' : nameColor(m.userId) }}
+                          >
+                            {displayName}
+                          </span>
+                          <span className="sbr-msg-time">{timeFor(m.createdAt)}</span>
+                        </p>
+                        <div className="sbr-sticker-bubble" data-testid={`room-sticker-msg-${m.id}`}>
+                          {isImg ? (
+                            <img
+                              src={asset}
+                              alt={m.metadata?.stickerName ?? m.text}
+                              className="sbr-sticker-img"
+                              draggable={false}
+                            />
+                          ) : (
+                            <span className="sbr-sticker-emoji" role="img" aria-label={m.metadata?.stickerName ?? m.text}>
+                              {asset}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </SwipeableBubble>
+                </div>
+              )
+            }
             if (m.kind !== 'user') return null
             const isMe = m.userId === meId
             const p = playerFor(m.userId)
@@ -892,6 +950,22 @@ export function RoomChatPanel({
           </div>
         )}
 
+        {/* Stickers section — the two-tab picker (My Stickers | Sticker Shop
+            with coin purchase). Owned sticker tap → straight into the table
+            chat; the store validates ownership server-side. */}
+        {stickerOpen && (
+          <div className="sbr-sticker-tray" data-testid="room-sticker-tray">
+            <StickerPicker
+              className="max-h-56"
+              pickLabel="Tap a sticker to send it to the table"
+              onPick={(s) => {
+                setStickerOpen(false)
+                onSendSticker?.(s)
+              }}
+            />
+          </div>
+        )}
+
         {/* §35/§85: the picker is anchored to the COMPOSER (inside the right
             panel) — it never covers the game table. */}
         {pickerOpen && (
@@ -986,6 +1060,10 @@ export function RoomChatPanel({
             😊
           </button>
         </div>
+
+        <button className="sbr-comp-btn sbr-comp-sticker" onClick={() => { setStickerOpen((v) => !v); setEmojiOpen(false) }} aria-label="Stickers" title="Stickers" data-testid="composer-stickers-btn">
+          <Sticker size={15} strokeWidth={2.4} />
+        </button>
 
         <button className="sbr-comp-btn" onClick={onOpenGifts} aria-label="Send a gift" title="Send a gift">
           🎁

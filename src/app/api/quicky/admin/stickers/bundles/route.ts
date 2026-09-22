@@ -109,7 +109,9 @@ export async function POST(req: NextRequest) {
     data: {
       name,
       description: clean(body?.description, 200) ?? null,
-      icon: clean(body?.icon, 8) ?? '✨',
+      // emoji OR uploaded image URL (admin §6 media upload) — 2048 covers
+      // Supabase Storage public URLs comfortably.
+      icon: clean(body?.icon, 2048) ?? '✨',
       unlockType: cleanUnlockType(body?.unlockType) ?? 'coins',
       leagueId: cleanRef(body?.leagueId) ?? null,
       seasonId: cleanRef(body?.seasonId) ?? null,
@@ -144,7 +146,7 @@ export async function PATCH(req: NextRequest) {
   }
   if (data?.description !== undefined) patch.description = clean(data.description, 200) ?? null
   if (data?.icon !== undefined) {
-    const icon = clean(data.icon, 8)
+    const icon = clean(data.icon, 2048)
     if (icon) patch.icon = icon
   }
   if (data?.leagueId !== undefined) patch.leagueId = cleanRef(data.leagueId)

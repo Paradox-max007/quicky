@@ -1,6 +1,10 @@
 // Quicky — Spin the Bottle room chat
 // GET  /api/quicky/games/spin-bottle/chat?roomId=...   → recent 80
 // POST /api/quicky/games/spin-bottle/chat  { roomId, text }
+//      { roomId, stickerId }  → sticker message (kind 'sticker', metadata
+//      { stickerId, stickerName, stickerAsset }). The sticker MUST be
+//      active AND the sender must OWN its bundle (server-checked — the
+//      client never self-grants). Ludo rooms post here too (Ludo PRD §79).
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
@@ -11,6 +15,17 @@ const RATE_LIMIT_MS = 1500
 
 // A naive per-user rate limit (kept in-memory — fine for V1 single-process).
 const lastSentAt = new Map<string, number>()
+
+/** Parse a room-message JSON metadata blob defensively (gift / sticker). */
+function parseMessageMetadata(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
 
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser()
@@ -56,6 +71,7 @@ export async function GET(req: NextRequest) {
       createdAt: m.createdAt.toISOString(),
       author: { id: m.user.id, name: m.user.name },
       mentions: mentionsByMessage.get(m.id) ?? [],
+      metadata: parseMessageMetadata(m.metadata),
     })),
   })
 }
@@ -66,7 +82,29 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const roomId = String(body?.roomId ?? '')
   const text = String(body?.text ?? '').trim().slice(0, 280)
-  if (!roomId || !text) return NextResponse.json({ error: 'roomId + text required' }, { status: 400 })
+  const stickerId = body?.stickerId ? String(body.stickerId) : null
+  if (!roomId || (!text && !stickerId)) {
+    return NextResponse.json({ error: 'roomId + text required' }, { status: 400 })
+  }
+
+  // ── Sticker messages: the server validates the sticker exists, is active
+  // and the sender OWNS its bundle — exactly like game-chat §75. The
+  // ownership row is the single source of truth; no client claim is trusted.
+  let stickerMeta: { stickerId: string; stickerName: string; stickerAsset: string } | null = null
+  if (stickerId) {
+    const sticker = await db.gameSticker.findUnique({
+      where: { id: stickerId },
+      include: { bundle: { select: { id: true, isActive: true } } },
+    })
+    if (!sticker || !sticker.isActive || !sticker.bundle.isActive) {
+      return NextResponse.json({ error: 'sticker_unavailable' }, { status: 400 })
+    }
+    const owned = await db.userGameStickerBundle.findUnique({
+      where: { userId_bundleId: { userId: me.id, bundleId: sticker.bundle.id } },
+    })
+    if (!owned) return NextResponse.json({ error: 'sticker_not_owned' }, { status: 403 })
+    stickerMeta = { stickerId: sticker.id, stickerName: sticker.name, stickerAsset: sticker.assetUrl }
+  }
 
   // ── Mentions (§40/§41): NEVER trust client mention data. Each submitted
   // userId must be an ACTIVE member of THIS room; the sender's own id is
@@ -95,8 +133,9 @@ export async function POST(req: NextRequest) {
   const member = await db.spinRoomPlayer.findFirst({ where: { roomId, userId: me.id, leftAt: null } })
   if (!member) return NextResponse.json({ error: 'Not in room' }, { status: 403 })
 
-  // Block basic slurs/links for V1 — full moderation in V1.1
-  if (/(https?:\/\/|www\.)/i.test(text)) {
+  // Sticker sends bypass the link check (no text to smuggle a URL in) but
+  // still respect the rate limit below.
+  if (text && /(https?:\/\/|www\.)/i.test(text)) {
     return NextResponse.json({ error: 'Links are not allowed in room chat' }, { status: 400 })
   }
 
@@ -110,7 +149,15 @@ export async function POST(req: NextRequest) {
   // never outlive its message or vice versa.
   const { created, mentionRows } = await db.$transaction(async (tx) => {
     const created = await tx.spinRoomMessage.create({
-      data: { roomId, userId: me.id, text, kind: 'user' },
+      data: {
+        roomId,
+        userId: me.id,
+        // Sticker messages keep the sticker NAME in text (previews, reply
+        // snippets) and the full asset metadata in the JSON column.
+        text: text || (stickerMeta ? stickerMeta.stickerName : text),
+        kind: stickerMeta ? 'sticker' : 'user',
+        metadata: stickerMeta ? JSON.stringify(stickerMeta) : null,
+      },
       include: { user: { select: { name: true, id: true } } },
     })
     if (validMentionIds.length) {
@@ -175,6 +222,7 @@ export async function POST(req: NextRequest) {
         userId: r.mentionedUserId,
         displayName: mentionName.get(r.mentionedUserId) ?? 'Player',
       })),
+      metadata: stickerMeta,
     },
   })
 }

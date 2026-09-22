@@ -88,7 +88,8 @@ export type RoomSnapshot = {
     createdAt: string
     mentions?: { userId: string; displayName: string }[]
     /** kind === 'gift' rows carry the gift payload (icon/name/quantity/
-     *  recipients) parsed from the DB JSON — drives the special gift card. */
+     *  recipients) parsed from the DB JSON — drives the special gift card.
+     *  kind === 'sticker' rows carry { stickerId, stickerName, stickerAsset }. */
     metadata?: {
       itemId?: string
       itemName?: string
@@ -102,14 +103,18 @@ export type RoomSnapshot = {
       recipientCount?: number
       quantity?: number
       bulk?: boolean
+      stickerId?: string
+      stickerName?: string
+      stickerAsset?: string
     } | null
   }[]
 }
 
 // Room-lifecycle closure dialog kept in room.ts — snapshot helpers below.
 
-/** Parse a gift row's JSON metadata (defensive — a corrupt row renders as
- *  a plain legacy chip instead of exploding the whole snapshot). */
+/** Parse a special row's JSON metadata (gift / sticker) — defensive: a
+ *  corrupt row renders as a plain legacy chip instead of exploding the
+ *  whole snapshot. */
 export function parseGiftMetadata(raw: string | null): RoomSnapshot['recentMessages'][number]['metadata'] {
   if (!raw) return null
   try {
@@ -128,6 +133,9 @@ export function parseGiftMetadata(raw: string | null): RoomSnapshot['recentMessa
       recipientCount: Number.isFinite(v.recipientCount) ? v.recipientCount : undefined,
       quantity: Number.isFinite(v.quantity) ? v.quantity : undefined,
       bulk: !!v.bulk,
+      stickerId: typeof v.stickerId === 'string' ? v.stickerId : undefined,
+      stickerName: typeof v.stickerName === 'string' ? v.stickerName : undefined,
+      stickerAsset: typeof v.stickerAsset === 'string' ? v.stickerAsset : undefined,
     }
   } catch {
     return null

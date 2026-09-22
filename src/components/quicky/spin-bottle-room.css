@@ -2422,3 +2422,50 @@
   color: var(--qk-on-accent);
   box-shadow: 0 0 10px color-mix(in srgb, var(--qk-accent) 35%, transparent);
 }
+
+/* ── STICKERS (room chat) — composer tray + sticker message rows ──────────── */
+/* The two-tab picker (My Stickers | Sticker Shop) lives in a themed tray
+   above the composer — same layering as the emoji tray, but taller to fit
+   the sticker grid + shop cards. */
+.sbr-sticker-tray {
+  margin: 0 8px 8px;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--qk-elev);
+  border: 1.5px solid color-mix(in srgb, var(--qk-text) 10%, transparent);
+  max-height: 248px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Sticker bubble in the timeline — a light glass card holding the big
+   uploaded image (or the emoji glyph when the asset is an emoji). */
+.sbr-sticker-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--qk-text) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qk-text) 8%, transparent);
+}
+.sbr-sticker-img {
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  display: block;
+}
+.sbr-sticker-emoji {
+  font-size: 42px;
+  line-height: 1.15;
+}
+/* The composer's sticker button — accent-tinted like the messages button. */
+.sbr-comp-btn.sbr-comp-sticker {
+  color: var(--qk-on-accent-soft);
+  background: color-mix(in srgb, var(--qk-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qk-accent) 42%, transparent);
+}
+.sbr-comp-btn.sbr-comp-sticker:active {
+  background: color-mix(in srgb, var(--qk-accent) 24%, transparent);
+}
