@@ -30,6 +30,7 @@ import { useGiftBackStore } from '@/store/gift-back'
 import { launchGiftFly } from '@/components/quicky/gift-fly/GiftFlyLayer'
 import { GiftIcon } from '@/components/quicky/GiftIcon'
 import { CoinStoreSheet } from '@/components/quicky/CoinStoreSheet'
+import { GiftMultiplierHeader, GiftPointPreview } from '@/components/quicky/realm/RealmProgress'
 import type { CatalogGift } from '@/components/quicky/PlayerInteractionSheet'
 
 const QUANTITY_CHIPS = [1, 10, 50, 100, 1000] as const
@@ -81,7 +82,7 @@ export function GiftBackSheet() {
     setSending(true)
     setInsufficient(null)
     try {
-      const res = await api.spinBottle.gifts.send(roomId, peer.id, giftDef.id, quantity)
+      const res = await api.spinBottle.gifts.send(roomId, peer.id, giftDef.id, quantity, crypto.randomUUID())
       if (res?.ok) {
         setCoinBalance(res.coinBalance)
         // Keep whichever room runtime is attached honest (HUD chips).
@@ -180,9 +181,11 @@ export function GiftBackSheet() {
           </div>
         )}
 
-        {/* Quantity chips — same set as the group gifting, 1 pre-selected */}
+        {/* Quantity chips — same set as the group gifting, 1 pre-selected.
+            Realm PRD §72/§73: multiplier banner + point preview above. */}
         <div className="mt-4" data-testid="giftback-quantity-block">
-          <p className="text-[10px] text-white/50 mb-2 font-bold uppercase tracking-wider">Quantity</p>
+          <GiftMultiplierHeader compact />
+          <p className="text-[10px] text-white/50 mt-2 mb-2 font-bold uppercase tracking-wider">Quantity</p>
           <div className="flex gap-2">
             {QUANTITY_CHIPS.map((q) => (
               <button
@@ -199,6 +202,9 @@ export function GiftBackSheet() {
                 {q}
               </button>
             ))}
+          </div>
+          <div className="mt-2.5">
+            <GiftPointPreview quantity={quantity} isSelf={false} />
           </div>
         </div>
       </div>

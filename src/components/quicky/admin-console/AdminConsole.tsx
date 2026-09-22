@@ -24,6 +24,8 @@ import {
   History,
   ExternalLink,
   RefreshCw,
+  Zap,
+  Crown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/quicky/api-client'
@@ -36,11 +38,15 @@ import { AdminLiveTables } from './AdminLiveTables'
 import { AdminComplaints } from './AdminComplaints'
 import { AdminUsers } from './AdminUsers'
 import { AdminAudit } from './AdminAudit'
+import { AdminMultiplierEventsScreen } from './AdminMultiplierEventsScreen'
+import { AdminRealmsScreen } from './AdminRealmsScreen'
 
 type Section =
   | 'overview'
   | 'games'
   | 'gifts'
+  | 'events'
+  | 'realms'
   | 'stickers'
   | 'rules'
   | 'live'
@@ -53,6 +59,8 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard; group: s
   { key: 'games', label: 'Games', icon: Gamepad2, group: 'Content' },
   { key: 'rules', label: 'How It Works', icon: ScrollText, group: 'Content' },
   { key: 'gifts', label: 'Gifts', icon: Gift, group: 'Content' },
+  { key: 'events', label: 'Events', icon: Zap, group: 'Content' },
+  { key: 'realms', label: 'Realms', icon: Crown, group: 'Content' },
   { key: 'stickers', label: 'Stickers', icon: Sticker, group: 'Content' },
   { key: 'live', label: 'Live Tables', icon: Radio, group: 'Operations' },
   { key: 'complaints', label: 'Complaints', icon: Flag, group: 'Operations' },
@@ -155,6 +163,8 @@ export function AdminConsole({ adminName }: { adminName: string }) {
           {section === 'overview' && <AdminOverview onNavigate={(s) => setSection(s as Section)} />}
           {section === 'games' && <AdminGamesScreen onBack={() => setSection('overview')} />}
           {section === 'gifts' && <AdminGiftsScreen onBack={() => setSection('overview')} />}
+          {section === 'events' && <AdminMultiplierEventsScreen />}
+          {section === 'realms' && <AdminRealmsScreen />}
           {section === 'stickers' && <AdminStickersScreen onBack={() => setSection('overview')} />}
           {section === 'rules' && <AdminRulesScreen onBack={() => setSection('overview')} />}
           {section === 'live' && <AdminLiveTables />}

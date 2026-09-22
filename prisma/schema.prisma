@@ -122,6 +122,10 @@ model User {
   ownedStickerBundles UserGameStickerBundle[]
   // Bug-fix PRD §77: per-user Quicky streak (Quicky Images in Game Chat).
   gameQuickyStreak    GameQuickyStreak?
+  // ─── Realm progression (realm PRD §21-§24) ──────────────────────────────
+  realm             UserRealm?
+  realmLedger       RealmPointLedger[]
+  realmRewardClaims RealmRewardClaim[]
 }
 
 model Photo {
@@ -1124,5 +1128,168 @@ model GameDescriptionItem {
   game      GameDefinition @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@index([gameId, sortOrder])
+}
+
+// ═══ REALM PROGRESSION + GIFT MULTIPLIERS (realm PRD) ═══════════════════════
+// 15-tier progression. Every gift awards Realm Points (multiplied during
+// admin-configured multiplier events). Each realm runs 3-day cycles; players
+// in the same realm are grouped into cohorts of ≤7; top-3 who ALSO reach the
+// realm's promotion threshold advance at settlement. Server-authoritative,
+// idempotent, admin-configurable — shared by BOTH room games.
+//   RealmDefinition  — admin config (names/thresholds/durations/rewards)
+//   GiftMultiplierEvent — temporary N× point events (no overlap allowed)
+//   RealmCycle       — one 3-day competitive period per realm level
+//   RealmCohort      — ≤7 players competing together in one cycle
+//   UserRealm        — persistent progression state per user
+//   RealmPointLedger — immutable, idempotent point audit trail
+//   RealmRewardClaim — settlement results (rank/promotion/rewards)
+
+model RealmDefinition {
+  id                String   @id @default(cuid())
+  level             Int      @unique
+  name              String
+  description       String?
+  // Minimum CYCLE points (rank ≤ 3) required for promotion to the next realm.
+  promotionThreshold Int
+  cycleDurationDays Int      @default(3)
+  isActive          Boolean  @default(true)
+  // JSON reward config: { "first": [{itemId, quantity}], "second": [...], "third": [...] }
+  // Limits (PRD §53): first ≤ 5 items, second ≤ 3, third ≤ 1.
+  rewards           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model GiftMultiplierEvent {
+  id         String   @id @default(cuid())
+  name       String
+  // Integer ≥ 2 (PRD §10 validation); any custom value the admin wants.
+  multiplier Int
+  startsAt   DateTime
+  expiresAt  DateTime
+  // DRAFT | SCHEDULED | ACTIVE | EXPIRED | CANCELLED — effective multiplier
+  // is always DERIVED from startsAt/expiresAt + server time (PRD §11); the
+  // status column is the persisted lifecycle for admin reporting.
+  status     String   @default("SCHEDULED")
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, startsAt, expiresAt])
+}
+
+model RealmCycle {
+  id           String    @id @default(cuid())
+  realmLevel   Int
+  startAt      DateTime
+  endAt        DateTime
+  // UPCOMING | ACTIVE | SETTLING | COMPLETED (PRD §22)
+  status       String    @default("ACTIVE")
+  // SNAPSHOT of the promotion threshold used by THIS cycle (PRD §26 —
+  // admin threshold changes never rewrite history).
+  threshold    Int
+  // SNAPSHOT of the reward config used by THIS cycle (PRD §39).
+  rewardSnapshot String?
+  durationDays Int       @default(3)
+  settledAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  cohorts      RealmCohort[]
+
+  @@unique([realmLevel, startAt])
+  @@index([realmLevel, status])
+  @@index([status, endAt])
+}
+
+model RealmCohort {
+  id             String    @id @default(cuid())
+  cycleId        String
+  realmLevel     Int
+  cohortStartedAt DateTime @default(now())
+  isFinalized    Boolean   @default(false)
+  cycle          RealmCycle          @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  members        RealmCohortMember[]
+
+  @@index([cycleId])
+  @@index([realmLevel, isFinalized])
+}
+
+model RealmCohortMember {
+  id        String    @id @default(cuid())
+  cohortId  String
+  userId    String
+  // TEMPORARY competitive points for the CURRENT cycle (PRD §23 — reset to
+  // 0 at settlement; never the persistent realm level).
+  cyclePoints Int     @default(0)
+  joinedAt    DateTime @default(now())
+  // Final standings written ONCE at settlement (PRD §36 idempotent).
+  finalRank   Int?
+  promoted    Boolean  @default(false)
+  // Tie-breaker (PRD §92): when this member FIRST crossed the cycle
+  // threshold — earlier = higher rank on equal points.
+  thresholdReachedAt DateTime?
+  cohort     RealmCohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortId, userId])
+  @@index([userId])
+}
+
+model UserRealm {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  // PERSISTENT progression level 1-15 (PRD §33 — never drops).
+  realmLevel  Int      @default(1)
+  // The cycle this user's cyclePoints belong to (NULL after settlement →
+  // the next participation assigns a fresh cycle).
+  currentCycleId String?
+  cyclePoints Int      @default(0)
+  // Statistics only (PRD §24 — never used for ranking).
+  lifetimeRealmPoints Int @default(0)
+  cohortId    String?
+  // The last COMPLETED cycle whose result screen the user has seen
+  // (NULL while an unseen result exists).
+  lastResultSeenCycleId String?
+  joinedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RealmPointLedger {
+  id            String   @id @default(cuid())
+  userId        String
+  cycleId       String
+  realmLevel    Int
+  // GIFT_SENT | GIFT_RECEIVED (PRD §21)
+  sourceType    String
+  // Idempotency key — the gift event id (PRD §20). Unique per (key, role,
+  // user) so retries can never double-award (bulk: distinct users).
+  sourceId      String
+  basePoints    Int
+  multiplier    Int      @default(1)
+  awardedPoints Int
+  metadata      String?
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceType, userId])
+  @@index([userId, createdAt])
+  @@index([cycleId, userId])
+}
+
+model RealmRewardClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  cycleId   String
+  cohortId  String
+  rank      Int
+  promoted  Boolean  @default(false)
+  // JSON of granted items: [{itemId, name, emoji/icon, quantity}]
+  rewards   String
+  grantedAt DateTime @default(now())
+  claimedAt DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cycleId])
+  @@index([cycleId])
 }
 

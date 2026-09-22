@@ -1,7 +1,8 @@
 'use client'
 
-// RoomTopHud — casual-game status bar (v3 PRD §19/§20/§31/§78):
-//   ❤️ kisses · 🏆 games · 👑 crowns · 🎁 gifts received · 🪙 coins + · 🚪
+// RoomTopHud — casual-game status bar (v3 PRD §19/§20/§31/§78 + realm PRD §71):
+//   ❤️ kisses · 🏆 games · 👑 REALM (tap → shared Realm view) · 🎁 gifts
+//   received · 🪙 coins + · 🚪
 // The chip group is exported separately so the WEB top bar can render the
 // same economy chips inline (Club Royale header) while mobile keeps the
 // stacked HUD row.
@@ -10,8 +11,20 @@
 // room control is the 🚪 RoomExitControl ("leave / change room", NOT an
 // account logout, §32/§33), placed after the coin chip. The coin chip's "+"
 // opens the mock coin store (§26-§28).
+//
+// REALM (realm PRD §71): the 👑 chip shows the viewer's persistent realm
+// level + live cycle points; tapping opens the shared Realm/progression
+// sheet (never a game-specific page). When no realm data is provided the
+// chip falls back to the legacy premium-crowns counter.
 
 import { DoorOpen } from 'lucide-react'
+
+export type RealmHudData = {
+  level: number
+  name: string
+  points: number
+  threshold: number
+}
 
 type ChipsProps = {
   /** My Kiss Points — updates instantly when a qualifying kiss lands (§21-§25). */
@@ -22,9 +35,12 @@ type ChipsProps = {
   gifts: number
   coins: number
   onAddCoins?: () => void
+  /** Realm PRD §71 — live realm status; tap opens the shared Realm view. */
+  realm?: RealmHudData | null
+  onRealm?: () => void
 }
 
-export function RoomHudChips({ hearts, trophies, crowns, gifts, coins, onAddCoins }: ChipsProps) {
+export function RoomHudChips({ hearts, trophies, crowns, gifts, coins, onAddCoins, realm, onRealm }: ChipsProps) {
   return (
     <>
       <div className="sbr-tile sbr-tile-heart" title="Game Points">
@@ -35,10 +51,23 @@ export function RoomHudChips({ hearts, trophies, crowns, gifts, coins, onAddCoin
         <span className="sbr-tile-icon">🏆</span>
         <span className="tabular-nums">{trophies}</span>
       </div>
-      <div className="sbr-tile sbr-tile-crown hidden min-[430px]:flex" title="Crowns">
-        <span className="sbr-tile-icon">👑</span>
-        <span className="tabular-nums">{crowns}</span>
-      </div>
+      {realm ? (
+        <button
+          className="sbr-tile sbr-tile-crown"
+          onClick={onRealm}
+          title={`${realm.name} · ${realm.points.toLocaleString()} / ${realm.threshold.toLocaleString()} points`}
+          aria-label={`Realm ${realm.name} — open realm details`}
+          data-testid="realm-hud-chip"
+        >
+          <span className="sbr-tile-icon">👑</span>
+          <span className="tabular-nums">{realm.points.toLocaleString('en-US')}</span>
+        </button>
+      ) : (
+        <div className="sbr-tile sbr-tile-crown hidden min-[430px]:flex" title="Crowns">
+          <span className="sbr-tile-icon">👑</span>
+          <span className="tabular-nums">{crowns}</span>
+        </div>
+      )}
       {/* 🎁 Gifts Received — live counter, updates the moment a gift lands (§60) */}
       <div className="sbr-tile sbr-tile-gift hidden min-[400px]:flex" title="Gifts received">
         <span className="sbr-tile-icon">🎁</span>
@@ -67,12 +96,12 @@ type Props = ChipsProps & {
   onRoomOptions: () => void
 }
 
-export function RoomTopHud({ hearts, trophies, crowns, gifts, coins, onRoomOptions, onAddCoins }: Props) {
+export function RoomTopHud({ hearts, trophies, crowns, gifts, coins, onRoomOptions, onAddCoins, realm, onRealm }: Props) {
   return (
     <div className="sbr-hud safe-area-top">
       {/* §78: no left-side back arrow — chips breathe, controls live on the right */}
       <div className="sbr-hud-chips">
-        <RoomHudChips hearts={hearts} trophies={trophies} crowns={crowns} gifts={gifts} coins={coins} onAddCoins={onAddCoins} />
+        <RoomHudChips hearts={hearts} trophies={trophies} crowns={crowns} gifts={gifts} coins={coins} onAddCoins={onAddCoins} realm={realm} onRealm={onRealm} />
       </div>
       <RoomExitControl onClick={onRoomOptions} />
     </div>

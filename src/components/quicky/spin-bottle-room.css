@@ -236,6 +236,25 @@
   padding: 2px 8px;
   border-radius: 999px;
 }
+/* Realm PRD §14 — multiplier row: "2× TIME — Send gifts and earn more
+   points — 18:42:31". The bold lead + readable sub sit in one pill. */
+.sbr-banner-mult {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sbr-banner-multsub {
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .sbr-banner-timer {
   flex-shrink: 0;
   display: flex;

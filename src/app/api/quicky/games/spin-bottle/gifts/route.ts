@@ -34,6 +34,7 @@ import { touchMemberActivity } from '@/lib/quicky/room-activity'
 import { getClient } from '@/lib/quicky/realtime'
 import { emitRoomUpdate } from '@/lib/quicky/spin-events'
 import { effectiveSeatGender, normalizeGender } from '@/lib/quicky/room-assignment'
+import { planRealmAward, applyRealmAward, giftEventAlreadyAwarded } from '@/lib/quicky/realm/realm-points'
 
 export async function GET(_req: NextRequest) {
   const me = await getCurrentUser()
@@ -89,6 +90,10 @@ export async function POST(req: NextRequest) {
   const { roomId, recipientId, itemId } = body ?? {}
   const recipientFilter = typeof body?.recipientFilter === 'string' ? body.recipientFilter : null
   const quantity = Math.floor(Number(body?.quantity ?? 1))
+  // Realm PRD §20 — client-generated idempotency key (double tap / mobile
+  // retry / Capacitor reconnect): the ledger unique key makes the same
+  // giftEventId award exactly once.
+  const giftEventId = typeof body?.giftEventId === 'string' && body.giftEventId.length >= 8 ? body.giftEventId.slice(0, 64) : null
 
   if (!roomId || !itemId) return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
   if (!recipientId && !recipientFilter) return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
@@ -196,6 +201,19 @@ export async function POST(req: NextRequest) {
     bulk: recipientCount > 1 || quantity > 1,
   })
 
+  // ── REALM POINTS (realm PRD §18/§19) ─────────────────────────────────
+  // The multiplier + the sender/receiver cycle participation are resolved
+  // SERVER-side BEFORE the transaction (§18: never trust a client number);
+  // the ledger writes + atomic counter increments ride INSIDE it (§19).
+  // FAULT-SAFE: if the realm system is not migrated/ready (tables absent),
+  // gifts still send — the award plan just drops to null.
+  if (giftEventId && (await giftEventAlreadyAwarded(giftEventId).catch(() => false))) {
+    // §20 idempotent retry — nothing double-awards, nothing double-charges.
+    const bal = (await db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } }))?.coinBalance ?? 0
+    return NextResponse.json({ ok: true, duplicate: true, coinBalance: bal, recipientCount, quantity })
+  }
+  const realmPlan = await planRealmAward(me.id, recipients.map((r) => r.userId), quantity, giftEventId).catch(() => null)
+
   // ATOMIC bulk send (§26): ONE interactive transaction — verify balance,
   // deduct coins, credit recipients, write ledger + gift transactions + the
   // aggregated chat message. Any failure rolls EVERYTHING back (§26: no
@@ -268,8 +286,24 @@ export async function POST(req: NextRequest) {
             metadata,
           },
         })
+        // Realm PRD §19 — the Realm Point ledger + atomic counter updates
+        // live in the SAME transaction as the coin deduction (short +
+        // batched + count-guarded; coins are NOT multiplied §74). Null plan
+        // (realm system absent) → no-op award, gift unaffected.
+        const realmAward = realmPlan
+          ? await applyRealmAward(tx, realmPlan, {
+              roomId,
+              itemId: giftDef.id,
+              itemName: giftDef.name,
+              itemEmoji: giftDef.emoji,
+              itemIcon,
+              senderId: me.id,
+              quantity,
+              recipientCount,
+            })
+          : { senderPoints: 0, receiverPointsEach: 0, multiplier: 1, awarded: false }
         const fresh = await tx.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } })
-        return { coinBalance: fresh?.coinBalance ?? 0, giftMessageId: giftMsg.id }
+        return { coinBalance: fresh?.coinBalance ?? 0, giftMessageId: giftMsg.id, realmAward }
       },
       // Headroom for the batched writes on a slow network — still far below
       // the loop's unbounded runtime that triggered P2028.
@@ -308,20 +342,28 @@ export async function POST(req: NextRequest) {
     // AGGREGATED gift event — recipients only bump their own counter.
     // (P2028 hygiene: recipient balances come from ONE findMany, not a
     // per-recipient findUnique round-trip loop.)
+    //
+    // Realm PRD §45/§46 — the same gift broadcast now carries the point
+    // allocation (informational; clients never authorize with it), plus a
+    // per-user `realm:${userId}` channel nudges realm HUDs instantly.
     const supabase = getClient()
-    if (!supabase) return
-    const [senderNameRow, recipientBalRows] = await Promise.all([
+    const [senderNameRow, recipientBalRows, realmPointRows] = await Promise.all([
       db.user.findUnique({ where: { id: me.id }, select: { name: true } }),
       db.user.findMany({
         where: { id: { in: recipients.map((r) => r.userId) } },
         select: { id: true, coinBalance: true },
       }),
+      db.userRealm.findMany({
+        where: { userId: { in: [me.id, ...recipients.map((r) => r.userId)] } },
+        select: { userId: true, cyclePoints: true },
+      }),
     ]).catch(
-      () => [null, [] as { id: string; coinBalance: number }[]] as const
+      () => [null, [] as { id: string; coinBalance: number }[], [] as { userId: string; cyclePoints: number }[]] as const
     )
     const balanceById = new Map(recipientBalRows.map((u) => [u.id, u.coinBalance]))
-    const ch = supabase.channel(`room:${roomId}`)
-    void ch.send({
+    const pointsById = new Map(realmPointRows.map((u) => [u.userId, u.cyclePoints]))
+    const ch = supabase?.channel(`room:${roomId}`)
+    void ch?.send({
       type: 'broadcast',
       event: 'gift',
       payload: {
@@ -339,15 +381,43 @@ export async function POST(req: NextRequest) {
         quantity,
         recipientCount,
         giftMessageId: newBalance.giftMessageId,
+        // Realm (§46): informational audit data — the multiplier used and
+        // the per-side point allocation.
+        multiplier: newBalance.realmAward.multiplier,
+        senderPoints: newBalance.realmAward.senderPoints,
+        receiverPoints: newBalance.realmAward.receiverPointsEach,
       },
     })
-    void ch.send({ type: 'broadcast', event: 'balance', payload: { userId: me.id, coinBalance: newBalance.coinBalance } })
+    void ch?.send({ type: 'broadcast', event: 'balance', payload: { userId: me.id, coinBalance: newBalance.coinBalance } })
     for (const r of recipients) {
-      void ch.send({
+      void ch?.send({
         type: 'broadcast',
         event: 'balance',
         payload: { userId: r.userId, coinBalance: balanceById.get(r.userId) ?? 0 },
       })
+    }
+    if (supabase) {
+      // §45 — per-user realm point event (sender + every recipient).
+      for (const userId of [me.id, ...recipients.map((r) => r.userId)]) {
+        const awarded =
+          userId === me.id
+            ? newBalance.realmAward.senderPoints + (recipients.some((r) => r.userId === me.id) ? newBalance.realmAward.receiverPointsEach : 0)
+            : newBalance.realmAward.receiverPointsEach
+        void supabase
+          .channel(`realm:${userId}`)
+          .send({
+            type: 'broadcast',
+            event: 'realm_points_updated',
+            payload: {
+              userId,
+              awardedPoints: awarded,
+              newCyclePoints: pointsById.get(userId) ?? 0,
+              multiplier: newBalance.realmAward.multiplier,
+              source: 'gift',
+            },
+          })
+          .catch?.(() => {})
+      }
     }
   })
 
@@ -357,5 +427,9 @@ export async function POST(req: NextRequest) {
     recipientCount,
     quantity,
     totalCost,
+    // Realm PRD §61 — point allocation echo for the sender's UI preview.
+    multiplier: newBalance.realmAward.multiplier,
+    senderPoints: newBalance.realmAward.senderPoints,
+    receiverPoints: newBalance.realmAward.receiverPointsEach,
   })
 }

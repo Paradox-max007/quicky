@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { cacheGet, cacheSet } from '@/lib/quicky/cache'
 import { GiftIcon } from '@/components/quicky/GiftIcon'
+import { GiftMultiplierHeader, GiftPointPreview } from '@/components/quicky/realm/RealmProgress'
 
 export type CatalogGift = {
   id: string
@@ -333,9 +334,12 @@ export function PlayerInteractionSheet({
         )}
 
         {/* QUANTITY CHIPS (gifting-revision) — same set as the group gifting,
-            always visible, 1 pre-selected: pick the gift, pick the count, send. */}
+            always visible, 1 pre-selected: pick the gift, pick the count, send.
+            Above them: the live multiplier banner (realm PRD §72) + the
+            per-quantity point preview (§73) — coins never multiply (§74). */}
         <div className="mt-3" data-testid="ix-quantity-block">
-          <p className="text-[10px] text-white/50 mb-1.5 font-bold uppercase tracking-wider">Quantity</p>
+          <GiftMultiplierHeader compact />
+          <p className="text-[10px] text-white/50 mt-2 mb-1.5 font-bold uppercase tracking-wider">Quantity</p>
           <div className="flex gap-1.5">
             {QUANTITY_CHIPS.map((q) => (
               <button
@@ -347,6 +351,9 @@ export function PlayerInteractionSheet({
                 {q}
               </button>
             ))}
+          </div>
+          <div className="mt-2">
+            <GiftPointPreview quantity={quantity} isSelf={isMe} />
           </div>
         </div>
       </div>

@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/quicky/api-client'
 import { cacheGet, cacheSet } from '@/lib/quicky/cache'
 import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
+import { GiftMultiplierHeader } from '@/components/quicky/realm/RealmProgress'
 import { toast } from 'sonner'
 import type { CatalogGift } from './PlayerInteractionSheet'
 import { normalizeGenderClient } from './gender'
@@ -125,7 +126,7 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, o
     setSending(true)
     setInsufficient(null)
     try {
-      const res = await api.spinBottle.gifts.sendBulk(roomId, giftDef.id, filter, quantity)
+      const res = await api.spinBottle.gifts.sendBulk(roomId, giftDef.id, filter, quantity, crypto.randomUUID())
       if (res?.ok) {
         // §28 — aggregated success, single animation, immediate balance update.
         // The icons fan out from MY seat to every eligible recipient's seat
@@ -187,6 +188,12 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, o
         <button onClick={onClose} className="p-2 rounded-full bg-white/5" aria-label="Close">
           <X className="w-4 h-4" />
         </button>
+      </div>
+
+      {/* Realm PRD §72 — the active multiplier event rides the gift panel so
+          the user knows the point rate BEFORE spending coins. */}
+      <div className="px-4 pb-2">
+        <GiftMultiplierHeader compact />
       </div>
 
       {/* §18 — recipient filter chips: All | Guys | Girls (default All) */}

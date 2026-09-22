@@ -47,7 +47,8 @@ import {
 import { useRoundTimer } from '@/hooks/useRoundTimer'
 import { useOptimisticResponse } from '@/hooks/useOptimisticResponse'
 import { RoomTopHud, RoomHudChips, RoomExitControl } from './RoomTopHud'
-import { RoomEventBanner, tonightEvent } from './RoomEventBanner'
+import { RoomEventBanner } from './RoomEventBanner'
+import { useRoomRealm } from './realm/useRoomRealm'
 import { RoomPlayerCard, type SeatPlayer } from './RoomPlayerCard'
 import { RoomBottle } from './RoomBottle'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from './RoomChatPanel'
@@ -127,6 +128,8 @@ export function SpinBottleRoom({
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
   const [switching, setSwitching] = useState(false)
+  // Realm PRD §41/§71 — the shared realm HUD chip + event-banner queue.
+  const { hudRealm, bannerEvents, openDetails } = useRoomRealm()
   // Duel spotlight presentation state — `dismissedSpinId` is the spin whose
   // result panel has been shown & dismissed (cards slide back).
   const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
@@ -663,6 +666,8 @@ export function SpinBottleRoom({
               gifts={economy.giftsReceived}
               coins={economy.coinBalance}
               onAddCoins={() => setShowCoinStore(true)}
+              realm={hudRealm}
+              onRealm={openDetails}
             />
           </div>
           {/* §31/§32: the room's only control — leave/change room, top-right */}
@@ -679,6 +684,8 @@ export function SpinBottleRoom({
             coins={economy.coinBalance}
             onRoomOptions={openExit}
             onAddCoins={() => setShowCoinStore(true)}
+            realm={hudRealm}
+            onRealm={openDetails}
           />
         </div>
 
@@ -686,7 +693,7 @@ export function SpinBottleRoom({
         <div className="sbr-body">
           <div className="sbr-gamecol">
             {/* Event banner */}
-            <RoomEventBanner event={tonightEvent()} />
+            <RoomEventBanner events={bannerEvents} />
 
             {/* Game Hub PRD §41/§53 — non-blocking DATING message banner.
                 The game continues underneath; Reply opens the dating chat

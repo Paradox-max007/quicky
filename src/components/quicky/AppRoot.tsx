@@ -47,6 +47,9 @@ import { GameAlertCenter } from './game-alerts/GameAlertCenter'
 import { GameGiftAlert } from './game-alerts/GameGiftAlert'
 import { GiftFlyLayer } from './gift-fly/GiftFlyLayer'
 import { GiftBackSheet } from './gift-back/GiftBackSheet'
+import { RealmDetails } from './realm/RealmDetails'
+import { RealmResult } from './realm/RealmResult'
+import { useRealmStore } from '@/store/realm'
 import { primeMentionSound } from '@/lib/quicky/mention-sound'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
@@ -188,6 +191,16 @@ export function AppRoot() {
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
   }, [user?.settings?.theme])
+
+  // ─── Realm progression (realm PRD §68) ──────────────────────────────────
+  // Signed in → fetch the authoritative realm snapshot once per session:
+  // realm status + active multiplier (banner/preview) + any UNSEEN settled
+  // cycle result (the RealmResult modal). The per-user `realm:${id}`
+  // Supabase channel then keeps points moving live.
+  useEffect(() => {
+    if (!user?.id) return
+    void useRealmStore.getState().refresh()
+  }, [user?.id])
 
   // ─── Mention notification sound unlock (room-chat-settings revision) ────
   // WebAudio needs one user gesture before it may play: prime the context at
@@ -529,6 +542,12 @@ export function AppRoot() {
       <GameGiftAlert />
       <GiftFlyLayer />
       <GiftBackSheet />
+
+      {/* Realm PRD §41/§58/§71 — global realm surfaces: the 👑-chip details
+          sheet (works on any screen, no navigation) + the settled-cycle
+          result modal (shown once per completed cycle). */}
+      <RealmDetails />
+      <RealmResult />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
           app on desktop and respects safe-area on mobile.

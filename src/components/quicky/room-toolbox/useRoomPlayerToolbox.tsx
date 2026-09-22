@@ -236,9 +236,18 @@ export function useRoomPlayerToolbox(opts: RoomPlayerToolboxOptions) {
       const qty = Math.max(1, Math.floor(quantity) || 1)
       onCoinBalance(coinBalance - gift.priceCoins * qty) // optimistic HUD spend
       try {
-        const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id, qty)
+        // Realm PRD §20 — fresh idempotency key per SEND ACTION: a retried
+        // request (double tap / reconnect) can never double-charge or
+        // double-award; the server ledger keys on it.
+        const giftEventId = crypto.randomUUID()
+        const res = await api.spinBottle.gifts.send(roomId, recipientId, gift.id, qty, giftEventId)
         if (res?.ok) {
           onCoinBalance(res.coinBalance)
+          // Realm PRD §61 — echo the point allocation so the player sees the
+          // payoff (coins never multiply, points do).
+          if (res.multiplier && res.multiplier > 1 && res.senderPoints) {
+            toast.success(`+${res.senderPoints} Realm Points${res.multiplier ? ` · ${res.multiplier}× event` : ''}`)
+          }
           launchGiftFly({
             fromUserId: meId || undefined,
             toUserIds: [recipientId],

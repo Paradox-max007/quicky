@@ -34,7 +34,8 @@ import { useLudoRoomStore } from '@/store/ludo-room'
 import { useGameChatStore } from '@/store/game-chat'
 import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { RoomTopHud, RoomHudChips, RoomExitControl } from '../RoomTopHud'
-import { RoomEventBanner, tonightEvent } from '../RoomEventBanner'
+import { RoomEventBanner } from '../RoomEventBanner'
+import { useRoomRealm } from '../realm/useRoomRealm'
 import { RoomChatPanel, type ChatPlayer, type RoomMessage } from '../RoomChatPanel'
 import { useRoomContactsNav } from '../useRoomContactsNav'
 import { GameChatScreen } from '../game-chat/GameChatScreen'
@@ -65,6 +66,8 @@ export function LudoRoom({
   const closure = useLudoRoomStore((s) => s.closure)
   const mentionFlashId = useLudoRoomStore((s) => s.mentionFlashId)
   const setCoinBalance = useLudoRoomStore((s) => s.setCoinBalance)
+  // Realm PRD §41/§71 — the shared realm HUD chip + event-banner queue.
+  const { hudRealm, bannerEvents, openDetails } = useRoomRealm()
 
   const roomChatPanel = useQuickyStore((s) => s.roomChatPanel)
   const setRoomChatPanel = useQuickyStore((s) => s.setRoomChatPanel)
@@ -267,6 +270,8 @@ export function LudoRoom({
               gifts={economy.giftsReceived}
               coins={economy.coinBalance}
               onAddCoins={() => setShowCoinStore(true)}
+              realm={hudRealm}
+              onRealm={openDetails}
             />
           </div>
           <RoomExitControl onClick={openExit} />
@@ -282,13 +287,15 @@ export function LudoRoom({
             coins={economy.coinBalance}
             onRoomOptions={openExit}
             onAddCoins={() => setShowCoinStore(true)}
+            realm={hudRealm}
+            onRealm={openDetails}
           />
         </div>
 
         {/* ═══ Body: game column + chat ═══ */}
         <div className="sbr-body">
           <div className="sbr-gamecol">
-            <RoomEventBanner event={tonightEvent()} />
+            <RoomEventBanner events={bannerEvents} />
 
             {datingUnread && !datingBannerHidden && (
               <motion.div

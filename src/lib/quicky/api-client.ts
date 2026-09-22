@@ -399,10 +399,10 @@ export const api = {
           }[]
           coinBalance: number
         }>('/api/quicky/games/spin-bottle/gifts'),
-      send: (roomId: string, recipientId: string, itemId: string, quantity = 1) =>
-        jsonFetch<{ ok: boolean; coinBalance: number }>('/api/quicky/games/spin-bottle/gifts', {
+      send: (roomId: string, recipientId: string, itemId: string, quantity = 1, giftEventId?: string) =>
+        jsonFetch<{ ok: boolean; coinBalance: number; multiplier?: number; senderPoints?: number; receiverPoints?: number; duplicate?: boolean }>('/api/quicky/games/spin-bottle/gifts', {
           method: 'POST',
-          body: JSON.stringify({ roomId, recipientId, itemId, quantity }),
+          body: JSON.stringify({ roomId, recipientId, itemId, quantity, giftEventId }),
         }),
       // Games PRD §23-§26 — bulk send: the SERVER resolves the recipient
       // list from the room + filter ('all' | 'male' | 'female'), computes
@@ -411,11 +411,12 @@ export const api = {
         roomId: string,
         itemId: string,
         recipientFilter: 'all' | 'male' | 'female',
-        quantity: number
+        quantity: number,
+        giftEventId?: string
       ) =>
-        jsonFetch<{ ok: boolean; coinBalance: number; recipientCount: number; quantity: number; totalCost: number }>(
+        jsonFetch<{ ok: boolean; coinBalance: number; recipientCount: number; quantity: number; totalCost: number; multiplier?: number; senderPoints?: number; receiverPoints?: number }>(
           '/api/quicky/games/spin-bottle/gifts',
-          { method: 'POST', body: JSON.stringify({ roomId, itemId, recipientFilter, quantity }) }
+          { method: 'POST', body: JSON.stringify({ roomId, itemId, recipientFilter, quantity, giftEventId }) }
         ),
     },
     /** Room-chat settings: my own mention privacy for ONE room (shared by
@@ -571,6 +572,40 @@ export const api = {
         jsonFetch<{ entries: any[] }>(
           `/api/quicky/admin/audit${params?.take ? `?take=${params.take}` : ''}`
         ),
+    },
+    // ─── REALM SYSTEM (realm PRD §50-§55) ────────────────────────────
+    realmConfig: {
+      list: () =>
+        jsonFetch<{ realms: any[]; itemOptions: any[] }>('/api/quicky/admin/realm-config'),
+      update: (level: number, data: { promotionThreshold?: number; cycleDurationDays?: number; isActive?: boolean; rewards?: unknown }) =>
+        jsonFetch<{ ok: boolean; realm: any }>('/api/quicky/admin/realm-config', {
+          method: 'PATCH',
+          body: JSON.stringify({ level, ...data }),
+        }),
+    },
+    multiplierEvents: {
+      list: () =>
+        jsonFetch<{ events: any[] }>('/api/quicky/admin/multiplier-events'),
+      create: (data: { name: string; multiplier: number; durationMs: number; startsAt?: string }) =>
+        jsonFetch<{ ok: boolean; event: any }>('/api/quicky/admin/multiplier-events', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      cancel: (id: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/multiplier-events', {
+          method: 'PATCH',
+          body: JSON.stringify({ id }),
+        }),
+      remove: (id: string) =>
+        jsonFetch<{ ok: boolean }>(`/api/quicky/admin/multiplier-events?id=${id}`, { method: 'DELETE' }),
+    },
+    realmCycles: {
+      dashboard: () =>
+        jsonFetch<{ realms: any[]; totals: any; memberCountByCohort: Record<string, number> }>('/api/quicky/admin/realm-cycles'),
+      cohort: (cohortId: string) =>
+        jsonFetch<{ cohort: any }>(`/api/quicky/admin/realm-cycles?cohortId=${cohortId}`),
+      settle: () =>
+        jsonFetch<{ ok: boolean; settled: number }>('/api/quicky/admin/realm-cycles?settle=1'),
     },
   },
   // ─── GAME CHAT (game-chat PRD §7+) — private player-to-player messaging,
@@ -747,4 +782,18 @@ export const api = {
   },
   upload: uploadFile,
   uploadWithProgress: uploadFileWithProgress,
+  // ─── REALM PROGRESSION (realm PRD §61) — shared across every game ─────
+  realm: {
+    status: () => jsonFetch<{ realm: any }>('/api/quicky/realm/me'),
+    leaderboard: () => jsonFetch<{ realm: any; cycle: any; threshold: number; rows: any[] }>('/api/quicky/realm/leaderboard'),
+    history: (limit = 50) =>
+      jsonFetch<{ history: any[] }>(`/api/quicky/realm/points/history?limit=${limit}`),
+    claim: (cycleId?: string) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/realm/claim', {
+        method: 'POST',
+        body: JSON.stringify({ cycleId }),
+      }),
+    activeEvents: () =>
+      jsonFetch<{ multiplier: number; multiplierEvent: any; realmCycle: any }>('/api/quicky/events/active'),
+  },
 }
