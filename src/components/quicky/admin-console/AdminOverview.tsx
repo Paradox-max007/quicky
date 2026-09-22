@@ -5,7 +5,7 @@
 // user/content totals from the users + audit endpoints (all server-verified).
 
 import { useEffect, useState } from 'react'
-import { Users, Radio, Flag, Gamepad2 } from 'lucide-react'
+import { Users, Radio, Flag, Gamepad2, Crown, Sparkles } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 
 type Kpis = {
@@ -20,19 +20,31 @@ type Kpis = {
   adminsTotal: number
 }
 
+type ConsoleStats = {
+  seasons: number
+  activeSeason: { seasonNumber: number; name: string } | null
+  activeRewards: number
+  activeStickerSets: number
+  activeGifts: number
+  pendingGrants: number
+  claimedGrants: number
+}
+
 export function AdminOverview({ onNavigate }: { onNavigate: (section: string) => void }) {
   const [kpis, setKpis] = useState<Kpis | null>(null)
+  const [stats, setStats] = useState<ConsoleStats | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
-        const [rooms, users, complaints, games] = await Promise.all([
+        const [rooms, users, complaints, games, consoleRes] = await Promise.all([
           api.admin.liveRooms.list(),
           api.admin.users.list(),
           api.admin.complaints.list(),
           api.admin.games.list(),
+          api.admin.consoleSettings.get().catch(() => null),
         ])
         if (cancelled) return
         const openComplaints = (complaints as any)?.complaints ?? []
@@ -49,6 +61,7 @@ export function AdminOverview({ onNavigate }: { onNavigate: (section: string) =>
           usersTotal: usersArr.length,
           adminsTotal: usersArr.filter((u: any) => u.isAdmin).length,
         })
+        if (consoleRes) setStats((consoleRes?.stats ?? null) as ConsoleStats | null)
       } catch {
         if (!cancelled) setFailed(true)
       }
@@ -94,6 +107,30 @@ export function AdminOverview({ onNavigate }: { onNavigate: (section: string) =>
       onClick: () => onNavigate('games'),
       testId: 'kpi-games',
     },
+    {
+      label: 'Active season',
+      value: stats?.activeSeason ? `S${stats.activeSeason.seasonNumber}` : '—',
+      sub: stats?.activeSeason?.name ?? `${stats?.seasons ?? 0} season(s) configured`,
+      icon: Crown,
+      onClick: () => onNavigate('seasons'),
+      testId: 'kpi-season',
+    },
+    {
+      label: 'Reward catalog',
+      value: stats ? `${stats.activeRewards}` : '—',
+      sub: stats ? `${stats.activeStickerSets} sticker sets · ${stats.activeGifts} gifts` : '',
+      icon: Sparkles,
+      onClick: () => onNavigate('rewards'),
+      testId: 'kpi-rewards',
+    },
+    {
+      label: 'Rewards awaiting collection',
+      value: stats ? `${stats.pendingGrants}` : '—',
+      sub: stats ? `${stats.claimedGrants} claimed all-time` : '',
+      icon: Sparkles,
+      onClick: () => onNavigate('realms'),
+      testId: 'kpi-grants',
+    },
   ]
 
   return (
@@ -123,8 +160,12 @@ export function AdminOverview({ onNavigate }: { onNavigate: (section: string) =>
             ['games', 'Configure games'],
             ['rules', 'How-It-Works slides'],
             ['gifts', 'Gift catalog'],
+            ['rewards', 'Reward catalog'],
+            ['realms', 'Realm rules'],
+            ['seasons', 'Seasons'],
             ['stickers', 'Sticker sets'],
             ['users', 'User management'],
+            ['settings', 'Console settings'],
             ['audit', 'Audit trail'],
           ].map(([key, label]) => (
             <button

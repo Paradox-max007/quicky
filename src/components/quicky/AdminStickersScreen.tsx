@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
@@ -27,10 +27,11 @@ type Bundle = {
   event?: { name: string } | null
   leagueId: string | null
   seasonId: string | null
+  realmLevel?: number | null
+  winnerPositions?: string | null
   league?: { name: string } | null
   season?: { name: string } | null
   priceCoins: number
-  minimumLeaguePoints: number
   purchaseEnabled: boolean
   rewardEnabled: boolean
   isActive: boolean
@@ -48,23 +49,28 @@ type BundleForm = {
   leagueId: string
   seasonId: string
   eventId: string
+  realmLevel: string
+  winnerPositions: { 1: boolean; 2: boolean; 3: boolean }
   priceCoins: string
-  minimumLeaguePoints: string
   purchaseEnabled: boolean
   rewardEnabled: boolean
   isActive: boolean
   sortOrder: string
 }
 
-// Games PRD §32 — acquisition mechanisms (admin-configurable)
+// Games PRD §32 + admin-console PRD §13 — acquisition mechanisms
+// ("realm" = finalized realm result + winner positions — the min-league-
+// points rule was removed per §13.2)
 const UNLOCK_TYPES: { value: string; label: string }[] = [
   { value: 'coins', label: '🪙 Coins purchase' },
-  { value: 'league', label: '🏆 League reward' },
+  { value: 'realm', label: '👑 Realm winners (1st/2nd)' },
   { value: 'season', label: '📅 Season pass' },
   { value: 'event', label: '🎉 Event unlock' },
-  { value: 'subscription', label: '👑 Subscription' },
+  { value: 'subscription', label: '⭕ Subscription' },
   { value: 'free', label: '🎁 Free' },
 ]
+
+const REALM_LEVEL_OPTIONS = Array.from({ length: 15 }, (_, i) => i + 1)
 
 const EMPTY_BUNDLE: BundleForm = {
   name: '',
@@ -74,12 +80,23 @@ const EMPTY_BUNDLE: BundleForm = {
   leagueId: '',
   seasonId: '',
   eventId: '',
+  realmLevel: '',
+  winnerPositions: { 1: true, 2: true, 3: false },
   priceCoins: '0',
-  minimumLeaguePoints: '0',
   purchaseEnabled: true,
   rewardEnabled: false,
   isActive: true,
   sortOrder: '10',
+}
+
+function parseBundleWinnerPositions(json: string | null | undefined): { 1: boolean; 2: boolean; 3: boolean } {
+  if (!json) return { 1: true, 2: true, 3: false }
+  try {
+    const arr = JSON.parse(json) as number[]
+    return { 1: arr.includes(1), 2: arr.includes(2), 3: arr.includes(3) }
+  } catch {
+    return { 1: true, 2: true, 3: false }
+  }
 }
 
 type StickerForm = {
@@ -125,16 +142,23 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const saveBundle = async () => {
     if (!bundleForm || saving) return
     if (!bundleForm.name.trim()) return toast.error('Bundle name is required')
-    // §117: at least one acquisition route — event/season/subscription/free
-    // unlocks carry their own requirement instead.
+    // §117: at least one acquisition route — event/season/subscription/free/
+    // realm unlocks carry their own requirement instead.
     const price = Math.floor(Number(bundleForm.priceCoins)) || 0
-    const points = Math.floor(Number(bundleForm.minimumLeaguePoints)) || 0
-    const selfSufficient = ['event', 'season', 'subscription', 'free'].includes(bundleForm.unlockType)
+    const realmLevel = bundleForm.realmLevel ? Math.floor(Number(bundleForm.realmLevel)) : null
+    const selfSufficient = ['event', 'season', 'subscription', 'free', 'realm'].includes(bundleForm.unlockType)
     if (!bundleForm.purchaseEnabled && !bundleForm.rewardEnabled && !selfSufficient) {
-      return toast.error('Enable coin purchase or league reward')
+      return toast.error('Enable coin purchase or a reward unlock')
     }
     if (bundleForm.unlockType === 'event' && !bundleForm.eventId) {
       return toast.error('Pick the event for this event-unlock set')
+    }
+    if (bundleForm.unlockType === 'realm' && !realmLevel) {
+      return toast.error('Pick the realm level this sticker set belongs to')
+    }
+    const positions = ([1, 2, 3] as const).filter((p) => bundleForm.winnerPositions[p])
+    if (bundleForm.unlockType === 'realm' && positions.length === 0) {
+      return toast.error('Select at least one winner position (1st / 2nd)')
     }
     setSaving(true)
     const data = {
@@ -145,8 +169,9 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
       leagueId: bundleForm.leagueId || null,
       seasonId: bundleForm.seasonId || null,
       eventId: bundleForm.eventId || null,
+      realmLevel,
+      winnerPositions: bundleForm.unlockType === 'realm' ? positions : null,
       priceCoins: price,
-      minimumLeaguePoints: points,
       purchaseEnabled: bundleForm.purchaseEnabled,
       rewardEnabled: bundleForm.rewardEnabled,
       isActive: bundleForm.isActive,
@@ -236,12 +261,13 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                 <p className="text-[11px] text-white/50 mt-0.5">
                   <span className="font-bold text-white/70">{b.unlockType ?? 'coins'}</span>
                   {b.unlockType === 'event' && (b as any).event ? ` (${(b as any).event.name})` : ''}
+                  {b.unlockType === 'realm' && b.realmLevel ? ` (realm ${b.realmLevel} · ${parseBundleWinnerPositions(b.winnerPositions)[1] ? '1st' : ''}${parseBundleWinnerPositions(b.winnerPositions)[1] && parseBundleWinnerPositions(b.winnerPositions)[2] ? ' + ' : ''}${parseBundleWinnerPositions(b.winnerPositions)[2] ? '2nd' : ''}${parseBundleWinnerPositions(b.winnerPositions)[3] ? ' + 3rd' : ''})` : ''}
                   {' · '}
                   {b.league ? `League: ${b.league.name} · ` : ''}
                   {b.season ? `Season: ${b.season.name ?? b.season} · ` : ''}
                   {b.purchaseEnabled ? `🪙 ${b.priceCoins}` : ''}
                   {b.purchaseEnabled && b.rewardEnabled ? ' · ' : ''}
-                  {b.rewardEnabled ? `🏆 min ${b.minimumLeaguePoints} pts` : ''}
+                  {b.rewardEnabled ? '🏆 reward unlock' : ''}
                 </p>
                 {b.description && <p className="text-[11px] text-white/40 mt-0.5 line-clamp-2">{b.description}</p>}
               </div>
@@ -258,8 +284,9 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                         leagueId: b.leagueId ?? '',
                         seasonId: b.seasonId ?? '',
                         eventId: (b as any).eventId ?? '',
+                        realmLevel: b.realmLevel ? String(b.realmLevel) : '',
+                        winnerPositions: parseBundleWinnerPositions(b.winnerPositions),
                         priceCoins: String(b.priceCoins),
-                        minimumLeaguePoints: String(b.minimumLeaguePoints),
                         purchaseEnabled: b.purchaseEnabled,
                         rewardEnabled: b.rewardEnabled,
                         isActive: b.isActive,
@@ -412,13 +439,40 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                     ))}
                   </select>
                 </Field>
+                <Field label="Realm Level (realm unlock)">
+                  <select
+                    value={bundleForm.realmLevel}
+                    onChange={(e) => setBundleForm({ ...bundleForm, realmLevel: e.target.value })}
+                    className={inputCls}
+                    data-testid="bundle-realm-level"
+                  >
+                    <option value="">— none —</option>
+                    {REALM_LEVEL_OPTIONS.map((lvl) => (
+                      <option key={lvl} value={String(lvl)}>Realm {lvl}</option>
+                    ))}
+                  </select>
+                </Field>
                 <Field label="Coin Price">
                   <input value={bundleForm.priceCoins} onChange={(e) => setBundleForm({ ...bundleForm, priceCoins: e.target.value, purchaseEnabled: true })} className={inputCls} inputMode="numeric" />
                 </Field>
-                <Field label="Min League Points">
-                  <input value={bundleForm.minimumLeaguePoints} onChange={(e) => setBundleForm({ ...bundleForm, minimumLeaguePoints: e.target.value, rewardEnabled: true })} className={inputCls} inputMode="numeric" />
-                </Field>
               </div>
+              {/* Admin-console PRD §13 — winner positions for realm-linked sets */}
+              {bundleForm.unlockType === 'realm' && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--qk-accent)]/25 bg-[var(--qk-accent)]/[0.06] px-3 py-2.5 text-xs">
+                  <span className="font-black text-[10px] uppercase tracking-wider text-[var(--qk-accent)]">Winner positions</span>
+                  {([1, 2, 3] as const).map((p) => (
+                    <label key={p} className="flex items-center gap-1.5 font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={bundleForm.winnerPositions[p]}
+                        onChange={(e) => setBundleForm({ ...bundleForm, winnerPositions: { ...bundleForm.winnerPositions, [p]: e.target.checked } })}
+                      />
+                      {p === 1 ? '1st place' : p === 2 ? '2nd place' : '3rd place'}
+                    </label>
+                  ))}
+                  <span className="text-[10px] text-white/40">Final rank in a settled cycle of the linked realm unlocks the set.</span>
+                </div>
+              )}
               <div className="flex flex-wrap gap-3 text-xs">
                 <label className="flex items-center gap-1.5 font-semibold">
                   <input type="checkbox" checked={bundleForm.purchaseEnabled} onChange={(e) => setBundleForm({ ...bundleForm, purchaseEnabled: e.target.checked })} />
@@ -426,7 +480,7 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                 </label>
                 <label className="flex items-center gap-1.5 font-semibold">
                   <input type="checkbox" checked={bundleForm.rewardEnabled} onChange={(e) => setBundleForm({ ...bundleForm, rewardEnabled: e.target.checked })} />
-                  League reward
+                  Reward unlock
                 </label>
                 <label className="flex items-center gap-1.5 font-semibold">
                   <input type="checkbox" checked={bundleForm.isActive} onChange={(e) => setBundleForm({ ...bundleForm, isActive: e.target.checked })} />
@@ -467,6 +521,36 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
               <Field label="Sticker Asset * (emoji or https://…/sticker.png)">
                 <input value={stickerForm.assetUrl} onChange={(e) => setStickerForm({ ...stickerForm, assetUrl: e.target.value })} className={inputCls} placeholder="😍" />
               </Field>
+              {/* Admin-console PRD §6 — upload the sticker icon from the admin's machine */}
+              <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
+                <UploadCloud className="w-3.5 h-3.5" aria-hidden />
+                Upload sticker image (PNG / WebP / GIF) → Supabase Storage
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    if (file.size > 4 * 1024 * 1024) {
+                      toast.error('Images must be 4 MB or smaller')
+                      return
+                    }
+                    void api.admin.assets
+                      .upload(file, 'stickers')
+                      .then((res) => {
+                        setStickerForm((f) => (f ? { ...f, assetUrl: res.url } : f))
+                        toast.success('Sticker image uploaded', { description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads' })
+                      })
+                      .catch((err: unknown) => {
+                        toast.error(err instanceof Error ? err.message : 'Upload failed')
+                      })
+                      .finally(() => {
+                        e.target.value = ''
+                      })
+                  }}
+                />
+              </label>
               <div className="grid grid-cols-2 gap-2.5">
                 <Field label="Display Order">
                   <input value={stickerForm.sortOrder} onChange={(e) => setStickerForm({ ...stickerForm, sortOrder: e.target.value })} className={inputCls} inputMode="numeric" />

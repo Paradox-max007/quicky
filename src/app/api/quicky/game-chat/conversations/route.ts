@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { peerInfo, unreadCount } from '@/lib/quicky/game-chat'
+import { getEquippedCosmetics, type CosmeticView } from '@/lib/quicky/rewards/cosmetics'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,13 @@ export async function GET() {
     take: 100,
     include: { members: true },
   })
+
+  // Admin-console PRD §9 — equipped cosmetics for MYSELF + every peer, so the
+  // chat surfaces can render frames / hats / name decorators / bubbles.
+  const peerIds = conversations.map((c) => (c.userAId === me.id ? c.userBId : c.userAId))
+  const cosmeticsByUser = await getEquippedCosmetics([me.id, ...peerIds]).catch(() => new Map<string, CosmeticView[]>())
+  const compact = (list: CosmeticView[] | undefined) =>
+    (list ?? []).map((c) => ({ rewardId: c.rewardId, rewardType: c.rewardType, name: c.name, level: c.level, levelAsset: c.levelAsset, decorator: c.decorator, bubble: c.bubble }))
 
   const rows = await Promise.all(
     conversations.map(async (c) => {
@@ -50,7 +58,8 @@ export async function GET() {
         : 0
       return {
         conversationId: c.id,
-        peer,
+        peer: { ...peer, cosmetics: compact(cosmeticsByUser.get(peerId)) },
+        myCosmetics: compact(cosmeticsByUser.get(me.id)),
         lastMessage: lastMessage
           ? {
               id: lastMessage.id,

@@ -9,9 +9,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Settings as SettingsIcon, User, Phone, Mail, SlidersHorizontal,
   Bell, Palette, Shield, Lock, HelpCircle, FileText, LogOut, ChevronRight,
-  Crown, RefreshCw, AlertCircle, Gift, Sparkles,
+  Crown, RefreshCw, AlertCircle, Gift, Sparkles, Shirt,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CosmeticsSheet } from './cosmetics/CosmeticsSheet'
 
 type Row = {
   id: string
@@ -37,6 +38,9 @@ export function SettingsScreen() {
   const setUser = useQuickyStore((s) => s.setUser)
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  // Admin-console PRD §8.2 — the cosmetics wardrobe (equip hats / frames /
+  // name decorators / chat bubbles won as realm rewards).
+  const [cosmeticsOpen, setCosmeticsOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
 
   // Mask phone number: +1 (555) •••-••01
@@ -107,6 +111,13 @@ export function SettingsScreen() {
     {
       title: 'Account',
       rows: [
+        {
+          id: 'my-cosmetics',
+          label: 'My Cosmetics',
+          icon: Shirt,
+          chevron: true,
+          onClick: () => setCosmeticsOpen(true),
+        },
         {
           id: 'edit-profile',
           label: 'Edit Profile',
@@ -335,6 +346,9 @@ export function SettingsScreen() {
       </div>
 
       <AnimatePresence>
+        {/* Admin-console PRD §8.2 — cosmetics wardrobe sheet */}
+        <CosmeticsSheet open={cosmeticsOpen} onClose={() => setCosmeticsOpen(false)} />
+
         {showLogoutConfirm && (
           <motion.div
             initial={{ opacity: 0 }}

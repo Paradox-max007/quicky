@@ -1,9 +1,11 @@
-// Quicky — ADMIN "How It Works" rule management (lifecycle PRD §44/§48/§49)
+// Quicky — ADMIN "How It Works" rule management (lifecycle PRD §44/§48/§49 +
+// admin-console PRD §5 — per-game content)
 // Gated by User.isAdmin (fresh from the DB on EVERY request — frontend
 // hiding is not security, §35/§36).
 //
-// GET    → all rules for spin_the_bottle (INCLUDING inactive — the admin
-//          must be able to re-activate; the player-facing endpoint filters).
+// GET    → all rules for ?gameType= (INCLUDING inactive — the admin must be
+//          able to re-activate; the player-facing endpoint filters). Defaults
+//          to spin_the_bottle for backward compatibility.
 // POST   → { title, description, icon?, sortOrder?, gameType? }   create
 // PATCH  → { id, data { title?, description?, icon?, isActive?, sortOrder? } }
 // DELETE → { id }                                                 HARD delete
@@ -21,15 +23,21 @@ const cleanIcon = (v: unknown): string | undefined => {
   return Array.from(s).slice(0, 4).join('') // ≤4 glyphs, emoji-safe
 }
 
-export async function GET(_req: NextRequest) {
+const cleanGameType = (v: unknown): string => {
+  const s = String(v ?? '').trim().toLowerCase().slice(0, 40)
+  return s || 'spin_the_bottle'
+}
+
+export async function GET(req: NextRequest) {
   const gate = await requireAdmin()
   if (gate.error) return gate.error
 
+  const gameType = cleanGameType(req.nextUrl.searchParams.get('gameType'))
   const rules = await db.gameRule.findMany({
-    where: { gameType: 'spin_the_bottle' },
+    where: { gameType },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   })
-  return NextResponse.json({ rules })
+  return NextResponse.json({ rules, gameType })
 }
 
 export async function POST(req: NextRequest) {
@@ -44,7 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'title_and_description_required' }, { status: 400 })
   }
   const max = await db.gameRule.aggregate({
-    where: { gameType: 'spin_the_bottle' },
+    where: { gameType: String(data.gameType ?? 'spin_the_bottle').slice(0, 40) },
     _max: { sortOrder: true },
   })
   const created = await db.gameRule.create({

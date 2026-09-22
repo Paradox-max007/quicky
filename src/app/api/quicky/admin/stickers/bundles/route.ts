@@ -1,13 +1,16 @@
-// Quicky — ADMIN sticker BUNDLE management (game-chat PRD §63/§69/§70/§116/§117/§127)
+// Quicky — ADMIN sticker BUNDLE management (game-chat PRD §63/§69/§70/§116/§117/§127
+// + admin-console PRD §13)
 // Gated by requireAdmin() — a fresh DB isAdmin check on EVERY request (§127).
 //
 // GET    → ALL bundles (including inactive) + their stickers + the league/
-//          season catalogs for the edit form (never hardcoded, §65).
-// POST   → create { name, description?, icon?, leagueId?, seasonId?,
-//          priceCoins?, minimumLeaguePoints?, purchaseEnabled?, rewardEnabled?,
+//          season/realm catalogs for the edit form (never hardcoded, §65).
+// POST   → create { name, description?, icon?, leagueId?, seasonId?, realmLevel?,
+//          winnerPositions?, priceCoins?, purchaseEnabled?, rewardEnabled?,
 //          isActive?, sortOrder? }
 // PATCH  → { id, data { …same fields… } }
 // DELETE → { id }  (bundle + stickers cascade; ownership rows cascade too)
+// Admin-console PRD §13.2 — minimumLeaguePoints is GONE; realm-linked
+// bundles qualify through finalized realm results + winner positions.
 // Every mutation writes an AdminAuditLog row (§120).
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -29,11 +32,25 @@ const cleanRef = (v: unknown): string | null | undefined => {
   const s = String(v ?? '').trim()
   return s ? s : null
 }
-// Games PRD §32 — valid acquisition mechanisms
-const UNLOCK_TYPES = ['free', 'coins', 'league', 'season', 'event', 'subscription']
+// Games PRD §32 + admin-console PRD §13 — valid acquisition mechanisms
+const UNLOCK_TYPES = ['free', 'coins', 'league', 'realm', 'season', 'event', 'subscription']
 const cleanUnlockType = (v: unknown): string | undefined => {
   const s = String(v ?? '').trim()
   return UNLOCK_TYPES.includes(s) ? s : undefined
+}
+/** Admin-console PRD §13 — winner positions JSON ("[1,2]"). */
+const cleanWinnerPositions = (v: unknown): string | undefined | null => {
+  if (v === undefined) return undefined
+  if (v === null || v === '') return null
+  if (!Array.isArray(v)) return undefined
+  const positions = Array.from(new Set(v.map((p) => Math.floor(Number(p))).filter((p) => Number.isInteger(p) && p >= 1 && p <= 7))).sort((a, b) => a - b)
+  return JSON.stringify(positions)
+}
+const cleanRealmLevel = (v: unknown): number | null | undefined => {
+  if (v === undefined) return undefined
+  if (v === null || v === '') return null
+  const n = Math.floor(Number(v))
+  return Number.isInteger(n) && n >= 1 && n <= 15 ? n : null
 }
 
 export async function GET() {
@@ -69,19 +86,23 @@ export async function POST(req: NextRequest) {
 
   // §117: at least one acquisition route should be configured — unless the
   // bundle uses a non-purchasable/non-league unlock (event, season,
-  // subscription, free), which carries its own requirement field.
+  // subscription, free, realm), which carries its own requirement field.
   const priceCoins = cleanInt(body?.priceCoins) ?? 0
-  const minimumLeaguePoints = cleanInt(body?.minimumLeaguePoints) ?? 0
   const purchaseEnabled = cleanBool(body?.purchaseEnabled) ?? priceCoins > 0
-  const rewardEnabled = cleanBool(body?.rewardEnabled) ?? minimumLeaguePoints > 0
+  const rewardEnabled = cleanBool(body?.rewardEnabled) ?? false
   const unlockType = cleanUnlockType(body?.unlockType) ?? 'coins'
-  const selfSufficient = ['event', 'season', 'subscription', 'free'].includes(unlockType)
+  const realmLevel = cleanRealmLevel(body?.realmLevel) ?? null
+  const selfSufficient = ['event', 'season', 'subscription', 'free', 'realm'].includes(unlockType)
   if (!purchaseEnabled && !rewardEnabled && !selfSufficient) {
     return NextResponse.json({ error: 'acquisition_route_required' }, { status: 400 })
   }
   // §32: an event/season unlock must point at its requirement.
   if (unlockType === 'event' && !cleanRef(body?.eventId)) {
     return NextResponse.json({ error: 'event_required' }, { status: 400 })
+  }
+  // Admin-console PRD §13 — a realm unlock needs its realm level.
+  if (unlockType === 'realm' && !realmLevel) {
+    return NextResponse.json({ error: 'realm_level_required' }, { status: 400 })
   }
 
   const created = await db.gameStickerBundle.create({
@@ -93,8 +114,9 @@ export async function POST(req: NextRequest) {
       leagueId: cleanRef(body?.leagueId) ?? null,
       seasonId: cleanRef(body?.seasonId) ?? null,
       eventId: cleanRef(body?.eventId) ?? null,
+      realmLevel,
+      winnerPositions: cleanWinnerPositions(body?.winnerPositions) ?? (unlockType === 'realm' ? '[1,2]' : null),
       priceCoins,
-      minimumLeaguePoints,
       purchaseEnabled,
       rewardEnabled,
       isActive: cleanBool(body?.isActive) ?? true,
@@ -130,10 +152,10 @@ export async function PATCH(req: NextRequest) {
   const unlockType = cleanUnlockType(data?.unlockType)
   if (unlockType !== undefined) patch.unlockType = unlockType
   if (data?.eventId !== undefined) patch.eventId = cleanRef(data.eventId)
+  if (data?.realmLevel !== undefined) patch.realmLevel = cleanRealmLevel(data.realmLevel)
+  if (data?.winnerPositions !== undefined) patch.winnerPositions = cleanWinnerPositions(data.winnerPositions)
   const priceCoins = cleanInt(data?.priceCoins)
   if (priceCoins !== undefined) patch.priceCoins = priceCoins
-  const minimumLeaguePoints = cleanInt(data?.minimumLeaguePoints)
-  if (minimumLeaguePoints !== undefined) patch.minimumLeaguePoints = minimumLeaguePoints
   const purchaseEnabled = cleanBool(data?.purchaseEnabled)
   if (purchaseEnabled !== undefined) patch.purchaseEnabled = purchaseEnabled
   const rewardEnabled = cleanBool(data?.rewardEnabled)

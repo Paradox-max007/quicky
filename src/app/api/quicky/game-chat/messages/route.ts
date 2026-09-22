@@ -32,6 +32,7 @@ import {
 } from '@/lib/quicky/game-chat'
 import { emitGameChatPair } from '@/lib/quicky/game-chat-events'
 import { rateLimit } from '@/lib/quicky/rate-limit'
+import { getEquippedCosmetics, type CosmeticView } from '@/lib/quicky/rewards/cosmetics'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,6 +75,11 @@ export async function GET(req: NextRequest) {
   }
 
   const peer = await peerInfo(peerId!)
+  // Admin-console PRD §9 — equipped cosmetics for both participants so the
+  // chat screen can render bubbles + name decorators + frames.
+  const cosmeticsByUser = await getEquippedCosmetics([me.id, peerId!]).catch(() => new Map<string, CosmeticView[]>())
+  const compact = (list: CosmeticView[] | undefined) =>
+    (list ?? []).map((c) => ({ rewardType: c.rewardType, name: c.name, level: c.level, levelAsset: c.levelAsset, decorator: c.decorator, bubble: c.bubble }))
   const myMember = conversation ? await amIMember(conversation.id, me.id) : null
   const peerMember = conversation ? await amIMember(conversation.id, peerId!) : null
 
@@ -87,7 +93,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     conversationId: conversation?.id ?? null,
-    peer,
+    peer: { ...peer, cosmetics: compact(cosmeticsByUser.get(peerId!)) },
+    myCosmetics: compact(cosmeticsByUser.get(me.id)),
     hasMore: conversation ? visibleRows.length === MESSAGE_PAGE_SIZE : false,
     oldestCursor: visibleRows.length > 0 ? visibleRows[0].createdAt.toISOString() : null,
     messages,

@@ -187,7 +187,19 @@ const LUDO_TAGLINES = [
   'Race your rivals…',
 ]
 
-export function buildLudoPrimaryConfig(game: GameDef | null, stats: LudoLandingStats | null): GamePrimaryConfig {
+export function buildLudoPrimaryConfig(
+  game: GameDef | null,
+  stats: LudoLandingStats | null,
+  adminRules?: { id: string; title: string; description: string; icon: string }[] | null
+): GamePrimaryConfig {
+  // Admin-console PRD §5 — the admin's per-game rules WIN; the hardcoded
+  // LUDO_RULES are only the fallback when none are published yet.
+  const howItWorks: GameHowItWorksStep[] =
+    adminRules && adminRules.length > 0
+      ? adminRules
+          .filter((r) => r && r.title && r.description)
+          .map((r, i) => ({ id: r.id || `rule-${i}`, title: r.title, description: r.description, icon: r.icon || '🎲' }))
+      : LUDO_RULES
   return {
     gameId: game?.id ?? 'ludo',
     slug: 'ludo',
@@ -207,7 +219,7 @@ export function buildLudoPrimaryConfig(game: GameDef | null, stats: LudoLandingS
     chemistry: undefined,
     streak: null,
     quickyPoints: stats?.quickyPoints ?? 0,
-    howItWorks: LUDO_RULES,
+    howItWorks,
     rotatingTexts: LUDO_TAGLINES,
   }
 }

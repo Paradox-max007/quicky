@@ -30,6 +30,7 @@ import { ArrowLeft, Plus, Send, X, Mic, Image as ImageIcon, Zap, Play, Square, M
 import { api, uploadFile } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { ComplaintModal } from '../ComplaintModal'
+import { CosmeticAvatar, NameDecorators, chatBubbleStyle, ChatBubbleFrame, type EquippedCosmetic } from '../cosmetics/Cosmetics'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore, type GameChatMessage } from '@/store/game-chat'
 import { Component, type ReactNode } from 'react'
@@ -115,6 +116,12 @@ function GameChatScreenInner({
 }) {
   const me = useQuickyStore((s) => s.user)
   const peer = useGameChatStore((s) => s.activePeer)
+  // Admin-console PRD §9 — equipped cosmetics for both participants
+  // (peer: avatar + name decorators + bubble; mine: bubble).
+  const peerCosmetics = useGameChatStore((s) => s.peerCosmetics)
+  const myCosmetics = useGameChatStore((s) => s.myCosmetics)
+  const myBubbleStyle = useMemo(() => chatBubbleStyle(myCosmetics), [myCosmetics])
+  const peerBubbleStyle = useMemo(() => chatBubbleStyle(peerCosmetics), [peerCosmetics])
   const conversationId = useGameChatStore((s) => s.activeConversationId)
   // Refactor PRD §53 — personal chat ••• actions: Friend / Block / Clear
   // Chat / Complaint, generated from the real relationship state.
@@ -483,14 +490,15 @@ function GameChatScreenInner({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        {peer.peerAvatar ? (
-           
-          <img src={peer.peerAvatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+        {peer.peerAvatar || (peerCosmetics && peerCosmetics.length > 0) ? (
+          <CosmeticAvatar src={peer.peerAvatar} name={peerName ?? 'Player'} cosmetics={peerCosmetics} size="sm" />
         ) : (
           <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>🎲</span>
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-white font-bold text-sm leading-tight truncate">{peerName}</p>
+          <p className="text-white font-bold text-sm leading-tight truncate">
+            <NameDecorators name={peerName} cosmetics={peerCosmetics} />
+          </p>
           <p className="text-white/40 text-[11px] leading-tight">Game chat</p>
         </div>
         {peer.peerUserId && (
@@ -659,6 +667,8 @@ function GameChatScreenInner({
                 mine={m.senderId === meId}
                 isLastMine={lastMine?.id === m.id}
                 read={peerReadDate >= new Date(m.createdAt).getTime()}
+                bubbleStyle={m.senderId === meId ? myBubbleStyle : peerBubbleStyle}
+                bubbleCosmetics={m.senderId === meId ? myCosmetics : peerCosmetics}
                 onReply={() => useGameChatStore.getState().setReplyTo(m)}
                 onReact={() => setPickerFor(m.id)}
                 onRetry={() => m.clientMessageId && useGameChatStore.getState().retryMessage(m.clientMessageId)}
@@ -987,6 +997,8 @@ function GameBubble({
   mine,
   isLastMine,
   read,
+  bubbleStyle,
+  bubbleCosmetics,
   onReply,
   onReact,
   onRetry,
@@ -998,6 +1010,9 @@ function GameBubble({
   mine: boolean
   isLastMine: boolean
   read: boolean
+  /** Admin-console PRD §9 — equipped CHAT_BUBBLE styling for this sender. */
+  bubbleStyle?: React.CSSProperties
+  bubbleCosmetics?: EquippedCosmetic[] | null
   onReply: () => void
   onReact: () => void
   onRetry: () => void
@@ -1027,7 +1042,22 @@ function GameBubble({
   } else if (m.messageType === 'voice') {
     body = <VoiceMessageBody m={m} mine={mine} pressHandlers={pressHandlers} />
   } else {
-    body = (
+    // Admin-console PRD §9 — the equipped CHAT_BUBBLE cosmetic paints the
+    // bubble (color/border/text tone); an optional frame image wraps it.
+    body = bubbleStyle ? (
+      <ChatBubbleFrame cosmetics={bubbleCosmetics}>
+        <div
+          {...pressHandlers}
+          className={`relative px-3.5 py-2.5 text-sm leading-relaxed ${m.pending ? 'opacity-60' : ''} ${
+            mine ? 'rounded-2xl rounded-br-md' : 'rounded-2xl rounded-bl-md'
+          }`}
+          style={bubbleStyle}
+        >
+          {m.replyTo && <ReplyRef m={m} mine={mine} />}
+          <p className="whitespace-pre-wrap break-words">{m.text}</p>
+        </div>
+      </ChatBubbleFrame>
+    ) : (
       <div
         {...pressHandlers}
         className={`relative rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${

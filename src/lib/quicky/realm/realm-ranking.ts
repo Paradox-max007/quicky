@@ -10,6 +10,7 @@ import { db } from '@/lib/db'
 import { ensureRealmBootstrap } from './realm-config'
 import { ensureRealmParticipation, settleDueCycles } from './realm-cycle'
 import { eligibleForPromotion } from './realm-promotion'
+import { getSeason, realmDisplayName } from './realm-seasons'
 
 export type LeaderboardRow = {
   rank: number
@@ -25,6 +26,7 @@ export type LeaderboardRow = {
 export type RealmStatus = {
   realm: { level: number; name: string; description: string | null }
   nextRealm: { level: number; name: string } | null
+  season: { seasonNumber: number; name: string; description: string | null } | null
   cycle: { id: string; endsAt: string; status: string } | null
   points: number
   threshold: number
@@ -56,7 +58,9 @@ export async function getRealmStatus(userId: string): Promise<RealmStatus | null
   const part = (await ensureRealmParticipation([userId])).get(userId)
   if (!part) return null
 
-  const [ur, def, nextDef, claim] = await Promise.all([
+  const ur0 = await db.userRealm.findUnique({ where: { userId }, select: { seasonNumber: true } })
+
+  const [ur, def, nextDef, claim, season] = await Promise.all([
     db.userRealm.findUnique({ where: { userId } }),
     db.realmDefinition.findUnique({ where: { level: part.realmLevel } }),
     part.realmLevel < 15 ? db.realmDefinition.findUnique({ where: { level: part.realmLevel + 1 } }) : Promise.resolve(null),
@@ -65,6 +69,7 @@ export async function getRealmStatus(userId: string): Promise<RealmStatus | null
       where: { userId, claimedAt: null },
       orderBy: { grantedAt: 'desc' },
     }),
+    getSeason(ur0?.seasonNumber ?? 1),
   ])
   if (!ur) return null
 
@@ -106,35 +111,48 @@ export async function getRealmStatus(userId: string): Promise<RealmStatus | null
   let pendingResult: RealmStatus['pendingResult'] = null
   if (claim) {
     const claimCycle = await db.realmCycle.findUnique({ where: { id: claim.cycleId } })
-    const items = JSON.parse(claim.rewards || '[]') as { itemId: string; quantity: number }[]
-    const resolved = items.length
-      ? await db.gameItem
-          .findMany({ where: { id: { in: items.map((i) => i.itemId) } }, select: { id: true, name: true, emoji: true, iconType: true, iconValue: true } })
-          .then((rows) => {
-            const byId = new Map(rows.map((r) => [r.id, r]))
-            return items.map((i) => {
-              const g = byId.get(i.itemId)
-              return { itemId: i.itemId, name: g?.name ?? 'Reward', emoji: g ? (g.iconType === 'image' || g.iconType === 'png' ? (g.iconValue ?? g.emoji) : g.emoji) : '🎁', quantity: i.quantity }
-            })
-          })
-          .catch(() => [])
-      : []
+    // Admin-console PRD — combined reward list: LEGACY items (resolved from
+    // the live catalog) + catalog rewards (icon/name embedded in the row).
+    const legacy = JSON.parse(claim.rewards || '[]') as { itemId?: string; quantity?: number; rewardId?: string; name?: string; icon?: string; quantity2?: number; level?: number }[]
+    const legacyItems = legacy.filter((i) => i.itemId && i.itemId !== 'undefined')
+    const catalogItems = legacy.filter((i) => !i.itemId && i.rewardId)
+    const resolved = await db.gameItem
+      .findMany({ where: { id: { in: legacyItems.map((i) => String(i.itemId)) } }, select: { id: true, name: true, emoji: true, iconType: true, iconValue: true } })
+      .then((rows) => {
+        const byId = new Map(rows.map((r) => [r.id, r]))
+        return legacyItems.map((i) => {
+          const g = byId.get(String(i.itemId))
+          return { itemId: String(i.itemId), name: g?.name ?? 'Reward', emoji: g ? (g.iconType === 'image' || g.iconType === 'png' ? (g.iconValue ?? g.emoji) : g.emoji) : '🎁', quantity: Number(i.quantity ?? 1) }
+        })
+      })
+      .catch(() => [] as { itemId: string; name: string; emoji: string; quantity: number }[])
+    const rewards = [
+      ...resolved,
+      ...catalogItems.map((i) => ({ itemId: String(i.rewardId), name: String(i.name ?? 'Reward'), emoji: String(i.icon ?? '🎁'), quantity: Number(i.quantity ?? 1) })),
+    ]
     const member = members.find((m) => m.userId === userId)
     const claimRealmDef = await db.realmDefinition.findUnique({ where: { level: claimCycle?.realmLevel ?? 1 } })
     pendingResult = {
       cycleId: claim.cycleId,
-      realmName: claimRealmDef?.name ?? 'Realm',
+      realmName: realmDisplayName(claimRealmDef?.name ?? 'Realm', season, claimCycle?.realmLevel ?? 1),
       rank: claim.rank,
       points: claimCycle ? (member?.cyclePoints ?? 0) : 0,
       threshold: claimCycle?.threshold ?? 0,
       promoted: claim.promoted,
-      rewards: resolved,
+      rewards,
     }
   }
 
   return {
-    realm: { level: part.realmLevel, name: def?.name ?? 'The Abyss', description: def?.description ?? null },
-    nextRealm: nextDef ? { level: nextDef.level, name: nextDef.name } : null,
+    realm: {
+      level: part.realmLevel,
+      name: realmDisplayName(def?.name ?? 'The Abyss', season, part.realmLevel),
+      description: def?.description ?? null,
+    },
+    nextRealm: nextDef ? { level: nextDef.level, name: realmDisplayName(nextDef.name, season, nextDef.level) } : null,
+    season: season
+      ? { seasonNumber: season.seasonNumber, name: season.name, description: season.description }
+      : { seasonNumber: ur0?.seasonNumber ?? 1, name: `Season ${ur0?.seasonNumber ?? 1}`, description: null },
     cycle: cycle ? { id: cycle.id, endsAt: cycle.endAt.toISOString(), status: cycle.status } : null,
     points: ur.cyclePoints,
     threshold,

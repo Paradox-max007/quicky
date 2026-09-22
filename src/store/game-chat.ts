@@ -18,6 +18,7 @@ import { create } from 'zustand'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { alertMentionOnce } from '@/lib/quicky/mention-alerts'
+import type { EquippedCosmetic } from '@/components/quicky/cosmetics/Cosmetics'
 
 export type GameChatMessageType = 'text' | 'sticker' | 'image' | 'voice' | 'quicky_image'
 
@@ -65,6 +66,10 @@ type GameChatState = {
   peerLastReadAt: string | null
   loadingOlder: boolean
   replyTo: GameChatMessage | null
+  // Admin-console PRD §9 — equipped cosmetics for BOTH chat participants
+  // (peer: bubbles + name decorators + avatar; mine: bubble styling).
+  peerCosmetics: EquippedCosmetic[]
+  myCosmetics: EquippedCosmetic[]
   // §6/§156: the chat screen NEVER renders a black screen — while the
   // conversation resolves we show a loading beat; on failure an error state
   // with Retry. `peerUnavailable` covers §7 (selected user gone).
@@ -166,6 +171,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
     hasMore: false,
     oldestCursor: null,
     peerLastReadAt: null,
+    peerCosmetics: [] as EquippedCosmetic[],
+    myCosmetics: [] as EquippedCosmetic[],
     loadingOlder: false,
     replyTo: null,
     opening: false,
@@ -281,6 +288,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
             peerLastReadAt: res.peerLastReadAt,
             hasMore: res.hasMore,
             oldestCursor: res.oldestCursor,
+            peerCosmetics: ((res.peer as unknown as { cosmetics?: EquippedCosmetic[] })?.cosmetics ?? []) as EquippedCosmetic[],
+            myCosmetics: ((res as unknown as { myCosmetics?: EquippedCosmetic[] }).myCosmetics ?? []) as EquippedCosmetic[],
             opening: false,
             openError: null,
           })
@@ -312,6 +321,8 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
         hasMore: false,
         oldestCursor: null,
         peerLastReadAt: null,
+        peerCosmetics: [],
+        myCosmetics: [],
         replyTo: null,
         opening: false,
         openError: null,

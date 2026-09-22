@@ -1,4 +1,4 @@
-// Quicky — REALM PROMOTION RULE (realm PRD §31-§34, §40)
+// Quicky — REALM PROMOTION RULE (realm PRD §31-§34, §40 + admin-console PRD §14)
 //
 // THE single canonical promotion rule (PRD §32: "This rule must live in one
 // server-side progression service. Do not duplicate it in frontend / API
@@ -12,7 +12,9 @@ export function eligibleForPromotion(rank: number, cyclePoints: number, threshol
 
 /**
  * The next realm level, or null at the cap. The Apex (15) has no Level 16
- * (PRD §40) — players keep competing for rewards but never promote again.
+ * (PRD §40) — instead, promotion out of The Apex completes the SEASON
+ * (admin-console PRD §14): the player rolls into season N+1 and restarts the
+ * ladder at realm 1. See realm-seasons.nextAfterPromotion.
  */
 export function nextRealmLevel(level: number): number | null {
   return level >= 15 ? null : level + 1

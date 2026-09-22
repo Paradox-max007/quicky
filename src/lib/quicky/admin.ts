@@ -40,3 +40,8 @@ export async function logAdminAction(
     })
     .catch(() => {})
 }
+
+/** Deployment environment for admin allow-list checks (admin-console PRD §3.2). */
+export function currentEnvironment(): string {
+  return process.env.VERCEL_ENV || process.env.NODE_ENV || 'development'
+}

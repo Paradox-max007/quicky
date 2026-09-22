@@ -1,21 +1,56 @@
-// Quicky — GAME STICKERS for the composer (game-chat PRD §62-§78 + Games PRD §29-§35)
+// Quicky — GAME STICKERS for the composer (game-chat PRD §62-§78 + Games PRD §29-§35
+// + admin-console PRD §13)
 // GET  /api/quicky/game-chat/stickers
 //      → active bundles (+ stickers) with MY ownership flags; the composer
 //        tray renders owned stickers and — for un-owned bundles — the unlock
-//        requirement (coins price / league / season / event / subscription).
+//        requirement (coins price / realm / season / event / subscription).
 // POST /api/quicky/game-chat/stickers { action: 'purchase' | 'claim', bundleId }
 //      · purchase (§64/§76): server-side coin deduction in ONE transaction
 //        (CoinLedger row + balance + ownership). The client NEVER grants.
 //      · claim (Games PRD §32): the SERVER evaluates the bundle's unlockType
-//        — league points / active season / active event / premium
+//        — realm result / active season / active event / premium
 //        subscription / free — the client never self-grants.
+//
+// Admin-console PRD §13.2: the obsolete "minimum league points" rule is
+// GONE (schema + backend). Realm-linked bundles unlock through the
+// FINALIZED realm result: the player's best final rank in a settled cycle
+// of the linked realm level must be within the configured winner positions
+// (1st + 2nd by default).
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-const UNLOCK_TYPES = ['free', 'coins', 'league', 'season', 'event', 'subscription']
+const UNLOCK_TYPES = ['free', 'coins', 'league', 'realm', 'season', 'event', 'subscription']
+
+/** Admin-console PRD §13 — parse the bundle's winnerPositions JSON ([1,2]). */
+function parseWinnerPositions(json: string | null): number[] {
+  if (!json) return [1, 2]
+  try {
+    const arr = JSON.parse(json) as unknown
+    if (!Array.isArray(arr)) return [1, 2]
+    const positions = arr.map((p) => Number(p)).filter((p) => Number.isInteger(p) && p >= 1 && p <= 7)
+    return positions.length ? Array.from(new Set(positions)).sort((a, b) => a - b) : []
+  } catch {
+    return [1, 2]
+  }
+}
+
+/** True when the user has a finalized top-N rank in any settled cycle of the realm. */
+async function realmQualified(userId: string, realmLevel: number, positions: number[]): Promise<boolean> {
+  if (positions.length === 0) return false
+  const claims = await db.realmRewardClaim.findMany({
+    where: { userId, rank: { in: positions } },
+    select: { cycleId: true },
+  })
+  if (claims.length === 0) return false
+  const cycles = await db.realmCycle.findMany({
+    where: { id: { in: claims.map((c) => c.cycleId) }, realmLevel, status: 'COMPLETED' },
+    select: { id: true },
+  })
+  return cycles.length > 0
+}
 
 export async function GET() {
   const me = await getCurrentUser()
@@ -35,45 +70,51 @@ export async function GET() {
     db.userGameStickerBundle.findMany({ where: { userId: me.id }, select: { bundleId: true } }),
     db.user.findUnique({
       where: { id: me.id },
-      select: { coinBalance: true, quickyScore: true, isPremium: true, premiumUntil: true, premiumTier: true },
+      select: { coinBalance: true, isPremium: true, premiumUntil: true, premiumTier: true },
     }),
   ])
   const ownedIds = new Set(owned.map((o) => o.bundleId))
 
-  // §35 — the client can show exactly WHY a set is locked and whether I can
-  // claim it right now, all server-computed (never client-guessed).
+  // §35 + admin-console §13 — the client can show exactly WHY a set is locked
+  // and whether I can claim it right now, all server-computed.
   const premiumActive =
     !!meRow?.isPremium && (!meRow?.premiumUntil || meRow.premiumUntil > new Date())
 
   return NextResponse.json({
-    bundles: bundles.map((b) => {
-      const unlockType = UNLOCK_TYPES.includes(b.unlockType) ? b.unlockType : 'coins'
-      let canClaimNow = false
-      if (!ownedIds.has(b.id)) {
-        if (unlockType === 'free') canClaimNow = true
-        else if (unlockType === 'league') canClaimNow = (meRow?.quickyScore ?? 0) >= b.minimumLeaguePoints && b.minimumLeaguePoints > 0
-        else if (unlockType === 'season') canClaimNow = !!b.seasonId
-        else if (unlockType === 'event') canClaimNow = !!b.eventId
-        else if (unlockType === 'subscription') canClaimNow = premiumActive
-      }
-      return {
-        id: b.id,
-        name: b.name,
-        description: b.description,
-        icon: b.icon,
-        unlockType,
-        league: b.league?.name ?? null,
-        season: b.season?.name ?? null,
-        event: b.event?.name ?? null,
-        priceCoins: b.priceCoins,
-        minimumLeaguePoints: b.minimumLeaguePoints,
-        purchaseEnabled: b.purchaseEnabled,
-        rewardEnabled: b.rewardEnabled,
-        owned: ownedIds.has(b.id),
-        canClaimNow,
-        stickers: b.stickers.map((s) => ({ id: s.id, name: s.name, assetUrl: s.assetUrl })),
-      }
-    }),
+    bundles: await Promise.all(
+      bundles.map(async (b) => {
+        const unlockType = UNLOCK_TYPES.includes(b.unlockType) ? b.unlockType : 'coins'
+        const winnerPositions = parseWinnerPositions(b.winnerPositions)
+        let canClaimNow = false
+        if (!ownedIds.has(b.id)) {
+          if (unlockType === 'free') canClaimNow = true
+          else if (unlockType === 'realm')
+            canClaimNow = !!b.realmLevel && (await realmQualified(me.id, b.realmLevel, winnerPositions))
+          else if (unlockType === 'league') canClaimNow = false // legacy type — no points rule anymore
+          else if (unlockType === 'season') canClaimNow = !!b.seasonId
+          else if (unlockType === 'event') canClaimNow = !!b.eventId
+          else if (unlockType === 'subscription') canClaimNow = premiumActive
+        }
+        return {
+          id: b.id,
+          name: b.name,
+          description: b.description,
+          icon: b.icon,
+          unlockType,
+          league: b.league?.name ?? null,
+          season: b.season?.name ?? null,
+          event: b.event?.name ?? null,
+          realmLevel: b.realmLevel ?? null,
+          winnerPositions,
+          priceCoins: b.priceCoins,
+          purchaseEnabled: b.purchaseEnabled,
+          rewardEnabled: b.rewardEnabled,
+          owned: ownedIds.has(b.id),
+          canClaimNow,
+          stickers: b.stickers.map((s) => ({ id: s.id, name: s.name, assetUrl: s.assetUrl })),
+        }
+      })
+    ),
     coinBalance: meRow?.coinBalance ?? 0,
   })
 }
@@ -144,15 +185,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'claim_not_available', reason: 'coins_unlock' }, { status: 400 })
   }
 
-  if (unlockType === 'league') {
-    // Legacy behaviour (§77): league reward via minimumLeaguePoints.
-    if (!bundle.rewardEnabled || bundle.minimumLeaguePoints <= 0) {
-      return NextResponse.json({ error: 'claim_not_available' }, { status: 400 })
-    }
-    const u = await db.user.findUnique({ where: { id: me.id }, select: { quickyScore: true } })
-    if (!u || u.quickyScore < bundle.minimumLeaguePoints) {
+  // Admin-console PRD §13 — realm qualification via the FINALIZED result +
+  // configured winner positions (min-league-points rule removed, §13.2).
+  if (unlockType === 'realm') {
+    if (!bundle.realmLevel) return NextResponse.json({ error: 'claim_not_available' }, { status: 400 })
+    const positions = parseWinnerPositions(bundle.winnerPositions)
+    const qualified = await realmQualified(me.id, bundle.realmLevel, positions)
+    if (!qualified) {
       return NextResponse.json(
-        { error: 'league_points_insufficient', minimumLeaguePoints: bundle.minimumLeaguePoints },
+        { error: 'realm_not_qualified', realmLevel: bundle.realmLevel, winnerPositions: positions },
         { status: 403 }
       )
     }

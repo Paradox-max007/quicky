@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
         isVerified: user.isVerified,
         quickyScore: user.quickyScore,
         onboardedAt: user.onboardedAt,
+        // Admin-console PRD §3.1 — admins land on the console directly.
+        isAdmin: user.isAdmin,
       },
       onboarded: !!user.onboardedAt,
     })

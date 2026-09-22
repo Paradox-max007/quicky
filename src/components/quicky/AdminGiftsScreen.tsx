@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Pencil, X, PackageOpen } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, X, PackageOpen, UploadCloud, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
@@ -66,6 +66,7 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
   const [giftForm, setGiftForm] = useState<GiftForm | null>(null)
   const [catForm, setCatForm] = useState<CategoryForm | null>(null)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -185,59 +186,104 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-8">
-        {/* ─── GIFT FORM (§65) ─── */}
+        {/* ─── GIFT FORM (§65 + admin-console PRD §6.1 — two fields per row,
+             image upload or URL) ─── */}
         {tab === 'gifts' && giftForm && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-4 bg-[var(--qk-card)] border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <h3 className="font-black text-sm">{giftForm.id ? 'EDIT GIFT' : 'CREATE GIFT'}</h3>
               <button onClick={() => setGiftForm(null)} className="p-1.5 rounded-full hover:bg-white/10" aria-label="Cancel"><X className="w-4 h-4" /></button>
             </div>
-            <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
-              Name
-              <input className="qk-input" value={giftForm.name} onChange={(e) => setGiftForm({ ...giftForm, name: e.target.value })} placeholder="Rose" maxLength={40} />
-            </label>
-            <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
-              Category
-              <select className="qk-input" value={giftForm.categoryId} onChange={(e) => setGiftForm({ ...giftForm, categoryId: e.target.value })}>
-                <option value="">— none —</option>
-                {categories.filter((c) => c.isActive).map((c) => (
-                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
-                ))}
-              </select>
-            </label>
+
+            {/* Two fields per row (admin-console PRD §6.1) */}
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
-                Icon (emoji or PNG URL)
-                <input className="qk-input" value={giftForm.icon} onChange={(e) => setGiftForm({ ...giftForm, icon: e.target.value })} placeholder="🌹 or https://…/rose.png" maxLength={600} />
-                <span className="text-[10px] text-white/35 font-normal">Paste an image URL (https://, data:image or /path.png) for a PNG gift icon — anything else is treated as an emoji.</span>
+                Gift name
+                <input className="qk-input" value={giftForm.name} onChange={(e) => setGiftForm({ ...giftForm, name: e.target.value })} placeholder="Rose" maxLength={40} />
               </label>
               <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
-                <span>Preview</span>
-                <span className="h-[38px] rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                Coin price
+                <input className="qk-input" type="number" min={0} value={giftForm.priceCoins} onChange={(e) => setGiftForm({ ...giftForm, priceCoins: e.target.value })} />
+              </label>
+              <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
+                Gift category
+                <select className="qk-input" value={giftForm.categoryId} onChange={(e) => setGiftForm({ ...giftForm, categoryId: e.target.value })}>
+                  <option value="">— none —</option>
+                  {categories.filter((c) => c.isActive).map((c) => (
+                    <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-white/70 flex items-center gap-2 pb-2.5">
+                <input type="checkbox" checked={giftForm.isActive} onChange={(e) => setGiftForm({ ...giftForm, isActive: e.target.checked })} className="w-4 h-4 accent-[var(--qk-accent)]" />
+                Status: {giftForm.isActive ? 'Active' : 'Hidden'}
+              </label>
+            </div>
+
+            {/* Gift image — upload from machine OR paste URL/emoji (PRD §6.1) */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col gap-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Gift image</p>
+                <span className="text-[9px] text-white/30">upload → Supabase Storage · or URL / emoji</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="h-12 w-12 shrink-0 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
                   <GiftIcon
                     icon={giftForm.icon || '🎁'}
                     iconType={/^(https?:\/\/|data:image\/|\/)/i.test(giftForm.icon.trim()) ? 'image' : 'emoji'}
-                    className="h-7 w-7 text-2xl"
-                    imgClassName="h-7 w-7"
+                    className="h-8 w-8 text-2xl"
+                    imgClassName="h-8 w-8"
                   />
                 </span>
-              </label>
-              <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
-                Price (coins)
-                <input className="qk-input" type="number" min={0} value={giftForm.priceCoins} onChange={(e) => setGiftForm({ ...giftForm, priceCoins: e.target.value })} />
-              </label>
+                <label className="flex-1 min-w-0 text-xs font-semibold text-white/60 flex flex-col gap-1">
+                  Image URL or emoji
+                  <input className="qk-input" value={giftForm.icon} onChange={(e) => setGiftForm({ ...giftForm, icon: e.target.value })} placeholder="🌹 or https://…/rose.png" maxLength={600} />
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex-1 min-w-0 cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
+                  <UploadCloud className="w-3.5 h-3.5" aria-hidden />
+                  <span className="gift-upload-label">Upload image (PNG / WebP / GIF)</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      if (file.size > 4 * 1024 * 1024) {
+                        toast.error('Images must be 4 MB or smaller')
+                        return
+                      }
+                      setUploading(true)
+                      void api.admin.assets
+                        .upload(file, 'gifts')
+                        .then((res) => {
+                          setGiftForm((f) => (f ? { ...f, icon: res.url } : f))
+                          toast.success('Gift image uploaded', { description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads' })
+                        })
+                        .catch((err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : 'Upload failed')
+                        })
+                        .finally(() => {
+                          setUploading(false)
+                          e.target.value = ''
+                        })
+                    }}
+                  />
+                </label>
+                {uploading && <RefreshCw className="w-4 h-4 animate-spin text-white/40 shrink-0" aria-hidden />}
+              </div>
+              <span className="text-[10px] text-white/35">Uploads are validated server-side and stored in Supabase Storage (bucket quicky-assets) — never as binaries on the app server.</span>
             </div>
+
             <div className="grid grid-cols-2 gap-3 items-end">
               <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
                 Display order
                 <input className="qk-input" type="number" value={giftForm.sortOrder} onChange={(e) => setGiftForm({ ...giftForm, sortOrder: e.target.value })} />
               </label>
-              <label className="text-xs font-semibold text-white/70 flex items-center gap-2 pb-2">
-                <input type="checkbox" checked={giftForm.isActive} onChange={(e) => setGiftForm({ ...giftForm, isActive: e.target.checked })} className="w-4 h-4 accent-[var(--qk-accent)]" />
-                Active
-              </label>
             </div>
-            <button onClick={saveGift} disabled={saving} className="bg-coral-gradient rounded-xl py-3 font-black text-sm active:scale-[0.98] transition-transform disabled:opacity-50">
+            <button onClick={saveGift} disabled={saving || uploading} className="bg-coral-gradient rounded-xl py-3 font-black text-sm active:scale-[0.98] transition-transform disabled:opacity-50">
               {saving ? 'Saving…' : 'Save Gift'}
             </button>
           </motion.div>

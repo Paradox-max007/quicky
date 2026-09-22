@@ -126,6 +126,9 @@ model User {
   realm             UserRealm?
   realmLedger       RealmPointLedger[]
   realmRewardClaims RealmRewardClaim[]
+  // ─── Admin console PRD — reward grants + cosmetics inventory ────────────
+  rewardGrants      UserRewardGrant[]
+  cosmetics         UserCosmetic[]
 }
 
 model Photo {
@@ -998,14 +1001,22 @@ model GameStickerBundle {
   description         String?
   icon                String   @default("✨")
   // PRD §32 — acquisition mechanism: "free" | "coins" | "league" | "season"
-  // | "event" | "subscription". The claim/purchase routes verify it SERVER-side.
+  // | "event" | "subscription" | "realm". The claim/purchase routes verify it
+  // SERVER-side. "realm" (admin-console PRD §13) = realm-linked qualification
+  // via finalized realm results + configured winner positions.
   unlockType          String   @default("coins")
   leagueId            String?
   seasonId            String?
   // PRD §32 — event-based unlock (GameEvent the bundle belongs to)
   eventId             String?
+  // Admin-console PRD §13 — realm link: when set + unlockType "realm", the
+  // bundle unlocks for players whose FINAL rank in a settled cycle of that
+  // realm level is within winnerPositions.
+  realmLevel          Int?
+  // Admin-console PRD §13 — JSON array of winning positions, e.g. "[1,2]" —
+  // 1st and 2nd place receive the sticker set by default.
+  winnerPositions     String?
   priceCoins          Int      @default(0)
-  minimumLeaguePoints Int      @default(0)
   purchaseEnabled     Boolean  @default(true)
   rewardEnabled       Boolean  @default(false)
   isActive            Boolean  @default(true)
@@ -1020,6 +1031,7 @@ model GameStickerBundle {
   owners   UserGameStickerBundle[]
 
   @@index([isActive, sortOrder])
+  @@index([unlockType, realmLevel])
 }
 
 // Games PRD §32 — platform events (e.g. "Summer Event") that can gate a
@@ -1239,6 +1251,10 @@ model UserRealm {
   userId      String   @unique
   // PERSISTENT progression level 1-15 (PRD §33 — never drops).
   realmLevel  Int      @default(1)
+  // Admin-console PRD §14 — the player's CURRENT season. Completing every
+  // realm of a season (promotion out of The Apex, level 15) rolls the player
+  // into seasonNumber + 1 and restarts the realm ladder from level 1.
+  seasonNumber Int     @default(1)
   // The cycle this user's cyclePoints belong to (NULL after settlement →
   // the next participation assigns a fresh cycle).
   currentCycleId String?
@@ -1292,4 +1308,149 @@ model RealmRewardClaim {
   @@unique([userId, cycleId])
   @@index([cycleId])
 }
+
+// ═══ ADMIN CONSOLE PRD — SEASONS, REWARD CATALOG, GRANTS, COSMETICS ════════
+// Admin-console PRD §7/§8/§12/§14: configurable seasons over the realm ladder,
+// a reusable reward catalog (coins / sticker sets / gifts / profile cosmetics
+// with 3 levels), PENDING→CLAIMED reward grants, and the cosmetics inventory.
+
+// PRD §14 — one row per season. Players progress seasonNumber+1 after
+// completing every realm of a season. Realm NAME overrides per season:
+// JSON { "1": "Custom Name", ... } — realms keep their ladder names unless a
+// season overrides them ("Different seasons can have different realm names").
+model RealmSeason {
+  id          String   @id @default(cuid())
+  seasonNumber Int     @unique
+  name        String
+  description String?
+  // JSON map of realmLevel → realm display name override (optional).
+  realmNameOverrides String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, seasonNumber])
+}
+
+// PRD §8 — reusable reward catalog, separate from realm configuration.
+// rewardType: COINS | STICKER_SET | GIFT | HAT | PROFILE_FRAME |
+//             NAME_DECORATOR | CHAT_BUBBLE
+// metadata (JSON) holds type-specific config ONLY:
+//   COINS          { "coinAmount": 1000 }
+//   STICKER_SET    { "bundleId": "..." }
+//   GIFT           { "itemId": "..." }
+//   HAT/FRAME      { "levels": { "1": "url|emoji", "2": "url", "3": { "type":
+//                    "animated-image", "url": "..." } | { "type": "frames",
+//                    "frameUrls": [...], "fps": 12, "loop": true } } }
+//   NAME_DECORATOR { "levels": {...}, "left": "👑", "right": "👑" } (emoji or
+//                    image URL per side)
+//   CHAT_BUBBLE    { "levels": {...}, "bubble": { "color": "#hex", "border":
+//                    "#hex", "textLight": true, "frameUrl": "..."? } }
+model Reward {
+  id          String   @id @default(cuid())
+  rewardType  String
+  name        String
+  description String?
+  // COMMON | RARE | EPIC | LEGENDARY
+  rarity      String   @default("COMMON")
+  // ACTIVE | DISABLED
+  status      String   @default("ACTIVE")
+  metadata    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  realmRules  RealmRewardRule[]
+  grants      UserRewardGrant[]
+  cosmetics   UserCosmetic[]
+
+  @@index([rewardType, status])
+}
+
+// PRD §10 — reward assignment to realm positions (per realm level). The
+// reusable catalog stays separate from the realm configuration.
+model RealmRewardRule {
+  id         String   @id @default(cuid())
+  realmLevel Int
+  // 1 | 2 | 3 — winner position (place limits: 1st ≤ 5, 2nd ≤ 3, 3rd ≤ 1).
+  position   Int
+  rewardId   String
+  // Cosmetic level 1-3 where applicable (PRD §9 — level as metadata).
+  level      Int      @default(1)
+  quantity   Int      @default(1)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  reward     Reward   @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  @@unique([realmLevel, position, rewardId])
+  @@index([realmLevel, isActive])
+}
+
+// PRD §12 — server-created reward grants. Settlement creates PENDING grants;
+// the user collects them through the reward popup. Only the server can
+// transition to CLAIMED (idempotent — unique key + status guard).
+//   status: PENDING | CLAIMED | EXPIRED | REVOKED
+model UserRewardGrant {
+  id           String    @id @default(cuid())
+  userId       String
+  cycleId      String?
+  realmLevel   Int       @default(1)
+  rewardId     String
+  // SNAPSHOT of the reward at grant time (PRD §21.4 — later admin edits
+  // never rewrite what was earned): { name, rewardType, icon, quantity,
+  // level, ...asset refs }.
+  rewardSnapshot String
+  quantity     Int       @default(1)
+  level        Int       @default(1)
+  status       String    @default("PENDING")
+  grantedAt    DateTime  @default(now())
+  claimedAt    DateTime?
+  expiresAt    DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reward       Reward    @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cycleId, rewardId, level])
+  @@index([userId, status])
+}
+
+// PRD §8.2/§9 — the user's unlocked cosmetics (hats / frames / name
+// decorators / chat bubbles). One equipped cosmetic per reward TYPE.
+model UserCosmetic {
+  id        String   @id @default(cuid())
+  userId    String
+  rewardId  String
+  level     Int      @default(1)
+  // REALM_REWARD | ADMIN_GRANT | PURCHASE
+  source    String   @default("REALM_REWARD")
+  equipped  Boolean  @default(false)
+  grantedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reward    Reward   @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, rewardId, level])
+  @@index([userId, equipped])
+}
+
+// Admin-console PRD §3.2 — designated test account (server-side controlled;
+// never exposes credentials to the frontend). "Open as Test User" swaps the
+// browser session server-side and is environment-restricted.
+model AdminTestAccount {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  displayName        String   @default("Quicky Tester")
+  enabled            Boolean  @default(false)
+  // Allowed environments, comma-separated: "development" | "development,staging"
+  // (dev/preview only by default — production must be opted in deliberately).
+  allowedEnvironments String  @default("development")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// Admin-console PRD — small key/value config store for console settings
+// (e.g. the "Open Web App" URL — configurable, never hardcoded to prod).
+model AdminSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 

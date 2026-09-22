@@ -17,8 +17,11 @@
 import { db } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { ensureRealmBootstrap } from './realm-config'
-import { eligibleForPromotion, nextRealmLevel } from './realm-promotion'
+import { eligibleForPromotion } from './realm-promotion'
 import { parseRewardsConfig, grantRewardItems } from './realm-rewards'
+import { nextAfterPromotion } from './realm-seasons'
+import { createPendingGrants, type GrantSpec } from '@/lib/quicky/rewards/catalog'
+import { getClient } from '@/lib/quicky/realtime'
 
 /** PRD §27/§29 — target cohort size. */
 export const COHORT_SIZE = 7
@@ -36,6 +39,62 @@ export type RealmParticipation = {
 type CycleCache = { at: number; cycles: Map<number, { id: string; threshold: number }> }
 let cycleCache: CycleCache | null = null
 const CYCLE_CACHE_MS = 30_000
+
+/** Admin-console PRD §10 — catalog block inside a cycle rewardSnapshot JSON. */
+export type CatalogSnapshot = { first: GrantSpec[]; second: GrantSpec[]; third: GrantSpec[] }
+const EMPTY_CATALOG: CatalogSnapshot = { first: [], second: [], third: [] }
+
+function parseCatalogSnapshot(json: string | null | undefined): CatalogSnapshot {
+  if (!json) return EMPTY_CATALOG
+  try {
+    const raw = JSON.parse(json) as { catalog?: Partial<Record<'first' | 'second' | 'third', GrantSpec[]>> }
+    const clean = (list: GrantSpec[] | undefined): GrantSpec[] =>
+      Array.isArray(list)
+        ? list
+            .filter((s) => s && typeof s.rewardId === 'string' && Number.isInteger(Number(s.quantity)) && Number(s.quantity) > 0)
+            .map((s) => ({ rewardId: String(s.rewardId), level: Math.min(3, Math.max(1, Math.floor(Number(s.level) || 1))), quantity: Math.floor(Number(s.quantity)) }))
+        : []
+    return { first: clean(raw.catalog?.first), second: clean(raw.catalog?.second), third: clean(raw.catalog?.third) }
+  } catch {
+    return EMPTY_CATALOG
+  }
+}
+
+/**
+ * Merge the legacy item-rewards JSON with the catalog block snapshot so a
+ * cycle creation preserves BOTH (§26/§39 — admin edits after creation never
+ * rewrite a running cycle).
+ */
+async function buildCycleRewardSnapshot(level: number, legacyJson: string | null): Promise<string | null> {
+  const rules = await db.realmRewardRule.findMany({ where: { realmLevel: level, isActive: true } }).catch(() => [])
+  if (rules.length === 0) return legacyJson
+  const spec = (position: number) =>
+    rules
+      .filter((r) => r.position === position)
+      .map((r) => ({ rewardId: r.rewardId, level: r.level, quantity: r.quantity }))
+  let base: Record<string, unknown> = {}
+  if (legacyJson) {
+    try {
+      base = JSON.parse(legacyJson) as Record<string, unknown>
+    } catch {
+      base = {}
+    }
+  }
+  return JSON.stringify({
+    ...base,
+    catalog: { first: spec(1), second: spec(2), third: spec(3) },
+  })
+}
+
+/** Instant nudge for online users: a PENDING grant exists (popup opens). */
+function notifyRewardsPending(userId: string): void {
+  const supabase = getClient()
+  if (!supabase) return
+  void supabase
+    .channel(`realm:${userId}`)
+    .send({ type: 'broadcast', event: 'rewards_pending', payload: { userId } })
+    .catch(() => {})
+}
 
 /** Active (endAt > now) cycle for a level, creating + snapshotting if absent. */
 async function getOrCreateActiveCycle(level: number, def: { promotionThreshold: number; cycleDurationDays: number; rewards: string | null }): Promise<{ id: string; threshold: number }> {
@@ -55,6 +114,8 @@ async function getOrCreateActiveCycle(level: number, def: { promotionThreshold: 
     const durationDays = Math.max(1, def.cycleDurationDays || 3)
     const startAt = new Date()
     const endAt = new Date(startAt.getTime() + durationDays * 24 * 60 * 60 * 1000)
+    // §26/§39 — snapshots at creation (legacy items + catalog rules merged).
+    const rewardSnapshot = await buildCycleRewardSnapshot(level, def.rewards)
     cycle = await db.realmCycle
       .create({
         data: {
@@ -62,9 +123,8 @@ async function getOrCreateActiveCycle(level: number, def: { promotionThreshold: 
           startAt,
           endAt,
           status: 'ACTIVE',
-          // §26/§39 — snapshots at creation.
           threshold: def.promotionThreshold,
-          rewardSnapshot: def.rewards,
+          rewardSnapshot,
           durationDays,
         },
       })
@@ -219,9 +279,21 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
 
   const cohorts = await db.realmCohort.findMany({ where: { cycleId }, select: { id: true } })
   const rewardSnapshot = parseRewardsConfig(cycle.rewardSnapshot)
+  // Admin-console PRD §10 — catalog-based rewards assigned per position,
+  // SNAPSHOTTED into the cycle at creation ("catalog" block in the JSON):
+  //   { "catalog": { "first": [{rewardId, level, quantity}], ... } }
+  const catalogRules = parseCatalogSnapshot(cycle.rewardSnapshot)
+  const rewardsByLevel = await db.realmRewardRule.findMany({
+    where: { realmLevel: cycle.realmLevel, isActive: true },
+  }).catch(() => [])
 
   for (const cohort of cohorts) {
     const members = await db.realmCohortMember.findMany({ where: { cohortId: cohort.id } })
+    // Admin-console PRD §14 — per-member season number for the rollover.
+    const userRealms = await db.userRealm
+      .findMany({ where: { userId: { in: members.map((m) => m.userId) } }, select: { userId: true, seasonNumber: true } })
+      .catch(() => [] as { userId: string; seasonNumber: number }[])
+    const userRealmByUserId = new Map<string, { userId: string; seasonNumber: number }>(userRealms.map((r) => [r.userId, r] as const))
 
     // §92 — deterministic ordering: points desc, then earlier
     // threshold-crossing, then earlier join, then stable id.
@@ -240,15 +312,30 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
       // Idempotent final-rank write (only where still NULL).
       await db.realmCohortMember.updateMany({ where: { id: member.id, finalRank: null }, data: { finalRank: rank } }).catch(() => {})
 
-      const canPromoteFromThisRealm = nextRealmLevel(cycle.realmLevel) !== null
-      const promoted = canPromoteFromThisRealm && eligibleForPromotion(rank, member.cyclePoints, cycle.threshold)
+      // Promotion at ANY level — out of The Apex (15) it becomes the SEASON
+      // rollover (admin-console PRD §14: seasonNumber+1, ladder restart).
+      const promoted = eligibleForPromotion(rank, member.cyclePoints, cycle.threshold)
 
       // §58 — a result row for EVERY member (rank always; rewards only for
       // top-3). Unique [userId, cycleId] → settlement can't double-grant.
       const place = rank === 1 ? 'first' : rank === 2 ? 'second' : rank === 3 ? 'third' : null
       const items = place ? rewardSnapshot[place] : []
+      // Admin-console PRD §10/§12 — catalog rewards for this place: resolved
+      // from the cycle snapshot first (§26/§39 — later admin edits never
+      // rewrite a running cycle), with the live rules as the source when the
+      // cycle predates the catalog system.
+      const catalogSpecs: GrantSpec[] = place
+        ? catalogRules[place]?.length
+          ? catalogRules[place]
+          : rewardsByLevel
+              .filter((r) => r.position === rank)
+              .map((r) => ({ rewardId: r.rewardId, level: r.level, quantity: r.quantity }))
+        : []
       if (rank <= 3 || promoted) {
-        const rewardsJson = JSON.stringify(items ?? [])
+        const rewardsJson = JSON.stringify([
+          ...(items ?? []).map((it) => ({ itemId: it.itemId, quantity: it.quantity })),
+          ...catalogSpecs.map((spec) => ({ ...spec, rewardCatalog: true })),
+        ])
         await db.realmRewardClaim
           .upsert({
             where: { userId_cycleId: { userId: member.userId, cycleId } },
@@ -256,18 +343,35 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
             update: {},
           })
           .catch(() => {})
-        // §59/§82 — rewards flow into the EXISTING inventory (UserItem).
+        // §59/§82 — LEGACY item rewards keep flowing into the EXISTING
+        // inventory (UserItem) directly (back-compat for live cycles).
         if (items && items.length > 0) {
           await grantRewardItems(member.userId, items)
         }
+        // Admin-console PRD §12 — catalog rewards become PENDING grants
+        // collected through the reward popup (online + offline users alike).
+        if (catalogSpecs.length > 0) {
+          const created = await createPendingGrants(member.userId, cycleId, cycle.realmLevel, catalogSpecs)
+          if (created > 0) notifyRewardsPending(member.userId)
+        }
       }
 
-      // Reset the user's live state: promoted → level up; everyone → fresh
-      // 0-point slate + no cycle (next participation assigns the new one).
-      const data: Prisma.UserRealmUpdateInput = { cyclePoints: 0, currentCycleId: null, cohortId: null }
-      if (promoted) data.realmLevel = cycle.realmLevel + 1
+      // Reset the user's live state: promoted → level up (or SEASON ROLLOVER
+      // out of The Apex, admin-console PRD §14); everyone → fresh 0-point
+      // slate + no cycle (next participation assigns the new one).
+      const data: Prisma.UserRealmUpdateManyMutationInput = { cyclePoints: 0, currentCycleId: null, cohortId: null }
+      if (promoted) {
+        const urRow = userRealmByUserId.get(member.userId)
+        const next = nextAfterPromotion(cycle.realmLevel, urRow?.seasonNumber ?? 1)
+        if (next) {
+          data.realmLevel = next.realmLevel
+          data.seasonNumber = next.seasonNumber
+        } else {
+          data.realmLevel = cycle.realmLevel + 1
+        }
+      }
       await db.userRealm
-        .updateMany({ where: { userId: member.userId }, data: data as Prisma.UserRealmUpdateManyMutationInput })
+        .updateMany({ where: { userId: member.userId }, data })
         .catch(() => {})
     }
 

@@ -1,14 +1,14 @@
 'use client'
 
-// Quicky ADMIN CONSOLE (Games PRD §55-§67)
+// Quicky ADMIN CONSOLE (Games PRD §55-§67 + admin-console PRD §3/§4)
 // A dedicated, professional administration shell — deliberately NOT the
 // Quicky user application:
 //   · dark SaaS shell: fixed left sidebar, top command bar, content area
-//   · sections: Dashboard / Games / Gifts / Stickers / How-It-Works /
-//     Live Tables / Complaints / Users / Audit Log
-//   · reuses the existing admin CRUD screens for content management and
-//     adds the NEW consoles: overview KPIs, live-table monitor, complaints
-//     queue, user management, audit trail
+//   · sections (admin-console PRD §4 IA): Dashboard / Games / How It Works /
+//     Gifts / Events / Seasons & Realms / Rewards & Cosmetics / Sticker Sets /
+//     Live Tables / Complaints / Users & Test Accounts / Audit Log / Settings
+//   · header actions: "Open Web App" (configurable URL, new tab, admin stays
+//     logged in) + optional "Open as Test User" (server-authorized swap)
 // Access was already verified SERVER-side by /admin/page.tsx (§105).
 
 import { useEffect, useMemo, useState } from 'react'
@@ -26,6 +26,10 @@ import {
   RefreshCw,
   Zap,
   Crown,
+  Settings,
+  Sparkles,
+  TestTube2,
+  CalendarRange,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/quicky/api-client'
@@ -40,6 +44,9 @@ import { AdminUsers } from './AdminUsers'
 import { AdminAudit } from './AdminAudit'
 import { AdminMultiplierEventsScreen } from './AdminMultiplierEventsScreen'
 import { AdminRealmsScreen } from './AdminRealmsScreen'
+import { AdminRewardsScreen } from './AdminRewardsScreen'
+import { AdminSeasonsScreen } from './AdminSeasonsScreen'
+import { AdminSettingsScreen } from './AdminSettingsScreen'
 
 type Section =
   | 'overview'
@@ -47,12 +54,15 @@ type Section =
   | 'gifts'
   | 'events'
   | 'realms'
+  | 'seasons'
+  | 'rewards'
   | 'stickers'
   | 'rules'
   | 'live'
   | 'complaints'
   | 'users'
   | 'audit'
+  | 'settings'
 
 const NAV: { key: Section; label: string; icon: typeof LayoutDashboard; group: string }[] = [
   { key: 'overview', label: 'Dashboard', icon: LayoutDashboard, group: 'Console' },
@@ -61,15 +71,44 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard; group: s
   { key: 'gifts', label: 'Gifts', icon: Gift, group: 'Content' },
   { key: 'events', label: 'Events', icon: Zap, group: 'Content' },
   { key: 'realms', label: 'Realms', icon: Crown, group: 'Content' },
-  { key: 'stickers', label: 'Stickers', icon: Sticker, group: 'Content' },
+  { key: 'seasons', label: 'Seasons', icon: CalendarRange, group: 'Content' },
+  { key: 'rewards', label: 'Rewards & Cosmetics', icon: Sparkles, group: 'Content' },
+  { key: 'stickers', label: 'Sticker Sets', icon: Sticker, group: 'Content' },
   { key: 'live', label: 'Live Tables', icon: Radio, group: 'Operations' },
   { key: 'complaints', label: 'Complaints', icon: Flag, group: 'Operations' },
   { key: 'users', label: 'Users', icon: Users, group: 'Operations' },
   { key: 'audit', label: 'Audit Log', icon: History, group: 'Operations' },
+  { key: 'settings', label: 'Settings', icon: Settings, group: 'Settings' },
 ]
 
 export function AdminConsole({ adminName }: { adminName: string }) {
   const [section, setSection] = useState<Section>('overview')
+  const [webAppUrl, setWebAppUrl] = useState('')
+  const [testUserAvailable, setTestUserAvailable] = useState(false)
+
+  // Admin-console PRD §3.2 — fetch the console settings once for the header
+  // actions (Open Web App URL + test-user availability).
+  useEffect(() => {
+    let cancelled = false
+    void api.admin.consoleSettings
+      .get()
+      .then((res) => {
+        if (cancelled) return
+        setWebAppUrl(String(res?.settings?.webAppUrl ?? ''))
+      })
+      .catch(() => {})
+    void api.admin.testAccount
+      .get()
+      .then((res) => {
+        if (cancelled) return
+        const ta = res?.testAccount as { enabled?: boolean; environmentAllowed?: boolean } | null
+        setTestUserAvailable(!!ta?.enabled && !!ta?.environmentAllowed)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const groups = useMemo(() => {
     const g: Record<string, typeof NAV> = {}
@@ -105,8 +144,8 @@ export function AdminConsole({ adminName }: { adminName: string }) {
                   )}
                   data-testid={`admin-nav-${key}`}
                 >
-                  <Icon className="w-4 h-4" aria-hidden />
-                  {label}
+                  <Icon className="w-4 h-4 shrink-0" aria-hidden />
+                  <span className="truncate">{label}</span>
                 </button>
               ))}
             </div>
@@ -125,7 +164,7 @@ export function AdminConsole({ adminName }: { adminName: string }) {
 
       {/* ═══ Main column ═══ */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Command/header bar (§56) */}
+        {/* Command/header bar (§56 + admin-console PRD §3.2) */}
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/8 bg-[#0B0E14]/95 backdrop-blur px-4 md:px-6 py-3">
           {/* Mobile section switcher */}
           <div className="md:hidden flex-1 -mx-1 overflow-x-auto no-scrollbar">
@@ -147,8 +186,33 @@ export function AdminConsole({ adminName }: { adminName: string }) {
           <h2 className="hidden md:block text-base font-black tracking-tight">
             {NAV.find((n) => n.key === section)?.label}
           </h2>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="hidden sm:inline text-xs text-white/40">
+          <div className="ml-auto flex items-center gap-2.5">
+            {/* Open Web App — configurable URL, new tab, admin stays signed in */}
+            <a
+              href={webAppUrl || '/'}
+              target="_blank"
+              rel="noreferrer"
+              className="hidden sm:flex items-center gap-1.5 rounded-full border border-[var(--qk-accent)]/40 bg-[var(--qk-accent)]/10 px-3 py-1.5 text-[11px] font-bold text-[var(--qk-accent)] hover:bg-[var(--qk-accent)]/20 transition-colors"
+              title="Open the user-facing Quicky app in a new tab (you stay signed in here)"
+              data-testid="admin-open-web-app"
+            >
+              <ExternalLink className="w-3.5 h-3.5" aria-hidden />
+              Open Web App
+            </a>
+            {/* Open as Test User — server-authorized session swap */}
+            {testUserAvailable && (
+              <a
+                href="/api/quicky/admin/test-account/open"
+                target="_blank"
+                rel="noreferrer"
+                className="hidden sm:flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-300 hover:bg-amber-500/20 transition-colors"
+                title="Open the app as the designated test user — this browser's admin session is replaced server-side"
+              >
+                <TestTube2 className="w-3.5 h-3.5" aria-hidden />
+                Test User
+              </a>
+            )}
+            <span className="hidden lg:inline text-xs text-white/40">
               Signed in as <span className="font-bold text-white/70">{adminName}</span>
             </span>
             <span className="flex items-center gap-1.5 rounded-full bg-[#30D158]/10 border border-[#30D158]/25 px-2.5 py-1 text-[10px] font-black tracking-wider text-[#30D158]">
@@ -165,12 +229,15 @@ export function AdminConsole({ adminName }: { adminName: string }) {
           {section === 'gifts' && <AdminGiftsScreen onBack={() => setSection('overview')} />}
           {section === 'events' && <AdminMultiplierEventsScreen />}
           {section === 'realms' && <AdminRealmsScreen />}
+          {section === 'seasons' && <AdminSeasonsScreen />}
+          {section === 'rewards' && <AdminRewardsScreen />}
           {section === 'stickers' && <AdminStickersScreen onBack={() => setSection('overview')} />}
           {section === 'rules' && <AdminRulesScreen onBack={() => setSection('overview')} />}
           {section === 'live' && <AdminLiveTables />}
           {section === 'complaints' && <AdminComplaints />}
           {section === 'users' && <AdminUsers />}
           {section === 'audit' && <AdminAudit />}
+          {section === 'settings' && <AdminSettingsScreen />}
         </main>
       </div>
     </div>

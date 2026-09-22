@@ -10,7 +10,7 @@
 //     a cohort drill-down (live standings) and a manual settlement trigger
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Crown, RefreshCw, ChevronDown, ChevronLeft, Play } from 'lucide-react'
+import { Crown, RefreshCw, ChevronDown, ChevronLeft, Play, Sparkles } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -28,6 +28,9 @@ type RealmDef = {
 }
 
 type ItemOption = { id: string; name: string; emoji: string; iconType: string; iconValue: string | null }
+
+type CatalogRule = { id?: string; realmLevel?: number; position: number; rewardId: string; level: number; quantity: number }
+type CatalogReward = { id: string; rewardType: string; name: string; rarity: string; metadata: { coinAmount?: number; itemId?: string; bundleId?: string; levels?: Record<string, unknown> } }
 
 type CycleRow = {
   level: number
@@ -74,9 +77,14 @@ const PLACE_LIMITS: { key: 'first' | 'second' | 'third'; label: string; limit: n
   { key: 'third', label: '3rd place (max 1 item)', limit: 1 },
 ]
 
+const COSMETIC_TYPES = ['HAT', 'PROFILE_FRAME', 'NAME_DECORATOR', 'CHAT_BUBBLE']
+
 export function AdminRealmsScreen() {
   const [realms, setRealms] = useState<RealmDef[]>([])
   const [itemOptions, setItemOptions] = useState<ItemOption[]>([])
+  const [catalogRewards, setCatalogRewards] = useState<CatalogReward[]>([])
+  const [catalogRules, setCatalogRules] = useState<CatalogRule[]>([])
+  const [catalogDraft, setCatalogDraft] = useState<CatalogRule[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [totals, setTotals] = useState<{ activeCycles: number; cohorts: number; players: number } | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -96,11 +104,17 @@ export function AdminRealmsScreen() {
   const load = useCallback(async () => {
     setFailed(false)
     try {
-      const [configRes, cyclesRes] = await Promise.all([api.admin.realmConfig.list(), api.admin.realmCycles.dashboard()])
+      const [configRes, cyclesRes, rulesRes] = await Promise.all([
+        api.admin.realmConfig.list(),
+        api.admin.realmCycles.dashboard(),
+        api.admin.realmRewards.list().catch(() => null),
+      ])
       setRealms((configRes?.realms ?? []) as RealmDef[])
       setItemOptions((configRes?.itemOptions ?? []) as ItemOption[])
       setCycles((cyclesRes?.realms ?? []) as CycleRow[])
       setTotals(cyclesRes?.totals ?? null)
+      setCatalogRewards((rulesRes?.rewards ?? []) as CatalogReward[])
+      setCatalogRules((rulesRes?.rules ?? []) as CatalogRule[])
     } catch {
       setFailed(true)
     } finally {
@@ -120,6 +134,11 @@ export function AdminRealmsScreen() {
     setDurationDraft(String(r.cycleDurationDays))
     setActiveDraft(r.isActive)
     setRewardsDraft(parseRewards(r.rewards))
+    setCatalogDraft(
+      catalogRules
+        .filter((rule) => rule.realmLevel === r.level)
+        .map((rule) => ({ position: rule.position, rewardId: rule.rewardId, level: rule.level, quantity: rule.quantity }))
+    )
   }
 
   const save = async (level: number) => {
@@ -135,6 +154,12 @@ export function AdminRealmsScreen() {
     setSaving(true)
     try {
       await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, rewards: rewardsDraft })
+      if (rewardFor === level) {
+        await api.admin.realmRewards.set(
+          level,
+          catalogDraft.map((rule) => ({ position: rule.position, rewardId: rule.rewardId, level: rule.level, quantity: rule.quantity }))
+        )
+      }
       toast.success(`${realms.find((r) => r.level === level)?.name ?? 'Realm'} saved — applies to future cycles`)
       setEditing(null)
       await load()
@@ -338,7 +363,96 @@ export function AdminRealmsScreen() {
                           )}
                         </div>
                       ))}
-                      <p className="text-[10px] text-white/30">Rewards are granted into the existing player inventory at settlement. Cycle-start snapshots keep history stable.</p>
+                      <p className="text-[10px] text-white/30">Legacy gift-item rewards are granted into the existing player inventory at settlement. Cycle-start snapshots keep history stable.</p>
+
+                      {/* Admin-console PRD §10 — catalog rewards (claimable via the reward popup) */}
+                      <div className="mt-2.5 rounded-xl border border-[var(--qk-accent)]/20 bg-[var(--qk-accent)]/[0.04] p-3 flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--qk-accent)]">
+                            <Sparkles className="w-3 h-3" aria-hidden /> Catalog rewards — reward popup collection
+                          </p>
+                          <span className="text-[9px] text-white/30">from the Rewards &amp; Cosmetics catalog</span>
+                        </div>
+                        {PLACE_LIMITS.map((place) => {
+                          const idx = place.key === 'first' ? 1 : place.key === 'second' ? 2 : 3
+                          const draft = catalogDraft.filter((c) => c.position === idx)
+                          return (
+                            <div key={`cat-${place.key}`}>
+                              <p className="text-[10px] font-bold text-white/50 mb-1">{place.label}</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {draft.map((rule, i) => {
+                                  const reward = catalogRewards.find((r) => r.id === rule.rewardId)
+                                  const isCosmetic = COSMETIC_TYPES.includes(reward?.rewardType ?? '')
+                                  return (
+                                    <span key={`${rule.rewardId}-${rule.level}-${i}`} className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[10.5px] font-bold">
+                                      {reward?.name ?? 'Reward'}
+                                      {isCosmetic && <span className="text-[9px] text-[var(--qk-accent)]">L{rule.level}</span>}
+                                      <span style={{ color: 'var(--qk-gold)' }}>×{rule.quantity}</span>
+                                      {isCosmetic && (
+                                        <select
+                                          value={rule.level}
+                                          onChange={(e) => {
+                                            const next = [...catalogDraft]
+                                            const at = catalogDraft.indexOf(rule)
+                                            next[at] = { ...rule, level: Math.min(3, Math.max(1, Number(e.target.value) || 1)) }
+                                            setCatalogDraft(next)
+                                          }}
+                                          className="rounded bg-black/40 border border-white/10 text-[9px] text-white/70 px-1 py-0 outline-none"
+                                          aria-label="Reward level"
+                                        >
+                                          <option value={1}>L1</option>
+                                          <option value={2}>L2</option>
+                                          <option value={3}>L3</option>
+                                        </select>
+                                      )}
+                                      <input
+                                        value={rule.quantity}
+                                        onChange={(e) => {
+                                          const qty = Math.max(1, Math.floor(Number(e.target.value.replace(/[^0-9]/g, '')) || 1))
+                                          const next = [...catalogDraft]
+                                          const at = catalogDraft.indexOf(rule)
+                                          next[at] = { ...rule, quantity: qty }
+                                          setCatalogDraft(next)
+                                        }}
+                                        inputMode="numeric"
+                                        className="w-12 rounded bg-black/40 border border-white/10 px-1 py-0.5 text-[10px] font-bold tabular-nums text-white outline-none"
+                                        aria-label={`Quantity for ${reward?.name ?? 'reward'}`}
+                                      />
+                                      <button
+                                        onClick={() => setCatalogDraft(catalogDraft.filter((c) => c !== rule))}
+                                        className="text-white/40 hover:text-rose-300"
+                                        aria-label="Remove catalog reward"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  )
+                                })}
+                                {draft.length === 0 && <span className="text-[10px] text-white/30 font-semibold">No catalog reward</span>}
+                                {draft.length < place.limit && (
+                                  <select
+                                    value=""
+                                    onChange={(e) => {
+                                      const rewardId = e.target.value
+                                      if (!rewardId) return
+                                      setCatalogDraft([...catalogDraft, { position: idx, rewardId, level: 1, quantity: 1 }])
+                                    }}
+                                    className="rounded-full bg-[#101623] border border-dashed border-white/20 px-2.5 py-1 text-[10.5px] font-bold text-white/60 outline-none"
+                                  >
+                                    <option value="">+ Add catalog reward…</option>
+                                    {catalogRewards.map((r) => (
+                                      <option key={r.id} value={r.id}>
+                                        {r.rewardType.replace('_', ' ')} · {r.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <p className="text-[10px] text-white/30">Catalog rewards become PENDING grants at settlement — players collect them through the reward popup (online instantly, offline on next session).</p>
+                      </div>
                     </div>
 
                     {cyc && (

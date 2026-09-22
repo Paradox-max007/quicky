@@ -45,6 +45,13 @@ export function AuthScreen() {
       const res = await api.auth.verify(phone, code)
       if (res.ok && res.user) {
         setUser(res.user)
+        // Admin-console PRD §3.1 — an authenticated admin goes STRAIGHT to
+        // the admin console; the user-facing app is never rendered as an
+        // intermediate step. /admin re-verifies the role server-side.
+        if ((res.user as { isAdmin?: boolean })?.isAdmin) {
+          window.location.href = '/admin'
+          return
+        }
         if (res.onboarded) {
           setView('discovery')
           toast.success(`Welcome back, ${res.user.name ?? 'there'}`)

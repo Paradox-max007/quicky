@@ -38,31 +38,63 @@ type RuleForm = {
   isActive: boolean
 }
 
+type GameOption = { slug: string; name: string; isPlayable: boolean }
+
 const EMPTY_RULE: RuleForm = { title: '', description: '', icon: '🎲', sortOrder: '99', isActive: true }
+
+/** gameType keys follow the GameRule rows; the playable games map to their
+ * landing-screen slug, every other game to its slug as-is. */
+function gameTypeForSlug(slug: string): string {
+  if (slug === 'spin-the-bottle') return 'spin_the_bottle'
+  return slug.replace(/-/g, '_')
+}
 
 export function AdminRulesScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
   const [rules, setRules] = useState<AdminRule[]>([])
+  const [games, setGames] = useState<GameOption[]>([])
+  const [gameSlug, setGameSlug] = useState('spin-the-bottle')
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<RuleForm | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await api.admin.gameRules.list()
-      setRules(res.rules ?? [])
-    } catch (e: any) {
-      toast.error(e.message ?? 'Failed to load rules')
-    } finally {
-      setLoading(false)
+  const gameType = gameTypeForSlug(gameSlug)
+
+  // Games list for the selector (admin-console PRD §5 — list ALL registered
+  // games; each has independent instructions).
+  useEffect(() => {
+    let cancelled = false
+    void api.admin.games
+      .list()
+      .then((res) => {
+        if (cancelled) return
+        setGames(((res?.games ?? []) as GameOption[]).map((g) => ({ slug: g.slug, name: g.name, isPlayable: !!g.isPlayable })))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
     }
   }, [])
 
+  const load = useCallback(
+    async (type?: string) => {
+      setLoading(true)
+      try {
+        const res = await api.admin.gameRules.list(type ?? gameType)
+        setRules(res.rules ?? [])
+      } catch (e: any) {
+        toast.error(e.message ?? 'Failed to load rules')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [gameType]
+  )
+
   useEffect(() => {
-    void load()
-  }, [load])
+    void load(gameType)
+  }, [load, gameType])
 
   const save = async () => {
     if (!form || saving) return
@@ -70,6 +102,7 @@ export function AdminRulesScreen({ onBack }: { onBack?: () => void } = {}) {
     if (!form.description.trim()) return toast.error('Description is required')
     setSaving(true)
     const data = {
+      gameType,
       title: form.title.trim(),
       description: form.description.trim(),
       icon: form.icon.trim() || '🎲',
@@ -81,7 +114,7 @@ export function AdminRulesScreen({ onBack }: { onBack?: () => void } = {}) {
       else await api.admin.gameRules.create(data)
       toast.success(form.id ? 'Rule updated' : 'Rule created')
       setForm(null)
-      await load()
+      await load(gameType)
     } catch (e: any) {
       toast.error(e.message ?? 'Save failed')
     } finally {
@@ -115,9 +148,9 @@ export function AdminRulesScreen({ onBack }: { onBack?: () => void } = {}) {
         <button onClick={() => (onBack ? onBack() : setView('settings'))} className="p-2 rounded-full hover:bg-white/10" aria-label="Back to Settings">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold leading-none">Admin · How It Works</h1>
-          <p className="text-[11px] text-white/40 mt-1">Spin the Bottle rules shown on the Play Now screen</p>
+          <p className="text-[11px] text-white/40 mt-1">Per-game rules shown on the game&apos;s main screen</p>
         </div>
         <button
           onClick={() => setForm(EMPTY_RULE)}
@@ -128,6 +161,33 @@ export function AdminRulesScreen({ onBack }: { onBack?: () => void } = {}) {
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-8">
+        {/* ─── GAME SELECTOR (admin-console PRD §5 — per-game content) ─── */}
+        <div className="mb-4 bg-[var(--qk-card)] border border-white/10 rounded-2xl p-3 flex items-center gap-3">
+          <label className="text-xs font-semibold text-white/60 shrink-0">Game</label>
+          <select
+            value={gameSlug}
+            onChange={(e) => {
+              setGameSlug(e.target.value)
+              setForm(null)
+            }}
+            className="qk-input flex-1 min-w-0"
+          >
+            {(games.length > 0
+              ? games
+              : [
+                  { slug: 'spin-the-bottle', name: 'Spin the Bottle', isPlayable: true },
+                  { slug: 'ludo', name: 'Quicky Ludo', isPlayable: true },
+                ]
+            ).map((g) => (
+              <option key={g.slug} value={g.slug}>
+                {g.name}
+                {g.isPlayable ? '' : ' (coming soon)'}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] text-white/35 shrink-0 hidden sm:block">gameType: {gameType}</span>
+        </div>
+
         {/* ─── RULE FORM (§48) ─── */}
         {form && (
           <motion.div

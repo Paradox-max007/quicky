@@ -40,6 +40,7 @@ export function LudoLanding({
   const user = useQuickyStore((s) => s.user)
   const [game, setGame] = useState<GameDef | null>(null)
   const [stats, setStats] = useState<LudoLandingStats | null>(null)
+  const [rules, setRules] = useState<{ id: string; title: string; description: string; icon: string }[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [joining, setJoining] = useState(false)
   const [coinStoreOpen, setCoinStoreOpen] = useState(false)
@@ -70,11 +71,18 @@ export function LudoLanding({
     ;(async () => {
       setFailed(false)
       try {
-        const [s, cat] = await Promise.all([api.ludo.landing(), api.games.list()])
+        // Admin-console PRD §5 — ludo's How-It-Works steps come from the DB
+        // (admin-managed, per game); the built-in copy is the fallback.
+        const [s, cat, rulesRes] = await Promise.all([
+          api.ludo.landing(),
+          api.games.list(),
+          api.games.rules('ludo').catch(() => null),
+        ])
         if (!cancelled) {
           setStats(s)
           setCoinBalance(s?.coins ?? 0)
           setGame(cat.games?.find((g: GameDef) => g.slug === 'ludo') ?? null)
+          setRules((rulesRes?.rules ?? null) as { id: string; title: string; description: string; icon: string }[] | null)
         }
       } catch {
         if (!cancelled) setFailed(true)
@@ -107,7 +115,7 @@ export function LudoLanding({
   }
 
   const avatar = user?.photos?.find((p: any) => p.isPrimary)?.url ?? user?.photos?.[0]?.url
-  const config = buildLudoPrimaryConfig(game, stats)
+  const config = buildLudoPrimaryConfig(game, stats, rules)
 
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">

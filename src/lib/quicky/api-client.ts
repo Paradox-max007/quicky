@@ -204,6 +204,11 @@ export const api = {
     /** Games PRD §39 — near-realtime active-player counts per game slug. */
     activePlayers: () =>
       jsonFetch<{ counts: Record<string, number>; serverNow: number }>('/api/quicky/games/active-players'),
+    /** Admin-console PRD §5 — per-game "How It Works" rules (public read). */
+    rules: (gameType?: string) =>
+      jsonFetch<{ rules: { id: string; title: string; description: string; icon: string; sortOrder: number }[]; gameType: string }>(
+        `/api/quicky/games/spin-bottle/rules${gameType ? `?gameType=${encodeURIComponent(gameType)}` : ''}`
+      ),
   },
   // ── Quicky Ludo (Ludo PRD §48/§49/§81) — the client NEVER sends dice,
   // positions, winners or turns: only actionIds + a token id. ───────────────
@@ -346,9 +351,10 @@ export const api = {
         body: JSON.stringify({ roomId }),
       }),
     // Lifecycle PRD §50: active "How It Works" rules, admin-defined order.
-    rules: () =>
-      jsonFetch<{ rules: { id: string; title: string; description: string; icon: string; sortOrder: number }[] }>(
-        '/api/quicky/games/spin-bottle/rules'
+    // Admin-console PRD §5 — per-game (?gameType= defaults to spin).
+    rules: (gameType?: string) =>
+      jsonFetch<{ rules: { id: string; title: string; description: string; icon: string; sortOrder: number }[]; gameType: string }>(
+        `/api/quicky/games/spin-bottle/rules${gameType ? `?gameType=${encodeURIComponent(gameType)}` : ''}`
       ),
     leave: (roomId: string) =>
       jsonFetch('/api/quicky/games/spin-bottle/leave', {
@@ -475,10 +481,13 @@ export const api = {
           body: JSON.stringify({ kind, id }),
         }),
     },
-    // Lifecycle PRD §44/§48: "How It Works" rules CRUD (admin-managed).
+    // Lifecycle PRD §44/§48: "How It Works" rules CRUD (admin-managed);
+    // admin-console PRD §5 — per-game via ?gameType=.
     gameRules: {
-      list: () =>
-        jsonFetch<{ rules: any[] }>('/api/quicky/admin/game-rules'),
+      list: (gameType?: string) =>
+        jsonFetch<{ rules: any[]; gameType: string }>(
+          `/api/quicky/admin/game-rules${gameType ? `?gameType=${encodeURIComponent(gameType)}` : ''}`
+        ),
       create: (data: Record<string, unknown>) =>
         jsonFetch<{ ok: boolean; rule: any }>('/api/quicky/admin/game-rules', {
           method: 'POST',
@@ -606,6 +615,113 @@ export const api = {
         jsonFetch<{ cohort: any }>(`/api/quicky/admin/realm-cycles?cohortId=${cohortId}`),
       settle: () =>
         jsonFetch<{ ok: boolean; settled: number }>('/api/quicky/admin/realm-cycles?settle=1'),
+    },
+    // ─── ADMIN CONSOLE PRD — assets / reward catalog / seasons / test account
+    assets: {
+      info: () =>
+        jsonFetch<{ ok: boolean; folders: string[]; storage: { mode: string; bucket: string; configured: boolean } }>(
+          '/api/quicky/admin/assets/upload'
+        ),
+      /** XHR upload with real progress (admin-console PRD §18.1 ImageUploader). */
+      upload: (
+        file: File | Blob,
+        folder: string,
+        onProgress?: (pct: number) => void
+      ): Promise<{ ok: boolean; url: string; path: string; animated: boolean; storage: { mode: string; bucket: string; configured: boolean } }> =>
+        new Promise((resolve, reject) => {
+          const fd = new FormData()
+          fd.append('file', file, file instanceof File ? file.name : 'asset.png')
+          fd.append('folder', folder)
+          const xhr = new XMLHttpRequest()
+          xhr.open('POST', '/api/quicky/admin/assets/upload')
+          xhr.withCredentials = true
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+          }
+          xhr.onload = () => {
+            let data: any = {}
+            try { data = JSON.parse(xhr.responseText) } catch {}
+            if (xhr.status >= 200 && xhr.status < 300) resolve(data)
+            else reject(Object.assign(new Error(data?.message || data?.error || `Upload failed (${xhr.status})`), { status: xhr.status, body: data }))
+          }
+          xhr.onerror = () => reject(new Error('Upload failed — network error'))
+          xhr.onabort = () => reject(new Error('Upload cancelled'))
+          xhr.send(fd)
+        }),
+    },
+    rewards: {
+      list: () =>
+        jsonFetch<{ rewards: any[]; rewardTypes: string[]; rarities: string[] }>('/api/quicky/admin/rewards'),
+      create: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; reward: any }>('/api/quicky/admin/rewards', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      update: (id: string, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; reward: any }>('/api/quicky/admin/rewards', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, data }),
+        }),
+      remove: (id: string) =>
+        jsonFetch<{ ok: boolean; disabled: boolean }>('/api/quicky/admin/rewards', {
+          method: 'DELETE',
+          body: JSON.stringify({ id }),
+        }),
+    },
+    seasons: {
+      list: () =>
+        jsonFetch<{ seasons: any[] }>('/api/quicky/admin/seasons'),
+      create: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; season: any }>('/api/quicky/admin/seasons', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      update: (id: string, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/seasons', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, data }),
+        }),
+      remove: (id: string) =>
+        jsonFetch<{ ok: boolean; disabled: boolean }>('/api/quicky/admin/seasons', {
+          method: 'DELETE',
+          body: JSON.stringify({ id }),
+        }),
+    },
+    realmRewards: {
+      list: () =>
+        jsonFetch<{ rules: any[]; rewards: any[]; placeLimits: Record<string, number> }>('/api/quicky/admin/realm-rewards'),
+      set: (realmLevel: number, rules: { position: number; rewardId: string; level: number; quantity: number }[]) =>
+        jsonFetch<{ ok: boolean; realmLevel: number; count: number }>('/api/quicky/admin/realm-rewards', {
+          method: 'PUT',
+          body: JSON.stringify({ realmLevel, rules }),
+        }),
+    },
+    testAccount: {
+      get: () =>
+        jsonFetch<{ testAccount: any; environment: string }>('/api/quicky/admin/test-account'),
+      save: (data: { userId: string; displayName?: string; enabled: boolean; allowedEnvironments?: string }) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/test-account', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'save', ...data }),
+        }),
+      reset: (userId: string, kind: 'reset-progress' | 'reset-inventory') =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/test-account', {
+          method: 'POST',
+          body: JSON.stringify({ action: kind, userId }),
+        }),
+    },
+    consoleSettings: {
+      get: () =>
+        jsonFetch<{
+          settings: { webAppUrl: string }
+          storage: { mode: string; bucket: string; configured: boolean }
+          stats: any
+        }>('/api/quicky/admin/console-settings'),
+      set: (key: string, value: string) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/console-settings', {
+          method: 'POST',
+          body: JSON.stringify({ key, value }),
+        }),
     },
   },
   // ─── GAME CHAT (game-chat PRD §7+) — private player-to-player messaging,
@@ -795,5 +911,22 @@ export const api = {
       }),
     activeEvents: () =>
       jsonFetch<{ multiplier: number; multiplierEvent: any; realmCycle: any }>('/api/quicky/events/active'),
+  },
+  // ─── REWARDS (admin-console PRD §12) — popup collection + cosmetics ──
+  rewards: {
+    pending: () =>
+      jsonFetch<{ grants: any[]; cosmetics: any[] }>('/api/quicky/rewards/pending'),
+    claim: () =>
+      jsonFetch<{ ok: boolean; claimed: any[]; coinBalance: number; cosmetics: any[] }>('/api/quicky/rewards/claim', {
+        method: 'POST',
+      }),
+    equip: (rewardId: string, level: number, equip: boolean) =>
+      jsonFetch<{ ok: boolean; cosmetics: any[] }>('/api/quicky/rewards/equip', {
+        method: 'POST',
+        body: JSON.stringify({ rewardId, level, equip }),
+      }),
+  },
+  cosmetics: {
+    list: () => jsonFetch<{ cosmetics: any[] }>('/api/quicky/cosmetics'),
   },
 }

@@ -42,7 +42,6 @@ const BUNDLE = {
   description: 'Five playful starters for your game chats.',
   icon: '✨',
   priceCoins: 100,
-  minimumLeaguePoints: 0,
   purchaseEnabled: true,
   rewardEnabled: false,
 }

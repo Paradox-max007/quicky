@@ -49,7 +49,9 @@ import { GiftFlyLayer } from './gift-fly/GiftFlyLayer'
 import { GiftBackSheet } from './gift-back/GiftBackSheet'
 import { RealmDetails } from './realm/RealmDetails'
 import { RealmResult } from './realm/RealmResult'
+import { RewardCollectPopup } from './rewards/RewardCollectPopup'
 import { useRealmStore } from '@/store/realm'
+import { useRewardsStore, subscribeRewardsChannel, resetRewardsChannel } from '@/store/rewards'
 import { primeMentionSound } from '@/lib/quicky/mention-sound'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
@@ -200,6 +202,19 @@ export function AppRoot() {
   useEffect(() => {
     if (!user?.id) return
     void useRealmStore.getState().refresh()
+  }, [user?.id])
+
+  // ─── Rewards collection (admin-console PRD §12) ──────────────────────────
+  // Pending grants are fetched on EVERY session start — offline users see
+  // the popup the moment they return (§12.2). The rewards_pending broadcast
+  // from settlement re-fetches instantly for online users (§12.1).
+  useEffect(() => {
+    if (!user?.id) {
+      resetRewardsChannel()
+      return
+    }
+    subscribeRewardsChannel(user.id)
+    void useRewardsStore.getState().refresh()
   }, [user?.id])
 
   // ─── Mention notification sound unlock (room-chat-settings revision) ────
@@ -548,6 +563,10 @@ export function AppRoot() {
           result modal (shown once per completed cycle). */}
       <RealmDetails />
       <RealmResult />
+
+      {/* Admin-console PRD §12 — the reward-collection popup: pending grants
+          from settled realm cycles (online push + offline return). */}
+      <RewardCollectPopup />
 
       {/* Toaster — rendered inside the app container so it's scoped to the
           app on desktop and respects safe-area on mobile.
