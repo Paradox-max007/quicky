@@ -3,22 +3,26 @@
 // Quicky — SHARED sticker picker: two tabs over the user-facing sticker
 // catalog (`/api/quicky/game-chat/stickers`):
 //
-//   · My Stickers — every sticker inside bundles the user owns; tapping one
-//     fires onPick (the parent decides how it's sent: game chat message,
-//     room-chat message, dating-chat message…).
+//   · My Stickers — RECENTLY USED first (device-local memory of what the
+//     user actually sends), then every sticker inside bundles the user
+//     owns; tapping one fires onPick (the parent decides how it's sent:
+//     game chat message, room-chat message, dating-chat message…).
 //   · Sticker Shop — bundles available for purchase with coins (🪙) or a
 //     claimable unlock (free / realm win / season / event / subscription).
-//     Purchase + claim run through the SAME server-validated route — the
-//     client never grants itself anything (§64/§76/§32).
+//     Every card expands into a full sticker PREVIEW grid so buyers can
+//     inspect the whole set before spending. Purchase + claim run through
+//     the SAME server-validated route — the client never grants itself
+//     anything (§64/§76/§32).
 //
 // Used by three surfaces: the game-chat composer tray, the room-chat
 // composer tray (spin bottle + ludo) and the dating personal-chat sheet —
 // web AND Capacitor (same React tree). All colors follow the user's app
 // theme through --qk-* tokens.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Coins, Lock, Sparkles, Check } from 'lucide-react'
+import { Clock, Coins, Lock, Sparkles, Check, ChevronDown } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
+import { getRecentStickers, pushRecentSticker, type RecentSticker } from '@/lib/quicky/recent-stickers'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -123,6 +127,8 @@ export function StickerPicker({
   const [bundles, setBundles] = useState<StickerCatalogBundle[] | null>(null)
   const [coinBalance, setCoinBalance] = useState<number | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [recent, setRecent] = useState<RecentSticker[]>([])
+  const [expandedShopId, setExpandedShopId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -138,8 +144,28 @@ export function StickerPicker({
     if (bundles === null) void load()
   }, [bundles, load])
 
+  // Device-local recency memory — refreshed every time the picker mounts
+  // (each tray/sheet open is a fresh mount) and re-ordered after every pick.
+  useEffect(() => {
+    setRecent(getRecentStickers())
+  }, [])
+
   const owned = (bundles ?? []).filter((b) => b.owned)
   const shop = (bundles ?? []).filter((b) => !b.owned)
+
+  // Recents only surface stickers the user still owns — ownership (not
+  // history) decides what can actually be sent.
+  const ownedIds = useMemo(() => new Set(owned.flatMap((b) => b.stickers.map((s) => s.id))), [owned])
+  const recentOwned = useMemo(
+    () => recent.filter((s) => ownedIds.has(s.id)).slice(0, 10),
+    [recent, ownedIds]
+  )
+
+  /** Sends from ANY surface pass through here — one place to record recency. */
+  const pick = (s: PickableSticker) => {
+    setRecent(pushRecentSticker({ id: s.id, name: s.name, assetUrl: s.assetUrl }))
+    onPick?.(s)
+  }
 
   const buyOrClaim = async (b: StickerCatalogBundle) => {
     if (busyId) return
@@ -211,6 +237,30 @@ export function StickerPicker({
         {tab === 'owned' ? (
           <>
             {pickLabel && <p className="text-[10px] font-semibold text-white/35 mb-1.5 px-0.5">{pickLabel}</p>}
+            {/* ── Recently used (device-local) — jumps straight to what the
+                user actually sends, without scrolling owned bundles. */}
+            {recentOwned.length > 0 && (
+              <div className="mb-2.5" data-testid="sticker-recent">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Clock className="w-3 h-3 text-white/45" size={12} aria-hidden />
+                  <p className="text-[11px] font-bold text-white/60">Recently used</p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {recentOwned.map((s) => (
+                    <motion.button
+                      key={`recent-${s.id}`}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => pick({ id: s.id, name: s.name, assetUrl: s.assetUrl })}
+                      className="w-[52px] h-[52px] rounded-2xl bg-[color-mix(in_srgb,var(--qk-accent)_12%,var(--qk-elev))] border border-[var(--qk-accent)]/25 flex items-center justify-center hover:border-[var(--qk-accent)]/50 active:scale-95 transition-colors"
+                      aria-label={`Send recent sticker ${s.name}`}
+                      data-testid={`sticker-recent-${s.id}`}
+                    >
+                      <StickerAsset sticker={s} imgClassName="w-9 h-9" emojiClassName="text-3xl" />
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+            )}
             {owned.length === 0 ? (
               <div className="flex flex-col items-center gap-1.5 py-6 px-4 text-center">
                 <span className="w-11 h-11 rounded-2xl bg-[var(--qk-elev)] border border-white/10 flex items-center justify-center">
@@ -243,7 +293,7 @@ export function StickerPicker({
                       <motion.button
                         key={s.id}
                         whileTap={{ scale: 0.9 }}
-                        onClick={() => onPick?.(s)}
+                        onClick={() => pick(s)}
                         className="w-[52px] h-[52px] rounded-2xl bg-[var(--qk-elev)] border border-white/10 flex items-center justify-center hover:border-[var(--qk-accent)]/40 hover:bg-[color-mix(in_srgb,var(--qk-accent)_10%,var(--qk-elev))] active:scale-95 transition-colors"
                         aria-label={`Send sticker ${s.name}`}
                         data-testid={`sticker-tile-${s.id}`}
@@ -278,65 +328,111 @@ export function StickerPicker({
               shop.map((b) => {
                 const buyable = b.unlockType === 'coins' && b.purchaseEnabled && b.priceCoins > 0
                 const claimable = b.canClaimNow
+                const expanded = expandedShopId === b.id
                 return (
                   <div
                     key={b.id}
-                    className="mb-2 rounded-2xl bg-[var(--qk-elev)] border border-white/10 p-2.5 flex items-start gap-2.5"
+                    className={cn(
+                      'mb-2 rounded-2xl bg-[var(--qk-elev)] border border-white/10 p-2.5 flex flex-col',
+                      expanded && 'border-[var(--qk-accent)]/30'
+                    )}
                     data-testid={`sticker-shop-${b.id}`}
                   >
-                    <span className="w-10 h-10 rounded-xl bg-[var(--qk-card)] border border-white/10 flex items-center justify-center shrink-0">
-                      <BundleIcon icon={b.icon} className="text-xl" imgClassName="w-7 h-7" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-white/90 truncate">{b.name}</p>
-                      {b.description && <p className="text-[10px] text-white/40 line-clamp-2 leading-snug">{b.description}</p>}
-                      <p className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-white/45">
-                        <Lock className="w-2.5 h-2.5 shrink-0" size={10} aria-hidden />
-                        {unlockLabel(b)}
-                        <span className="text-white/25">· {b.stickers.length} stickers</span>
-                      </p>
-                      {/* preview strip */}
-                      {b.stickers.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {b.stickers.slice(0, 6).map((s) => (
-                            <span
-                              key={s.id}
-                              className="w-7 h-7 rounded-lg bg-[var(--qk-card)] border border-white/5 flex items-center justify-center overflow-hidden"
-                              aria-hidden
-                            >
-                              <StickerAsset sticker={s} imgClassName="w-5 h-5 opacity-70" emojiClassName="text-lg opacity-70" />
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                    <div className="flex items-start gap-2.5">
+                      <span className="w-10 h-10 rounded-xl bg-[var(--qk-card)] border border-white/10 flex items-center justify-center shrink-0">
+                        <BundleIcon icon={b.icon} className="text-xl" imgClassName="w-7 h-7" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-white/90 truncate">{b.name}</p>
+                        {b.description && <p className="text-[10px] text-white/40 line-clamp-2 leading-snug">{b.description}</p>}
+                        <p className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-white/45">
+                          <Lock className="w-2.5 h-2.5 shrink-0" size={10} aria-hidden />
+                          {unlockLabel(b)}
+                          <span className="text-white/25">· {b.stickers.length} stickers</span>
+                        </p>
+                      </div>
+                      <div className="shrink-0 self-center">
+                        {buyable ? (
+                          <motion.button
+                            whileTap={{ scale: 0.93 }}
+                            onClick={() => void buyOrClaim(b)}
+                            disabled={busyId === b.id}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-coral-gradient text-[11px] font-black text-white disabled:opacity-50 whitespace-nowrap"
+                            aria-label={`Buy ${b.name} for ${b.priceCoins} coins`}
+                          >
+                            <Coins className="w-3 h-3" size={12} aria-hidden />
+                            {busyId === b.id ? '…' : b.priceCoins.toLocaleString()}
+                          </motion.button>
+                        ) : claimable ? (
+                          <motion.button
+                            whileTap={{ scale: 0.93 }}
+                            onClick={() => void buyOrClaim(b)}
+                            disabled={busyId === b.id}
+                            className="px-2.5 py-1.5 rounded-full bg-[var(--qk-accent)] text-[var(--qk-on-accent)] text-[11px] font-black disabled:opacity-50"
+                          >
+                            {busyId === b.id ? '…' : 'CLAIM'}
+                          </motion.button>
+                        ) : (
+                          <span className="px-2 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-white/40 whitespace-nowrap">
+                            Locked
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="shrink-0 self-center">
-                      {buyable ? (
-                        <motion.button
-                          whileTap={{ scale: 0.93 }}
-                          onClick={() => void buyOrClaim(b)}
-                          disabled={busyId === b.id}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-coral-gradient text-[11px] font-black text-white disabled:opacity-50 whitespace-nowrap"
-                          aria-label={`Buy ${b.name} for ${b.priceCoins} coins`}
-                        >
-                          <Coins className="w-3 h-3" size={12} aria-hidden />
-                          {busyId === b.id ? '…' : b.priceCoins.toLocaleString()}
-                        </motion.button>
-                      ) : claimable ? (
-                        <motion.button
-                          whileTap={{ scale: 0.93 }}
-                          onClick={() => void buyOrClaim(b)}
-                          disabled={busyId === b.id}
-                          className="px-2.5 py-1.5 rounded-full bg-[var(--qk-accent)] text-[var(--qk-on-accent)] text-[11px] font-black disabled:opacity-50"
-                        >
-                          {busyId === b.id ? '…' : 'CLAIM'}
-                        </motion.button>
-                      ) : (
-                        <span className="px-2 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-white/40 whitespace-nowrap">
-                          Locked
-                        </span>
-                      )}
-                    </div>
+                    {/* ── Preview: collapsed strip → tap to expand the FULL
+                        sticker grid so buyers see exactly what they get. */}
+                    {b.stickers.length > 0 && (
+                      <div className="mt-1.5">
+                        {!expanded ? (
+                          <button
+                            onClick={() => setExpandedShopId(b.id)}
+                            className="w-full text-left group"
+                            aria-label={`Preview stickers in ${b.name}`}
+                            data-testid={`sticker-shop-preview-${b.id}`}
+                          >
+                            <div className="flex items-center gap-1">
+                              {b.stickers.slice(0, 6).map((s) => (
+                                <span
+                                  key={s.id}
+                                  className="w-8 h-8 rounded-lg bg-[var(--qk-card)] border border-white/5 flex items-center justify-center overflow-hidden group-hover:border-white/15 transition-colors"
+                                  aria-hidden
+                                >
+                                  <StickerAsset sticker={s} imgClassName="w-6 h-6 opacity-70 group-hover:opacity-100" emojiClassName="text-xl opacity-70 group-hover:opacity-100" />
+                                </span>
+                              ))}
+                              <span className="ml-auto flex items-center gap-0.5 text-[10px] font-bold text-white/40 group-hover:text-white/70">
+                                Preview
+                                <ChevronDown className="w-3 h-3" size={12} aria-hidden />
+                              </span>
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="rounded-xl bg-[var(--qk-card)] border border-white/10 p-2" data-testid={`sticker-shop-preview-open-${b.id}`}>
+                            <div className="flex items-center justify-between mb-1.5 px-0.5">
+                              <p className="text-[10px] font-bold text-white/50">All {b.stickers.length} stickers in this set</p>
+                              <button
+                                onClick={() => setExpandedShopId(null)}
+                                className="flex items-center gap-0.5 text-[10px] font-bold text-white/40 hover:text-white/80"
+                                aria-label={`Collapse ${b.name} preview`}
+                              >
+                                <ChevronDown className="w-3 h-3 rotate-180" size={12} aria-hidden /> Less
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-5 gap-1.5">
+                              {b.stickers.map((s) => (
+                                <div
+                                  key={s.id}
+                                  className="aspect-square rounded-xl bg-[var(--qk-elev)] border border-white/10 flex items-center justify-center overflow-hidden"
+                                  title={s.name}
+                                >
+                                  <StickerAsset sticker={s} imgClassName="w-10 h-10" emojiClassName="text-3xl" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })

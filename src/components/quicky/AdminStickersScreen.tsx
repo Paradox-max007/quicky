@@ -11,12 +11,26 @@
 // sticker sets no longer gate on league progression). Sticker MEDIA can be
 // uploaded right inside the bundle modal (staged → created on save).
 // Sticker form per §118 (name, bundle, asset, order, active) with §119 asset
-// validation + direct image upload.
+// validation + direct image upload — and a Sticker-Set dropdown so a single
+// sticker can be mapped (or re-mapped) to any pack.
+// BATCH PACK UPLOADER: select up to 20 sticker files, preview every one,
+// resize them all client-side to the SAME square size (128/256/512, contain
+// fit + transparent padding) and store the whole batch under ONE sticker
+// set name — either a brand-new set or an existing one.
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud, Images } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud, Images, PackagePlus } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
+import {
+  STICKER_BATCH_MAX,
+  STICKER_SIZE_OPTIONS,
+  disposeStagedFiles,
+  stagedToFile,
+  stageStickerFile,
+  type StagedStickerFile,
+  type StickerTargetSize,
+} from '@/lib/quicky/sticker-image'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { cn } from '@/lib/utils'
@@ -121,6 +135,40 @@ type StickerForm = {
   isActive: boolean
 }
 
+/** Admin-side staged sticker — keeps the RAW file so the whole batch can
+ *  be re-staged client-side when the uniform size changes. */
+type AdminStagedSticker = StagedStickerFile & { file: File }
+
+/** Batch pack uploader: select up to 20 sticker files, preview them, resize
+ *  every image to the SAME square size and store the whole thing as one
+ *  batch under a single sticker set name (new set, or an existing one). */
+type BatchForm = {
+  mode: 'new' | 'existing'
+  targetBundleId: string
+  name: string
+  description: string
+  icon: string
+  unlockType: string
+  priceCoins: string
+  isActive: boolean
+}
+
+// Batch-modal unlock options — linkage-dependent unlocks (realm / season /
+// event) are attached afterwards through the full bundle editor; the three
+// below are self-sufficient per bundles-route validation.
+const BATCH_UNLOCK_TYPES = UNLOCK_TYPES.filter((t) => ['coins', 'free', 'subscription'].includes(t.value))
+
+const EMPTY_BATCH: BatchForm = {
+  mode: 'new',
+  targetBundleId: '',
+  name: '',
+  description: '',
+  icon: '✨',
+  unlockType: 'coins',
+  priceCoins: '0',
+  isActive: true,
+}
+
 export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
   const [bundles, setBundles] = useState<Bundle[]>([])
@@ -129,6 +177,13 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const [loading, setLoading] = useState(true)
   const [bundleForm, setBundleForm] = useState<BundleForm | null>(null)
   const [stickerForm, setStickerForm] = useState<StickerForm | null>(null)
+  // ── batch pack uploader state ──
+  const [batchForm, setBatchForm] = useState<BatchForm | null>(null)
+  const [batchStaged, setBatchStaged] = useState<AdminStagedSticker[]>([])
+  const [batchTarget, setBatchTarget] = useState<StickerTargetSize>(256)
+  const [staging, setStaging] = useState(false)
+  const [batchSaving, setBatchSaving] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -231,6 +286,7 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
     if (!stickerForm || saving) return
     if (!stickerForm.name.trim()) return toast.error('Sticker name is required')
     if (!stickerForm.assetUrl.trim()) return toast.error('Sticker asset is required')
+    if (!stickerForm.bundleId) return toast.error('Pick the sticker set (pack) this sticker belongs to')
     setSaving(true)
     const data = {
       bundleId: stickerForm.bundleId,
@@ -252,6 +308,168 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
     }
   }
 
+  // ── Batch pack uploader ────────────────────────────────────────────────
+  // Up to STICKER_BATCH_MAX files staged client-side (resized to ONE uniform
+  // square size with transparent padding), then stored as a single batch
+  // under one sticker set name — new set or existing set.
+
+  const closeBatch = () => {
+    disposeStagedFiles(batchStaged)
+    setBatchStaged([])
+    setBatchForm(null)
+    setBatchProgress(null)
+  }
+
+  const pickBatchFiles = async (files: File[]) => {
+    if (!batchForm || staging || batchSaving) return
+    if (batchStaged.length >= STICKER_BATCH_MAX) {
+      toast.error(`A batch holds at most ${STICKER_BATCH_MAX} stickers`)
+      return
+    }
+    setStaging(true)
+    const staged: AdminStagedSticker[] = []
+    const skipped: string[] = []
+    try {
+      for (const file of files) {
+        if (batchStaged.length + staged.length >= STICKER_BATCH_MAX) {
+          skipped.push(`${file.name}: batch limit is ${STICKER_BATCH_MAX}`)
+          continue
+        }
+        if (!file.type.startsWith('image/')) {
+          skipped.push(`${file.name}: not an image`)
+          continue
+        }
+        try {
+          const s = await stageStickerFile(file, batchTarget)
+          staged.push({ ...s, file })
+        } catch (e) {
+          skipped.push(`${file.name}: ${e instanceof Error ? e.message : 'could not stage'}`)
+        }
+      }
+      if (staged.length > 0) setBatchStaged((prev) => [...prev, ...staged])
+      if (skipped.length > 0) {
+        toast.error(`${skipped.length} file${skipped.length > 1 ? 's' : ''} skipped`, {
+          description: skipped.slice(0, 4).join(' · '),
+        })
+      }
+    } finally {
+      setStaging(false)
+    }
+  }
+
+  /** Uniform size changed — re-stage EVERY raw file at the new size,
+   *  preserving admin-edited names. */
+  const restageAll = async (target: StickerTargetSize) => {
+    if (target === batchTarget || staging || batchSaving) return
+    setBatchTarget(target)
+    if (batchStaged.length === 0) return
+    setStaging(true)
+    const current = batchStaged
+    try {
+      const next: AdminStagedSticker[] = []
+      const failed: string[] = []
+      for (const s of current) {
+        try {
+          const fresh = await stageStickerFile(s.file, target)
+          next.push({ ...fresh, name: s.name, file: s.file })
+        } catch {
+          failed.push(s.name)
+        }
+      }
+      disposeStagedFiles(current)
+      setBatchStaged(next)
+      if (failed.length > 0) {
+        toast.error(`${failed.length} sticker${failed.length > 1 ? 's' : ''} could not be resized to ${target}px — removed from the batch`)
+      }
+    } finally {
+      setStaging(false)
+    }
+  }
+
+  const removeStaged = (uid: string) => {
+    setBatchStaged((prev) => {
+      const found = prev.find((s) => s.uid === uid)
+      if (found) {
+        try {
+          URL.revokeObjectURL(found.previewUrl)
+        } catch {
+          /* ignore */
+        }
+      }
+      return prev.filter((s) => s.uid !== uid)
+    })
+  }
+
+  const saveBatch = async () => {
+    if (!batchForm || batchSaving || staging) return
+    if (batchStaged.length === 0) return toast.error('Pick at least one sticker image for the batch')
+    let bundleId = ''
+    let setName = ''
+    const isNew = batchForm.mode === 'new'
+    if (isNew) {
+      if (!batchForm.name.trim()) return toast.error('Give the new sticker set a name')
+      const price = Math.floor(Number(batchForm.priceCoins)) || 0
+      if (batchForm.unlockType === 'coins' && price <= 0) {
+        return toast.error('Coin packs need a price — set one, or choose the Free unlock')
+      }
+    } else {
+      const target = bundles.find((b) => b.id === batchForm.targetBundleId)
+      if (!target) return toast.error('Choose which sticker set this batch joins')
+      bundleId = target.id
+      setName = target.name
+    }
+    setBatchSaving(true)
+    try {
+      if (isNew) {
+        const price = Math.floor(Number(batchForm.priceCoins)) || 0
+        const res = await api.admin.stickers.createBundle({
+          name: batchForm.name.trim(),
+          description: batchForm.description.trim() || undefined,
+          icon: batchForm.icon.trim() || '✨',
+          unlockType: batchForm.unlockType,
+          priceCoins: price,
+          purchaseEnabled: batchForm.unlockType === 'coins' || batchForm.unlockType === 'free',
+          rewardEnabled: false,
+          isActive: batchForm.isActive,
+          sortOrder: 10,
+        })
+        bundleId = (res as any)?.bundle?.id ?? ''
+        setName = batchForm.name.trim()
+        if (!bundleId) throw new Error('Bundle id missing in server response')
+      }
+      let ok = 0
+      let failed = 0
+      for (let i = 0; i < batchStaged.length; i++) {
+        const s = batchStaged[i]
+        setBatchProgress(`Uploading ${i + 1} / ${batchStaged.length}…`)
+        try {
+          const up = await api.admin.assets.upload(stagedToFile(s, i), 'stickers')
+          await api.admin.stickers.createSticker({
+            bundleId,
+            name: s.name.trim() || 'Sticker',
+            assetUrl: up.url,
+            sortOrder: 100 + i,
+            isActive: true,
+          })
+          ok++
+        } catch {
+          failed++
+        }
+      }
+      if (ok > 0) toast.success(`${ok} sticker${ok > 1 ? 's' : ''} saved to “${setName}”`)
+      if (failed > 0) {
+        toast.warning(`${failed} upload${failed > 1 ? 's' : ''} failed — add the missing ones with another batch`)
+      }
+      closeBatch()
+      await load()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Batch save failed')
+    } finally {
+      setBatchSaving(false)
+      setBatchProgress(null)
+    }
+  }
+
   return (
     <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">
       <header className="shrink-0 safe-area-top px-3 pt-2.5 pb-2 flex items-center gap-2 border-b border-white/10 relative z-10">
@@ -262,12 +480,21 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
           <h1 className="font-black text-base leading-tight">Sticker Bundles</h1>
           <p className="text-white/40 text-[11px] leading-tight">Game Content · admin-managed</p>
         </div>
-        <button
-          onClick={() => setBundleForm({ ...EMPTY_BUNDLE })}
-          className="ml-auto bg-coral-gradient rounded-xl px-3 py-2 text-xs font-black flex items-center gap-1.5"
-        >
-          <Plus className="h-4 w-4" /> Add Bundle
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={() => setBatchForm({ ...EMPTY_BATCH, mode: 'existing', targetBundleId: bundles[0]?.id ?? '' })}
+            className="rounded-xl px-3 py-2 text-xs font-black flex items-center gap-1.5 bg-white/10 hover:bg-white/15"
+            aria-label="Batch add a sticker pack"
+          >
+            <PackagePlus className="h-4 w-4" /> Batch Pack
+          </button>
+          <button
+            onClick={() => setBundleForm({ ...EMPTY_BUNDLE })}
+            className="bg-coral-gradient rounded-xl px-3 py-2 text-xs font-black flex items-center gap-1.5"
+          >
+            <Plus className="h-4 w-4" /> Add Bundle
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
@@ -367,6 +594,13 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                   className="text-[10px] font-black px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/15"
                 >
                   + Sticker
+                </button>
+                <button
+                  onClick={() => setBatchForm({ ...EMPTY_BATCH, mode: 'existing', targetBundleId: b.id })}
+                  className="text-[10px] font-black px-2 py-1.5 rounded-lg bg-white/10 hover:bg-white/15"
+                  aria-label={`Batch add stickers to ${b.name}`}
+                >
+                  ⇪ Batch add
                 </button>
               </div>
             </div>
@@ -612,24 +846,35 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                 )}
                 <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
                   <UploadCloud className="w-3.5 h-3.5" aria-hidden />
-                  {uploading ? 'Uploading…' : 'Upload sticker images (multiple) — added to this set on save'}
+                  {uploading
+                    ? 'Uploading…'
+                    : `Upload sticker images (multiple) — added to this set on save · max ${STICKER_BATCH_MAX} per batch`}
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
                     className="hidden"
                     multiple
-                    disabled={uploading}
+                    disabled={uploading || bundleForm.newStickers.length >= STICKER_BATCH_MAX}
                     onChange={(e) => {
                       const files = Array.from(e.target.files ?? [])
                       if (files.length === 0) return
-                      const tooBig = files.find((f) => f.size > 4 * 1024 * 1024)
+                      const room = STICKER_BATCH_MAX - bundleForm.newStickers.length
+                      if (room <= 0) {
+                        toast.error(`A set holds at most ${STICKER_BATCH_MAX} stickers per batch — save, then add more`)
+                        return
+                      }
+                      const take = files.slice(0, room)
+                      if (files.length > room) {
+                        toast.error(`Only ${room} more can be staged — batch uploads cap at ${STICKER_BATCH_MAX}`)
+                      }
+                      const tooBig = take.find((f) => f.size > 4 * 1024 * 1024)
                       if (tooBig) {
                         toast.error('Images must be 4 MB or smaller')
                         return
                       }
                       setUploading(true)
                       void Promise.all(
-                        files.map(async (file) => {
+                        take.map(async (file) => {
                           const res = await api.admin.assets.upload(file, 'stickers')
                           return { name: file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || 'Sticker', assetUrl: res.url }
                         })
@@ -664,6 +909,235 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
         )}
       </AnimatePresenceSheet>
 
+      {/* ─── Batch pack uploader — up to 20 files → ONE uniform size → ONE set */}
+      <AnimatePresenceSheet>
+        {batchForm && (
+          <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center">
+            <div className="absolute inset-0 bg-black/70" onClick={() => closeBatch()} />
+            <motion.div
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="relative w-[min(94vw,28rem)] max-h-[88vh] overflow-y-auto bg-[var(--qk-card)] border border-white/15 rounded-3xl p-4 flex flex-col gap-2.5"
+              data-testid="batch-pack-modal"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-sm">Batch Add Pack</h3>
+                  <p className="text-[10px] text-white/40 leading-tight">Up to {STICKER_BATCH_MAX} files · resized to one size · stored as one batch</p>
+                </div>
+                <button onClick={() => closeBatch()} className="p-1.5 rounded-full hover:bg-white/10" aria-label="Close">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Target: brand-new named set, or an existing set */}
+              <div className="flex items-center gap-1 p-1 rounded-2xl bg-white/5 border border-white/10">
+                {(['new', 'existing'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setBatchForm((f) => (f ? { ...f, mode: m } : f))}
+                    className={cn(
+                      'flex-1 rounded-xl px-2 py-1.5 text-[11px] font-black transition-colors',
+                      batchForm.mode === m ? 'bg-[var(--qk-accent)] text-[var(--qk-on-accent)]' : 'text-white/55 hover:text-white/85'
+                    )}
+                    aria-pressed={batchForm.mode === m}
+                  >
+                    {m === 'new' ? 'New sticker set' : 'Add to existing set'}
+                  </button>
+                ))}
+              </div>
+
+              {batchForm.mode === 'new' ? (
+                <>
+                  <Field label="Sticker Set Name *">
+                    <input value={batchForm.name} onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })} className={inputCls} placeholder="Party Animals" />
+                  </Field>
+                  <Field label="Description">
+                    <input value={batchForm.description} onChange={(e) => setBatchForm({ ...batchForm, description: e.target.value })} className={inputCls} placeholder="The whole gang in one drop" />
+                  </Field>
+                  <div className="flex items-end gap-2.5">
+                    <div className="flex-1 min-w-0">
+                      <Field label="Icon (emoji or image URL)">
+                        <input value={batchForm.icon} onChange={(e) => setBatchForm({ ...batchForm, icon: e.target.value })} className={inputCls} placeholder="🎉" />
+                      </Field>
+                    </div>
+                    <span className="w-11 h-11 shrink-0 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden" aria-hidden>
+                      {isImageIcon(batchForm.icon) ? (
+                        <img src={batchForm.icon} alt="" className="w-8 h-8 object-contain" />
+                      ) : (
+                        <span className="text-2xl leading-none">{batchForm.icon || '✨'}</span>
+                      )}
+                    </span>
+                  </div>
+                  <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
+                    <UploadCloud className="w-3.5 h-3.5" aria-hidden />
+                    {uploading ? 'Uploading icon…' : 'Upload set icon image → Supabase Storage'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        if (file.size > 4 * 1024 * 1024) {
+                          toast.error('Images must be 4 MB or smaller')
+                          return
+                        }
+                        setUploading(true)
+                        void api.admin.assets
+                          .upload(file, 'stickers')
+                          .then((res) => {
+                            setBatchForm((f) => (f ? { ...f, icon: res.url } : f))
+                            toast.success('Icon uploaded', { description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads' })
+                          })
+                          .catch((err: unknown) => {
+                            toast.error(err instanceof Error ? err.message : 'Upload failed')
+                          })
+                          .finally(() => {
+                            setUploading(false)
+                            e.target.value = ''
+                          })
+                      }}
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <Field label="Unlock Method">
+                      <select value={batchForm.unlockType} onChange={(e) => setBatchForm({ ...batchForm, unlockType: e.target.value })} className={inputCls}>
+                        {BATCH_UNLOCK_TYPES.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    {batchForm.unlockType === 'coins' ? (
+                      <Field label="Coin Price *">
+                        <input value={batchForm.priceCoins} onChange={(e) => setBatchForm({ ...batchForm, priceCoins: e.target.value })} className={inputCls} inputMode="numeric" placeholder="500" />
+                      </Field>
+                    ) : (
+                      <Field label="Active">
+                        <select value={batchForm.isActive ? '1' : '0'} onChange={(e) => setBatchForm({ ...batchForm, isActive: e.target.value === '1' })} className={inputCls}>
+                          <option value="1">Active</option>
+                          <option value="0">Inactive</option>
+                        </select>
+                      </Field>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-white/35 leading-snug">
+                    Realm / season / event linkage and full pricing can be attached right afterwards by editing the created set.
+                  </p>
+                </>
+              ) : (
+                <Field label="Add This Batch To Set *">
+                  <select
+                    value={batchForm.targetBundleId}
+                    onChange={(e) => setBatchForm({ ...batchForm, targetBundleId: e.target.value })}
+                    className={inputCls}
+                    data-testid="batch-target-set"
+                  >
+                    <option value="">— choose a sticker set —</option>
+                    {bundles.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              {/* ── the batch itself: files → previews → ONE uniform size ── */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-white/60">
+                    <Images className="w-3.5 h-3.5" aria-hidden /> Sticker batch
+                  </span>
+                  <span className="text-[10px] font-bold text-white/40" data-testid="batch-count">
+                    {batchStaged.length} / {STICKER_BATCH_MAX}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-semibold text-white/50">Resize all to</span>
+                  {STICKER_SIZE_OPTIONS.map((px) => (
+                    <button
+                      key={px}
+                      onClick={() => void restageAll(px)}
+                      disabled={staging || batchSaving || batchStaged.length === 0 || batchTarget === px}
+                      className={cn(
+                        'px-2.5 py-1 rounded-full text-[11px] font-black border transition-colors disabled:opacity-40',
+                        batchTarget === px
+                          ? 'bg-[var(--qk-accent)] text-[var(--qk-on-accent)] border-transparent'
+                          : 'bg-white/5 border-white/15 text-white/60 hover:text-white'
+                      )}
+                      aria-pressed={batchTarget === px}
+                    >
+                      {px}px
+                    </button>
+                  ))}
+                </div>
+                {staging && <p className="text-[10px] font-semibold text-white/40">Resizing previews…</p>}
+                {batchStaged.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2" data-testid="batch-staged-grid">
+                    {batchStaged.map((s, i) => (
+                      <div
+                        key={s.uid}
+                        className="relative rounded-xl bg-white/5 border border-white/10 flex flex-col items-center gap-0.5 overflow-hidden group"
+                      >
+                        <img src={s.previewUrl} alt={s.name} className="w-12 h-12 object-contain mt-1" />
+                        <span className="text-[8px] font-bold text-white/35">{s.resized ? `${s.width}×${s.height}` : 'original'}</span>
+                        <input
+                          value={s.name}
+                          onChange={(e) => setBatchStaged((prev) => prev.map((n, j) => (j === i ? { ...n, name: e.target.value } : n)))}
+                          className="w-full px-1 text-[9px] font-semibold text-white/70 bg-transparent border-0 outline-none text-center truncate"
+                          placeholder="name"
+                          maxLength={40}
+                          aria-label={`Name for sticker ${i + 1}`}
+                        />
+                        <button
+                          onClick={() => removeStaged(s.uid)}
+                          className="absolute top-0.5 right-0.5 rounded-full bg-rose-500/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          style={{ width: 18, height: 18 }}
+                          aria-label={`Remove ${s.name}`}
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
+                  <UploadCloud className="w-3.5 h-3.5" aria-hidden />
+                  {staging
+                    ? 'Staging…'
+                    : `Select up to ${STICKER_BATCH_MAX} sticker images (PNG / WebP / JPG / GIF / SVG)`}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                    className="hidden"
+                    multiple
+                    disabled={staging || batchSaving || batchStaged.length >= STICKER_BATCH_MAX}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? [])
+                      e.target.value = ''
+                      if (files.length > 0) void pickBatchFiles(files)
+                    }}
+                  />
+                </label>
+                <p className="text-[10px] text-white/35 leading-snug">
+                  Every image is resized to the SAME square size with transparent padding; animated GIFs and SVGs keep their original file.
+                </p>
+              </div>
+
+              <button
+                onClick={() => void saveBatch()}
+                disabled={batchSaving || staging || batchStaged.length === 0}
+                className="mt-1 bg-coral-gradient glow-coral rounded-2xl py-3 font-black tracking-wide disabled:opacity-50"
+              >
+                {batchSaving
+                  ? (batchProgress ?? 'Saving…')
+                  : `Save Batch — ${batchStaged.length} sticker${batchStaged.length === 1 ? '' : 's'}`}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresenceSheet>
+
       {/* ─── Sticker form (§118) ─────────────────────────────────────────────── */}
       <AnimatePresenceSheet>
         {stickerForm && (
@@ -682,6 +1156,21 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
               </div>
               <Field label="Sticker Name *">
                 <input value={stickerForm.name} onChange={(e) => setStickerForm({ ...stickerForm, name: e.target.value })} className={inputCls} placeholder="Heart Eyes" />
+              </Field>
+              {/* Map this sticker to a pack — choosing another set here re-maps
+                  an existing sticker (server PATCH validates the target). */}
+              <Field label="Sticker Set (pack) *">
+                <select
+                  value={stickerForm.bundleId}
+                  onChange={(e) => setStickerForm({ ...stickerForm, bundleId: e.target.value })}
+                  className={inputCls}
+                  data-testid="sticker-set-select"
+                >
+                  <option value="">— choose a sticker set —</option>
+                  {bundles.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
               </Field>
               <Field label="Sticker Asset * (emoji or https://…/sticker.png)">
                 <input value={stickerForm.assetUrl} onChange={(e) => setStickerForm({ ...stickerForm, assetUrl: e.target.value })} className={inputCls} placeholder="😍" />

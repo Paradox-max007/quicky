@@ -3,7 +3,8 @@
 //
 // GET    ?bundleId= → stickers of one bundle (admin view — includes inactive)
 // POST   { bundleId, name, assetUrl, sortOrder?, isActive? }
-// PATCH  { id, data { name?, assetUrl?, sortOrder?, isActive? } }
+// PATCH  { id, data { name?, assetUrl?, sortOrder?, isActive?, bundleId? } }
+//        (bundleId = re-map a sticker to a different pack — admin request)
 // DELETE { id }
 // §119 asset validation: emoji/short-glyph assets or an https image URL —
 // arbitrary client-supplied URLs are rejected; type + size are checked here
@@ -89,6 +90,15 @@ export async function PATCH(req: NextRequest) {
     const n = String(data.name).trim().slice(0, 60)
     if (!n) return NextResponse.json({ error: 'name_required' }, { status: 400 })
     patch.name = n
+  }
+  // Re-mapping a sticker to another pack (admin: "map a sticker to a set").
+  // The target bundle must exist — a typo'd id must not orphan the sticker.
+  if (data?.bundleId !== undefined) {
+    const bid = String(data.bundleId).trim()
+    if (!bid) return NextResponse.json({ error: 'bundle_required' }, { status: 400 })
+    const target = await db.gameStickerBundle.findUnique({ where: { id: bid }, select: { id: true } })
+    if (!target) return NextResponse.json({ error: 'bundle_not_found' }, { status: 404 })
+    patch.bundleId = bid
   }
   if (data?.assetUrl !== undefined) {
     const asset = validateAsset(data.assetUrl)
