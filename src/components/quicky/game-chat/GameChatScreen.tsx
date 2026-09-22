@@ -590,7 +590,7 @@ function GameChatScreenInner({
                       setRelMenu(false)
                       setComplaintOpen(true)
                     }}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-[#FF6B6B] text-left"
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm text-[var(--qk-accent)] text-left"
                   >
                     <ShieldAlert className="w-4 h-4" />
                     Complaint

@@ -205,7 +205,7 @@ export function DatingContactRows({
                   )}
                 </span>
                 {m.streak > 0 && (
-                  <span className="flex items-center gap-0.5 shrink-0 text-[11px] font-semibold text-[#FF9120]">
+                  <span className="flex items-center gap-0.5 shrink-0 text-[11px] font-semibold text-[var(--qk-gold)]">
                     <Flame className="w-3 h-3" fill="currentColor" stroke="none" />
                     {m.streak}
                   </span>

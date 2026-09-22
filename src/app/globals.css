@@ -95,12 +95,43 @@ html[data-theme='light'] .text-white\/50 { color: rgba(22, 22, 29, 0.52); }
 html[data-theme='light'] .text-white\/40 { color: rgba(22, 22, 29, 0.42); }
 html[data-theme='light'] .text-white\/30 { color: rgba(22, 22, 29, 0.35); }
 html[data-theme='light'] .text-white\/20 { color: rgba(22, 22, 29, 0.3); }
+/* full step coverage so GAME screens (rooms, chats, alerts, toolbox,
+   exit sheets) render legibly in light theme too */
+html[data-theme='light'] .text-white\/95 { color: rgba(22, 22, 29, 0.95); }
+html[data-theme='light'] .text-white\/90 { color: rgba(22, 22, 29, 0.9); }
+html[data-theme='light'] .text-white\/85 { color: rgba(22, 22, 29, 0.87); }
+html[data-theme='light'] .text-white\/75 { color: rgba(22, 22, 29, 0.78); }
+html[data-theme='light'] .text-white\/65 { color: rgba(22, 22, 29, 0.68); }
+html[data-theme='light'] .text-white\/55 { color: rgba(22, 22, 29, 0.58); }
+html[data-theme='light'] .text-white\/45 { color: rgba(22, 22, 29, 0.5); }
+html[data-theme='light'] .text-white\/35 { color: rgba(22, 22, 29, 0.4); }
+html[data-theme='light'] .text-white\/25 { color: rgba(22, 22, 29, 0.28); }
+html[data-theme='light'] .placeholder\:text-white\/30::placeholder { color: rgba(22, 22, 29, 0.35); }
+html[data-theme='light'] .placeholder\:text-white\/35::placeholder { color: rgba(22, 22, 29, 0.4); }
 html[data-theme='light'] .bg-white\/5 { background-color: rgba(15, 15, 20, 0.04); }
 html[data-theme='light'] .bg-white\/8,
 html[data-theme='light'] .bg-white\/10 { background-color: rgba(15, 15, 20, 0.06); }
+html[data-theme='light'] .bg-white\/3 { background-color: rgba(15, 15, 20, 0.025); }
+html[data-theme='light'] .bg-white\/4 { background-color: rgba(15, 15, 20, 0.03); }
+html[data-theme='light'] .bg-white\/12 { background-color: rgba(15, 15, 20, 0.08); }
+html[data-theme='light'] .bg-white\/15 { background-color: rgba(15, 15, 20, 0.09); }
+html[data-theme='light'] .bg-white\/20 { background-color: rgba(15, 15, 20, 0.12); }
+html[data-theme='light'] .bg-white\/25 { background-color: rgba(15, 15, 20, 0.15); }
+html[data-theme='light'] .bg-white\/30 { background-color: rgba(15, 15, 20, 0.18); }
+html[data-theme='light'] .bg-white\/40 { background-color: rgba(15, 15, 20, 0.22); }
+html[data-theme='light'] .bg-white\/50 { background-color: rgba(15, 15, 20, 0.28); }
 html[data-theme='light'] .border-white\/5,
 html[data-theme='light'] .border-white\/8,
 html[data-theme='light'] .border-white\/10 { border-color: rgba(15, 15, 20, 0.1); }
+html[data-theme='light'] .border-white\/6 { border-color: rgba(15, 15, 20, 0.12); }
+html[data-theme='light'] .border-white\/12 { border-color: rgba(15, 15, 20, 0.14); }
+html[data-theme='light'] .border-white\/15 { border-color: rgba(15, 15, 20, 0.16); }
+html[data-theme='light'] .border-white\/20 { border-color: rgba(15, 15, 20, 0.2); }
+html[data-theme='light'] .border-white\/25 { border-color: rgba(15, 15, 20, 0.26); }
+html[data-theme='light'] .border-white\/30 { border-color: rgba(15, 15, 20, 0.3); }
+html[data-theme='light'] .border-white\/40 { border-color: rgba(15, 15, 20, 0.4); }
+html[data-theme='light'] .border-white\/60 { border-color: rgba(15, 15, 20, 0.55); }
+html[data-theme='light'] .border-white\/70 { border-color: rgba(15, 15, 20, 0.62); }
 
 html[data-theme='midnight'] {
   --qk-bg: #0A0E27;

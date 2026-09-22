@@ -58,9 +58,9 @@ export function GameContactsPanel() {
   }
 
   return (
-    <div className="h-full w-full flex flex-col bg-[#101016]" data-testid="web-contacts-panel">
+    <div className="h-full w-full flex flex-col bg-[var(--qk-bg)]" data-testid="web-contacts-panel">
       {/* header — back returns to the Room Chat state (§4) */}
-      <div className="shrink-0 flex items-center gap-2 px-3 py-3 border-b border-[#232330] bg-[rgba(24,24,32,0.55)]">
+      <div className="shrink-0 flex items-center gap-2 px-3 py-3 border-b border-white/10 bg-[var(--qk-card)]">
         <button
           onClick={() => setPanel('room')}
           className="p-1.5 rounded-full hover:bg-white/10"
@@ -72,7 +72,7 @@ export function GameContactsPanel() {
       </div>
 
       {/* §57: Game Chats | Dating Chats inside the room's chat panel */}
-      <div className="shrink-0 px-3 pt-2.5 pb-2.5 flex flex-col gap-2.5 border-b border-[#232330]">
+      <div className="shrink-0 px-3 pt-2.5 pb-2.5 flex flex-col gap-2.5 border-b border-white/10">
         <ChatTypeTabs
           section={section}
           onChange={setSection}

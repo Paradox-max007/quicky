@@ -173,7 +173,7 @@
   border-radius: 50%;
   overflow: hidden;
   border: 2.5px solid var(--yard-color);
-  background: #26232f;
+  background: var(--qk-elev);
   box-shadow: 0 2px 6px rgba(20, 8, 0, 0.45), inset 0 0 0 2px rgba(255, 255, 255, 0.65);
   padding: 0;
   cursor: pointer;
@@ -227,7 +227,7 @@
   width: 20%;
   height: 20%;
   box-shadow: 0 0 14px rgba(0, 0, 0, 0.35);
-  background: #17161d;
+  background: var(--qk-card);
 }
 .ldo-center-tri {
   position: absolute;
@@ -333,7 +333,7 @@
   z-index: 40;
   pointer-events: none;
   background: rgba(10, 10, 14, 0.88);
-  border: 1px solid rgba(244, 63, 94, 0.5);
+  border: 1px solid color-mix(in srgb, var(--qk-accent) 50%, transparent);
   color: #fff;
   font-weight: 900;
   font-size: 12px;
@@ -387,7 +387,7 @@
   overflow: hidden;
   flex-shrink: 0;
   border: 2px solid var(--chip-color);
-  background: #26232f;
+  background: var(--qk-elev);
 }
 .ldo-hud-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .ldo-hud-avatar span {
@@ -397,14 +397,14 @@
   align-items: center;
   justify-content: center;
   font-weight: 900;
-  color: #fff;
+  color: var(--qk-text);
   font-size: 13px;
 }
 .ldo-hud-meta { min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
 .ldo-hud-name {
   font-size: 12px;
   font-weight: 800;
-  color: #fff;
+  color: var(--qk-text);
   max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -502,7 +502,7 @@
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #4a4a55, #17171d);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--qk-elev) 55%, var(--qk-text)), var(--qk-elev));
   align-self: center;
   justify-self: center;
   aspect-ratio: 1;
@@ -546,14 +546,14 @@
   z-index: 55;
   pointer-events: none;
   background: linear-gradient(135deg, rgba(20, 18, 28, 0.94), rgba(38, 30, 48, 0.94));
-  border: 1.5px solid rgba(244, 63, 94, 0.55);
+  border: 1.5px solid color-mix(in srgb, var(--qk-accent) 55%, transparent);
   color: #fff;
   font-weight: 900;
   font-size: 15px;
   letter-spacing: 0.06em;
   padding: 12px 22px;
   border-radius: 999px;
-  box-shadow: 0 10px 30px rgba(20, 8, 0, 0.5), 0 0 22px rgba(244, 63, 94, 0.28);
+  box-shadow: 0 10px 30px rgba(20, 8, 0, 0.5), 0 0 22px color-mix(in srgb, var(--qk-accent) 28%, transparent);
   white-space: nowrap;
 }
 
@@ -591,7 +591,7 @@
   font-size: 15px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  color: #fde68a;
+  color: var(--qk-gold);
   text-shadow: 0 0 10px rgba(251, 191, 36, 0.35);
   margin-left: 1px;
 }
@@ -625,19 +625,19 @@
   line-height: 1.25;
 }
 .ldo-roundbar-timer-chip.ldo-roundbar-urgent {
-  border-color: rgba(244, 63, 94, 0.7);
-  color: #fda4af;
-  background: rgba(244, 63, 94, 0.16);
+  border-color: color-mix(in srgb, var(--qk-accent) 70%, transparent);
+  color: var(--qk-accent-light);
+  background: color-mix(in srgb, var(--qk-accent) 16%, transparent);
   animation: ldo-urgent 0.9s ease-in-out infinite;
 }
 .ldo-roundbar-timer.ldo-roundbar-urgent {
-  border-color: rgba(244, 63, 94, 0.7);
-  color: #fda4af;
+  border-color: color-mix(in srgb, var(--qk-accent) 70%, transparent);
+  color: var(--qk-accent-light);
   animation: ldo-urgent 0.9s ease-in-out infinite;
 }
 @keyframes ldo-urgent {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.35); }
-  50% { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.12); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--qk-accent) 35%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--qk-accent) 12%, transparent); }
 }
 .ldo-roundbar-status { font-size: 11.5px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
 
@@ -659,7 +659,7 @@
   font-size: 84px;
   font-weight: 900;
   color: #fff;
-  text-shadow: 0 6px 30px rgba(244, 63, 94, 0.6);
+  text-shadow: 0 6px 30px color-mix(in srgb, var(--qk-accent) 60%, transparent);
   animation: ldo-cd 0.9s ease-out infinite;
 }
 @keyframes ldo-cd {
@@ -672,7 +672,7 @@
   font-weight: 900;
   letter-spacing: 0.08em;
   color: #fff;
-  text-shadow: 0 6px 30px rgba(244, 63, 94, 0.65);
+  text-shadow: 0 6px 30px color-mix(in srgb, var(--qk-accent) 65%, transparent);
   animation: ldo-ludo 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) 1;
 }
 @keyframes ldo-ludo {
@@ -702,7 +702,7 @@
   overflow: hidden;
   border: 4px solid var(--qk-gold, #f5c04a);
   box-shadow: 0 0 34px rgba(245, 192, 74, 0.5);
-  background: #26232f;
+  background: var(--qk-elev);
   animation: ldo-pop 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) 1;
 }
 .ldo-result-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -823,9 +823,9 @@
   gap: 7px;
   padding: 8px 18px;
   border-radius: 999px;
-  border: 1px solid rgba(244, 63, 94, 0.4);
-  background: rgba(244, 63, 94, 0.12);
-  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--qk-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--qk-accent) 12%, transparent);
+  color: var(--qk-text);
   font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
@@ -833,7 +833,7 @@
   transition: background 0.15s, transform 0.15s;
 }
 .ldo-gift-btn:active { transform: scale(0.96); }
-.ldo-gift-btn:hover { background: rgba(244, 63, 94, 0.22); }
+.ldo-gift-btn:hover { background: color-mix(in srgb, var(--qk-accent) 22%, transparent); }
 
 @media (min-width: 1024px) {
   .ldo-giftbar { display: flex; }
