@@ -6,24 +6,44 @@
 // PATCH  { id, data { name?, assetUrl?, sortOrder?, isActive?, bundleId? } }
 //        (bundleId = re-map a sticker to a different pack — admin request)
 // DELETE { id }
-// §119 asset validation: emoji/short-glyph assets or an https image URL —
-// arbitrary client-supplied URLs are rejected; type + size are checked here
-// (the actual binary upload flow arrives with Supabase Storage wiring).
+// §119 asset validation: emoji/short-glyph assets or an image URL — either
+// an https Supabase/object-storage URL (jpg/jpeg included — the upload route
+// accepts image/jpeg) or the ROOT-RELATIVE `/uploads/assets/...` URL the
+// local-storage fallback returns in dev; arbitrary client-supplied URLs are
+// rejected, type + size are checked here.
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 
-const MAX_ASSET_URL = 300
-const ALLOWED_IMAGE_EXT = /\.(png|gif|webp|apng|svg)(\?|$)/i
+const MAX_ASSET_URL = 2048 // covers Supabase public + signed URLs comfortably
+// jpe?g added — the upload route accepts image/jpeg; [?#] tolerates signed
+// URL query strings and hash fragments after the extension.
+const ALLOWED_IMAGE_EXT = /\.(png|jpe?g|gif|webp|apng|svg)([?#]|$)/i
+/** Server-controlled storage paths (local dev fallback serves these). */
+const SERVER_STORAGE_PATH = /^\/(uploads|storage|api\/assets|assets)\//i
 
-/** §119 — accept ≤8-glyph emoji assets or a validated https image URL. */
+/** §119 — accept ≤8-glyph emoji assets, https/http image URLs, or the
+ *  root-relative storage paths our own upload route produces (local dev). */
 function validateAsset(v: unknown): { ok: true; value: string } | { ok: false; error: string } {
   const s = String(v ?? '').trim()
   if (!s) return { ok: false, error: 'asset_required' }
-  if (s.startsWith('http://') || s.startsWith('https://')) {
-    if (!s.startsWith('https://')) return { ok: false, error: 'asset_https_only' }
+  if (/^https?:\/\//i.test(s)) {
     if (s.length > MAX_ASSET_URL) return { ok: false, error: 'asset_too_long' }
-    if (!ALLOWED_IMAGE_EXT.test(s)) return { ok: false, error: 'asset_unsupported_type' }
+    // known-extension URL, or a recognizable storage path (signed/object URLs
+    // sometimes carry no extension at all)
+    if (!ALLOWED_IMAGE_EXT.test(s) && !/\/(storage|uploads|object|supabase)\//i.test(s)) {
+      return { ok: false, error: 'asset_unsupported_type' }
+    }
+    return { ok: true, value: s }
+  }
+  if (s.startsWith('/')) {
+    // local-storage fallback: /uploads/assets/stickers/<file>.png — served
+    // by OUR server from public/uploads, so the path is trusted if it either
+    // carries a known image extension or lives under a storage folder.
+    if (s.length > MAX_ASSET_URL) return { ok: false, error: 'asset_too_long' }
+    if (!ALLOWED_IMAGE_EXT.test(s) && !SERVER_STORAGE_PATH.test(s)) {
+      return { ok: false, error: 'asset_unsupported_type' }
+    }
     return { ok: true, value: s }
   }
   const glyphs = Array.from(s)

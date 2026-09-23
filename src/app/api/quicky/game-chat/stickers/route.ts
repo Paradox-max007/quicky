@@ -151,31 +151,40 @@ export async function POST(req: NextRequest) {
     if (!bundle.purchaseEnabled || bundle.priceCoins <= 0) {
       return NextResponse.json({ error: 'purchase_not_available' }, { status: 400 })
     }
-    const result = await db
-      .$transaction(async (tx) => {
-        const u = await tx.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } })
-        if (!u || u.coinBalance < bundle.priceCoins) throw new Error('insufficient_coins')
-        const updated = await tx.user.update({
-          where: { id: me.id },
-          data: { coinBalance: { decrement: bundle.priceCoins } },
-          select: { coinBalance: true },
-        })
-        await tx.coinLedger.create({
-          data: { userId: me.id, delta: -bundle.priceCoins, reason: 'sticker_bundle_purchase' },
-        })
-        await tx.userGameStickerBundle.create({
-          data: { userId: me.id, bundleId, source: 'purchase' },
-        })
-        return updated.coinBalance
-      })
+    // P2028 fix: Prisma's default interactive-transaction timeout is 5s —
+    // slow dev machines (cold Turbopack compiles + remote DB round-trips)
+    // blew straight past it, closing the transaction mid-flight. 15s matches
+    // the gifts route, and maxWait lets the tx wait for a free connection.
+    // The balance check + decrement are ONE atomic conditional updateMany —
+    // no read-then-write race, one round-trip less inside the transaction.
+    const spent = await db
+      .$transaction(
+        async (tx) => {
+          const res = await tx.user.updateMany({
+            where: { id: me.id, coinBalance: { gte: bundle.priceCoins } },
+            data: { coinBalance: { decrement: bundle.priceCoins } },
+          })
+          if (res.count === 0) throw new Error('insufficient_coins')
+          await tx.coinLedger.create({
+            data: { userId: me.id, delta: -bundle.priceCoins, reason: 'sticker_bundle_purchase' },
+          })
+          await tx.userGameStickerBundle.create({
+            data: { userId: me.id, bundleId, source: 'purchase' },
+          })
+        },
+        { timeout: 15_000, maxWait: 5_000 }
+      )
       .catch((e: any) => {
         if (e?.message === 'insufficient_coins') return null
         throw e
       })
-    if (result === null) {
+    if (spent === null) {
       return NextResponse.json({ error: 'insufficient_coins' }, { status: 402 })
     }
-    return NextResponse.json({ ok: true, coinBalance: result })
+    // Balance is read AFTER the commit — one less query on the connection.
+    const coinBalance =
+      (await db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true } }))?.coinBalance ?? 0
+    return NextResponse.json({ ok: true, coinBalance })
   }
 
   // ── claim — server-evaluated unlocks (Games PRD §32) ───────────────────────

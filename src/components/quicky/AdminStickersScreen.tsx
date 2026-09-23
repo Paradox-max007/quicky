@@ -627,8 +627,7 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                     )}
                     title={`${s.name} · order ${s.sortOrder}${s.isActive ? '' : ' · inactive'}`}
                   >
-                    {s.assetUrl.startsWith('https://') ? (
-                       
+                    {isImageIcon(s.assetUrl) ? (
                       <img src={s.assetUrl} alt={s.name} className="w-7 h-7 object-contain" />
                     ) : (
                       <span className="text-xl" aria-hidden>{s.assetUrl}</span>

@@ -146,37 +146,42 @@ export async function POST(req: NextRequest) {
   lastSentAt.set(me.id, Date.now())
 
   // §45: message + mention records are ONE transaction — a mention row can
-  // never outlive its message or vice versa.
-  const { created, mentionRows } = await db.$transaction(async (tx) => {
-    const created = await tx.spinRoomMessage.create({
-      data: {
-        roomId,
-        userId: me.id,
-        // Sticker messages keep the sticker NAME in text (previews, reply
-        // snippets) and the full asset metadata in the JSON column.
-        text: text || (stickerMeta ? stickerMeta.stickerName : text),
-        kind: stickerMeta ? 'sticker' : 'user',
-        metadata: stickerMeta ? JSON.stringify(stickerMeta) : null,
-      },
-      include: { user: { select: { name: true, id: true } } },
-    })
-    if (validMentionIds.length) {
-      await tx.spinRoomChatMention.createMany({
-        data: validMentionIds.map((mentionedUserId: string) => ({
-          messageId: created.id,
-          mentionedUserId,
-          mentionedByUserId: me.id,
+  // never outlive its message or vice versa. {timeout: 15s} guards against
+  // Prisma's 5s default interactive-transaction timeout on slow dev setups
+  // (same P2028 fix as gifts + sticker purchases).
+  const { created, mentionRows } = await db.$transaction(
+    async (tx) => {
+      const created = await tx.spinRoomMessage.create({
+        data: {
           roomId,
-        })),
+          userId: me.id,
+          // Sticker messages keep the sticker NAME in text (previews, reply
+          // snippets) and the full asset metadata in the JSON column.
+          text: text || (stickerMeta ? stickerMeta.stickerName : text),
+          kind: stickerMeta ? 'sticker' : 'user',
+          metadata: stickerMeta ? JSON.stringify(stickerMeta) : null,
+        },
+        include: { user: { select: { name: true, id: true } } },
       })
-    }
-    // createMany doesn't return rows (connector-portable) — re-read them so
-    // every mention row's id is available for the notification fan-out.
-    const mentionRows = validMentionIds.length
-      ? await tx.spinRoomChatMention.findMany({ where: { messageId: created.id } })
-      : []
-    return { created, mentionRows }
-  })
+      if (validMentionIds.length) {
+        await tx.spinRoomChatMention.createMany({
+          data: validMentionIds.map((mentionedUserId: string) => ({
+            messageId: created.id,
+            mentionedUserId,
+            mentionedByUserId: me.id,
+            roomId,
+          })),
+        })
+      }
+      // createMany doesn't return rows (connector-portable) — re-read them so
+      // every mention row's id is available for the notification fan-out.
+      const mentionRows = validMentionIds.length
+        ? await tx.spinRoomChatMention.findMany({ where: { messageId: created.id } })
+        : []
+      return { created, mentionRows }
+    },
+    { timeout: 15_000, maxWait: 5_000 }
+  )
   await db.spinRoom.update({ where: { id: roomId }, data: { lastActivityAt: new Date() } })
   // Lifecycle §12: sending a chat message counts as room activity.
   await touchMemberActivity(roomId, me.id).catch(() => {})

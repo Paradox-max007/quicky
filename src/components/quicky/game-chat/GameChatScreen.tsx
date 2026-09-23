@@ -41,7 +41,9 @@ const NEAR_BOTTOM_PX = 140
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
 function isImageAsset(url: string) {
-  return url.startsWith('https://')
+  // https (Supabase) OR root-relative /uploads/… (local-storage dev fallback)
+  // OR data: URIs — anything else is an emoji glyph.
+  return /^https?:\/\//i.test(url) || url.startsWith('/') || url.startsWith('data:image/')
 }
 
 function StickerAsset({ sticker }: { sticker: { name: string; assetUrl: string } }) {
