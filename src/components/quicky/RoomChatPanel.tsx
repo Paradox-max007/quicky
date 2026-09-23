@@ -26,6 +26,7 @@
 // everything (§41).
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle, Volume2, VolumeX, Settings, ArrowLeft, Gift, ChevronDown, Sticker } from 'lucide-react'
 import { toast } from 'sonner'
@@ -182,11 +183,68 @@ function SwipeableBubble({
 }) {
   const [offset, setOffset] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const startX = useRef(0)
   const startY = useRef(0)
   const isDragging = useRef(false)
   const directionLocked = useRef<'x' | 'y' | null>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const openMenu = useCallback(() => setMenuOpen(true), [])
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false)
+    setMenuPos(null)
+  }, [])
+
+  // TOOLBOX PLACEMENT: the actions menu is PORTAL'd to <body> as a
+  // position:fixed popover. It used to be absolutely positioned inside the
+  // chat scroll container (overflow-y:auto) and always opened ABOVE the row —
+  // clipped out of existence whenever the row sat near the top of the visible
+  // scroll area. Now it looks at the space actually available in the viewport:
+  // above the row when it fits, flipped below the row when it doesn't, always
+  // clamped inside the screen. Runs pre-paint (the menu stays
+  // visibility:hidden until positioned) so there is no visible jump.
+  useLayoutEffect(() => {
+    if (!menuOpen) return
+    const wrap = wrapRef.current
+    const menu = menuRef.current
+    if (!wrap || !menu || typeof window === 'undefined') return
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const wr = wrap.getBoundingClientRect()
+    const mw = menu.offsetWidth
+    const mh = menu.offsetHeight
+    const M = 8
+    let top: number
+    if (wr.top - M > mh) {
+      top = wr.top - mh - 6
+    } else if (vh - wr.bottom - M > mh) {
+      top = wr.bottom + 6
+    } else {
+      // not enough room either way — clamp into the viewport, prefer below
+      top = Math.max(M, Math.min(wr.bottom + 6, vh - mh - M))
+    }
+    // horizontal: hug the row's trailing edge (mine → right edge, others →
+    // left edge) then clamp so the toolbox always stays fully on-screen
+    let left = mine ? wr.right - mw : wr.left
+    left = Math.max(M, Math.min(left, vw - mw - M))
+    setMenuPos({ top, left })
+  }, [menuOpen, mine])
+
+  // Any scroll (capture catches the chat's inner scroll container) or a
+  // viewport resize closes the toolbox — a fixed popover must never detach
+  // from the row it belongs to.
+  useEffect(() => {
+    if (!menuOpen) return
+    window.addEventListener('scroll', closeMenu, true)
+    window.addEventListener('resize', closeMenu)
+    return () => {
+      window.removeEventListener('scroll', closeMenu, true)
+      window.removeEventListener('resize', closeMenu)
+    }
+  }, [menuOpen, closeMenu])
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -259,6 +317,7 @@ function SwipeableBubble({
 
   return (
     <div
+      ref={wrapRef}
       className="sbr-swipe-bubble-wrap"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -308,26 +367,31 @@ function SwipeableBubble({
         type="button"
         className="sbr-msg-more"
         aria-label="Message actions"
-        onClick={() => setMenuOpen((v) => !v)}
+        onClick={() => (menuOpen ? closeMenu() : openMenu())}
       >
         <MoreHorizontal size={14} />
       </button>
 
-      {menuOpen && (
+      {menuOpen && typeof document !== 'undefined' && createPortal(
         <>
           <div
             style={{ position: 'fixed', inset: 0, zIndex: 60 }}
-            onClick={() => setMenuOpen(false)}
-            onPointerDown={() => setMenuOpen(false)}
+            onClick={closeMenu}
+            onPointerDown={closeMenu}
           />
           <div
+            ref={menuRef}
             className="sbr-msg-menu"
-            style={mine ? { right: 8, left: 'auto' } : { left: 8, right: 'auto' }}
+            style={{
+              top: menuPos?.top,
+              left: menuPos?.left,
+              visibility: menuPos ? 'visible' : 'hidden',
+            }}
           >
             <button
               type="button"
               onClick={() => {
-                setMenuOpen(false)
+                closeMenu()
                 onReply()
               }}
             >
@@ -340,7 +404,7 @@ function SwipeableBubble({
                   type="button"
                   aria-label={`React ${emoji}`}
                   onClick={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onReact(emoji)
                   }}
                 >
@@ -352,14 +416,15 @@ function SwipeableBubble({
               type="button"
               className="sbr-msg-menu-report"
               onClick={() => {
-                setMenuOpen(false)
+                closeMenu()
                 toast('Message reported. Our moderators will take a look.')
               }}
             >
               <Flag size={13} /> Report
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
@@ -932,10 +997,13 @@ export function RoomChatPanel({
                 />
               )
             }
-            // STICKER message: the big sticker asset — uploaded image or emoji
-            // glyph — in a light themed bubble. Reply works like text rows;
-            // a sticker sent AS a reply renders the reference line above the
-            // bubble (with the target's thumbnail when it was a sticker).
+            // STICKER message: the big sticker asset — uploaded image or
+            // emoji glyph — rendered as BARE media (no chat-bubble
+            // background, matching personal-chat sticker rows: just the
+            // media with the name/time meta above it). Reply works like
+            // text rows; a sticker sent AS a reply renders the reference
+            // line above the media (with the target's thumbnail when it
+            // was a sticker).
             if (m.kind === 'sticker') {
               const isMe = m.userId === meId
               const p = playerFor(m.userId)
@@ -945,7 +1013,7 @@ export function RoomChatPanel({
               return (
                 <div key={m.id}>
                   <SwipeableBubble onReply={() => startReply(m)} onReact={(emoji) => onSend(emoji)} mine={isMe}>
-                    <div className={`sbr-msg${isMe ? ' me' : ''}`}>
+                    <div className={`sbr-msg${isMe ? ' me' : ''} sbr-msg--sticker`}>
                       <GiftAvatar player={p} me={isMe} />
                       <div className="sbr-msg-body">
                         <p className="sbr-msg-meta">

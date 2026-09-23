@@ -1866,7 +1866,13 @@
 
 /* ════════════════════════════════════════════════════════════
    MESSAGE ACTIONS (PRD §39/§41) — web hover trigger + popover
-   menu (Reply / React / Report); mobile opens it via long-press.
+   menu (Reply / React / Report); mobile opens it via long-press
+   or a direct tap on the always-visible ⋯ button.
+   The menu is PORTAL'd to <body> and position:fixed — the chat
+   scroll container can never clip it. JS measures the real menu
+   size and looks at the space available in the viewport (above
+   the row when it fits, flipped below otherwise, clamped on both
+   axes) and writes the final top/left inline.
    ════════════════════════════════════════════════════════════ */
 .sbr-msg-more {
   position: absolute;
@@ -1884,10 +1890,16 @@
   z-index: 5;
 }
 .sbr-swipe-bubble-wrap:hover .sbr-msg-more { display: inline-flex; }
+/* Touch devices (Capacitor app / mobile webview) have no hover —
+   the ⋯ actions button is ALWAYS visible so users can tap it
+   directly instead of relying on the long-press gesture alone. */
+@media (hover: none) {
+  .sbr-msg-more { display: inline-flex; }
+}
 .sbr-msg-menu {
-  position: absolute;
-  top: -6px;
-  transform: translateY(-100%);
+  position: fixed;
+  top: 0;
+  left: 0;
   z-index: 61;
   display: flex;
   flex-direction: column;
@@ -1898,6 +1910,9 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
   min-width: 168px;
+  max-width: min(240px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 .sbr-msg-menu > button,
 .sbr-msg-menu .sbr-msg-menu-report {
@@ -2576,8 +2591,27 @@
   background: color-mix(in srgb, var(--qk-text) 14%, transparent);
 }
 .sbr-sticker-drawer-x:active { transform: scale(0.9); }
-/* Sticker bubble in the timeline — a light glass card holding the big
-   uploaded image (or the emoji glyph when the asset is an emoji). */
+/* Sticker bubble in the timeline — BARE MEDIA, no chat bubble: the
+   sticker image (or the emoji glyph when the asset is an emoji) floats
+   on the timeline exactly like personal-chat sticker rows. The
+   sbr-msg--sticker modifier strips the colored .sbr-msg-body bubble
+   (and its accent-tinted .me variant) plus this wrapper's glass card,
+   leaving just the media under the name/time meta line. */
+.sbr-msg.sbr-msg--sticker .sbr-msg-body {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.sbr-msg.sbr-msg--sticker.me .sbr-msg-body {
+  background: transparent;
+  border: none;
+}
+.sbr-msg.sbr-msg--sticker .sbr-sticker-bubble {
+  background: transparent;
+  border: none;
+  padding: 2px 0 0;
+  border-radius: 0;
+}
 .sbr-sticker-bubble {
   display: inline-flex;
   align-items: center;
