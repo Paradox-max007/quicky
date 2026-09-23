@@ -162,7 +162,16 @@ export type RoomChannel = {
     kind: string
     createdAt: string
     metadata?: string
-    replyTo?: { id: string; name: string; text: string } | null
+    /** Reply reference (persisted server-side): stickers can reply to chat
+     *  bubbles and other stickers — sticker targets carry their asset. */
+    replyTo?: {
+      id: string
+      userId?: string
+      name: string
+      text: string
+      kind?: string
+      asset?: string | null
+    } | null
     mentions?: { userId: string; displayName: string }[]
   }) => void
   sendKiss: (payload: { spinId: string; choice: 'yes' | 'no' }) => void

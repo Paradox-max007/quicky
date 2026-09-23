@@ -87,23 +87,44 @@ export function LudoRoom({
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
-  // Keyboard OVERLAY mode — identical guard to the Spin Bottle room so the
-  // board keeps its size while the chat composer is open (§33).
+  // Keyboard OVERLAY mode (v3 — sheet ride, same guard as the Spin Bottle
+  // room): while the soft keyboard is up the chat sheet translates up over
+  // the board (.sbr-chat.sbr-kb-open) and the room root pins to the last
+  // keyboard-free layout height (--sbr-room-h) — a webview that resizes its
+  // LAYOUT viewport (resizes-content / old Capacitor APKs) can never shrink
+  // the board; the message area overlays it instead (§33).
   useEffect(() => {
     const doc = document.documentElement
+    let stableInner = window.innerHeight // last keyboard-free layout height
     const setKb = (px: number) => {
-      kbHeightRef.current = px
-      doc.style.setProperty('--sbr-kb', `${Math.round(px)}px`)
-      setKbHeight(px)
+      const h = Math.max(0, px)
+      kbHeightRef.current = h
+      doc.style.setProperty('--sbr-kb', `${Math.round(h)}px`)
+      if (h > 0) {
+        doc.style.setProperty('--sbr-room-h', `${Math.round(stableInner)}px`)
+      } else {
+        doc.style.removeProperty('--sbr-room-h')
+      }
+      setKbHeight(h)
     }
     const vv = window.visualViewport ?? null
     const onVV = () => {
       if (!vv) return
-      const kb = window.innerHeight - vv.height - vv.offsetTop
-      setKb(Math.max(0, Math.min(kb, window.innerHeight * 0.6)))
+      // Unified formula: keyboard = last stable layout height − visible
+      // area. Works in BOTH resize modes (resizes-visual AND
+      // resizes-content — where innerHeight already shrank).
+      const kb = stableInner - (vv.height + vv.offsetTop)
+      setKb(Math.min(kb, stableInner * 0.6))
     }
     vv?.addEventListener('resize', onVV)
     vv?.addEventListener('scroll', onVV)
+    const onResize = () => {
+      if (kbHeightRef.current === 0) {
+        stableInner = window.innerHeight
+        doc.style.removeProperty('--sbr-room-h')
+      }
+    }
+    window.addEventListener('resize', onResize)
     let handles: Awaited<ReturnType<typeof Keyboard.addListener>>[] = []
     if (Capacitor.isNativePlatform()) {
       Keyboard.addListener('keyboardWillShow', (i) => setKb(i.keyboardHeight ?? 0)).then((h) => handles.push(h))
@@ -112,6 +133,7 @@ export function LudoRoom({
     return () => {
       vv?.removeEventListener('resize', onVV)
       vv?.removeEventListener('scroll', onVV)
+      window.removeEventListener('resize', onResize)
       handles.forEach((h) => h.remove())
       setKb(0)
     }
@@ -377,7 +399,7 @@ export function LudoRoom({
             meId={meId}
             roomId={roomId}
             onSend={sendChat}
-            onSendSticker={(s) => void useLudoRoomStore.getState().sendSticker(s)}
+            onSendSticker={(s, r) => void useLudoRoomStore.getState().sendSticker(s, r)}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={toolbox.openGiftSheet}

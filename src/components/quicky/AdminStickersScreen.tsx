@@ -187,6 +187,8 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // Sticker-media upload inside the sticker modal (add OR update flows).
+  const [stickerUploading, setStickerUploading] = useState(false)
   // ── sticker multi-select delete (single OR many stickers from a set) ──
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -318,6 +320,29 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
     } finally {
       setSaving(false)
     }
+  }
+
+  // ── Sticker media upload (shared by the ADD + UPDATE flows) ────────
+  // Uploads straight to storage and drops the URL into the form — the
+  // preview refreshes instantly; SAVE persists it (PATCH on edit).
+  const uploadStickerImage = (file: File) => {
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('Images must be 4 MB or smaller')
+      return
+    }
+    setStickerUploading(true)
+    void api.admin.assets
+      .upload(file, 'stickers')
+      .then((res) => {
+        setStickerForm((f) => (f ? { ...f, assetUrl: res.url } : f))
+        toast.success('Sticker image uploaded', {
+          description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads',
+        })
+      })
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : 'Upload failed')
+      })
+      .finally(() => setStickerUploading(false))
   }
 
   // ── Sticker deletion ──────────────────────────────────────────────────
@@ -1304,39 +1329,86 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
                   ))}
                 </select>
               </Field>
-              <Field label="Sticker Asset * (emoji or https://…/sticker.png)">
-                <input value={stickerForm.assetUrl} onChange={(e) => setStickerForm({ ...stickerForm, assetUrl: e.target.value })} className={inputCls} placeholder="😍" />
-              </Field>
-              {/* Admin-console PRD §6 — upload the sticker icon from the admin's machine */}
-              <label className="cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
-                <UploadCloud className="w-3.5 h-3.5" aria-hidden />
-                Upload sticker image (PNG / WebP / GIF) → Supabase Storage
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (!file) return
-                    if (file.size > 4 * 1024 * 1024) {
-                      toast.error('Images must be 4 MB or smaller')
-                      return
-                    }
-                    void api.admin.assets
-                      .upload(file, 'stickers')
-                      .then((res) => {
-                        setStickerForm((f) => (f ? { ...f, assetUrl: res.url } : f))
-                        toast.success('Sticker image uploaded', { description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads' })
-                      })
-                      .catch((err: unknown) => {
-                        toast.error(err instanceof Error ? err.message : 'Upload failed')
-                      })
-                      .finally(() => {
+              {/* ═══ STICKER MEDIA — preview-first (user request). ═══
+                  EDIT (sticker detail): NO url/path text — the current media
+                  renders as a big preview with an "Update image" upload
+                  control (Save Sticker persists the swap via PATCH). Emoji
+                  stickers keep a small glyph input so they stay editable.
+                  ADD: the classic input (emoji or URL) + upload, plus the
+                  same live preview once an asset is staged. */}
+              {stickerForm.id ? (
+                <>
+                  <Field label="Sticker Media">
+                    <StickerMediaPreview asset={stickerForm.assetUrl} name={stickerForm.name} />
+                  </Field>
+                  <label
+                    className={cn(
+                      'cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold transition-colors',
+                      stickerUploading
+                        ? 'text-white/40'
+                        : 'text-white/60 hover:text-white hover:border-white/30'
+                    )}
+                    data-testid="sticker-update-image"
+                  >
+                    <UploadCloud className={cn('w-3.5 h-3.5', stickerUploading && 'animate-pulse')} aria-hidden />
+                    {stickerUploading ? 'Uploading…' : 'Update sticker image (PNG / WebP / GIF)'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                      className="hidden"
+                      disabled={stickerUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) uploadStickerImage(file)
                         e.target.value = ''
-                      })
-                  }}
-                />
-              </label>
+                      }}
+                    />
+                  </label>
+                  {!isImageIcon(stickerForm.assetUrl) && (
+                    <Field label="Emoji (or swap the glyph)">
+                      <input
+                        value={stickerForm.assetUrl}
+                        onChange={(e) => setStickerForm({ ...stickerForm, assetUrl: e.target.value })}
+                        className={inputCls}
+                        placeholder="😍"
+                        maxLength={8}
+                      />
+                    </Field>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Field label="Sticker Asset * (emoji or https://…/sticker.png)">
+                    <input value={stickerForm.assetUrl} onChange={(e) => setStickerForm({ ...stickerForm, assetUrl: e.target.value })} className={inputCls} placeholder="😍" />
+                  </Field>
+                  {/* Admin-console PRD §6 — upload the sticker icon from the admin's machine */}
+                  <label
+                    className={cn(
+                      'cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold transition-colors',
+                      stickerUploading
+                        ? 'text-white/40'
+                        : 'text-white/60 hover:text-white hover:border-white/30'
+                    )}
+                  >
+                    <UploadCloud className={cn('w-3.5 h-3.5', stickerUploading && 'animate-pulse')} aria-hidden />
+                    {stickerUploading ? 'Uploading…' : 'Upload sticker image (PNG / WebP / GIF) → Supabase Storage'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
+                      className="hidden"
+                      disabled={stickerUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) uploadStickerImage(file)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                  {stickerForm.assetUrl.trim() && (
+                    <StickerMediaPreview asset={stickerForm.assetUrl} name={stickerForm.name} />
+                  )}
+                </>
+              )}
               <div className="grid grid-cols-2 gap-2.5">
                 <Field label="Display Order">
                   <input value={stickerForm.sortOrder} onChange={(e) => setStickerForm({ ...stickerForm, sortOrder: e.target.value })} className={inputCls} inputMode="numeric" />
@@ -1393,6 +1465,32 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-[11px] font-bold text-white/50 mb-1 block">{label}</span>
       {children}
     </label>
+  )
+}
+
+/** Big media preview for a sticker asset — the uploaded image, or the emoji
+ *  glyph rendered large. Used by the sticker modal (edit detail + add flow)
+ *  so admins always SEE the media instead of a raw URL/path string. */
+function StickerMediaPreview({ asset, name }: { asset: string; name: string }) {
+  const trimmed = asset.trim()
+  const isImg = trimmed ? isImageIcon(trimmed) : false
+  return (
+    <div
+      className="mx-auto w-28 h-28 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center overflow-hidden"
+      data-testid="sticker-media-preview"
+    >
+      {trimmed ? (
+        isImg ? (
+          <img src={trimmed} alt={name || 'Sticker'} className="w-20 h-20 object-contain" draggable={false} />
+        ) : (
+          <span className="text-5xl leading-none select-none" role="img" aria-label={name || 'Sticker'}>
+            {trimmed}
+          </span>
+        )
+      ) : (
+        <span className="text-[10px] font-bold text-white/35">No media yet</span>
+      )}
+    </div>
   )
 }
 

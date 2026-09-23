@@ -269,11 +269,18 @@ export const api = {
       roomId: string,
       text: string,
       mentions?: { userId: string; displayName: string }[],
-      stickerId?: string
+      stickerId?: string,
+      replyToId?: string
     ) =>
       jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
         method: 'POST',
-        body: JSON.stringify({ roomId, text, mentions: mentions ?? [], stickerId: stickerId ?? null }),
+        body: JSON.stringify({
+          roomId,
+          text,
+          mentions: mentions ?? [],
+          stickerId: stickerId ?? null,
+          replyToId: replyToId ?? null,
+        }),
       }),
     gifts: {
       catalog: () =>
@@ -396,11 +403,18 @@ export const api = {
       roomId: string,
       text: string,
       mentions?: { userId: string; displayName: string }[],
-      stickerId?: string
+      stickerId?: string,
+      replyToId?: string
     ) =>
       jsonFetch<{ ok: boolean; message: any }>('/api/quicky/games/spin-bottle/chat', {
         method: 'POST',
-        body: JSON.stringify({ roomId, text, mentions: mentions ?? [], stickerId: stickerId ?? null }),
+        body: JSON.stringify({
+          roomId,
+          text,
+          mentions: mentions ?? [],
+          stickerId: stickerId ?? null,
+          replyToId: replyToId ?? null,
+        }),
       }),
     close: (roomId: string) =>
       jsonFetch('/api/quicky/games/spin-bottle/close', {

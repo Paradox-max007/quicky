@@ -70,7 +70,18 @@ export type RoomMessage = {
   text: string
   kind: string
   createdAt: string
-  replyTo?: { id: string; name: string; text: string } | null
+  replyTo?: {
+    id: string
+    name: string
+    text: string
+    /** resolved server-side (persisted in metadata) so every client can
+     *  localise the author name to "You" */
+    userId?: string
+    /** 'user' | 'sticker' — sticker targets carry an asset thumbnail */
+    kind?: string
+    /** sticker targets: the referenced sticker's asset (image URL or emoji) */
+    asset?: string | null
+  } | null
   mentions?: RoomMention[]
   /** kind === 'gift' rows: the gift payload (icon/name/quantity/recipients).
    *  kind === 'sticker' rows: { stickerId, stickerName, stickerAsset }. */
@@ -110,6 +121,11 @@ const REACTIONS = [
 ] as const
 
 const QUICK_REACTS = ['❤️', '🔥', '😂'] as const
+
+/** Sticker drawer height cap — mobile sheets (≤350px) fill fully under the
+ *  table; tall desktop sidebars cap here so the drawer rises from the panel
+ *  bottom instead of covering the whole sidebar. */
+const STICKER_DRAWER_MAX_H = 440
 
 /** Escape a display name for regex use (§94 — structured, escaped rendering). */
 function escapeRegExp(s: string): string {
@@ -349,6 +365,37 @@ function SwipeableBubble({
   )
 }
 
+// ─── Reply reference rendering (timeline rows + composer banner) ────────────
+// A reply to a STICKER shows the sticker's actual media as a tiny thumbnail
+// (image URL or the emoji glyph) next to the author name — "stickers can be
+// used as replies for a chat bubble and other stickers". Text targets keep
+// their snippet. The author name localises to "You" for my own messages.
+function ReplyThumb({ asset }: { asset: string }) {
+  const isImg = /^https?:\/\//i.test(asset) || asset.startsWith('/') || asset.startsWith('data:image/')
+  if (isImg) return <img src={asset} alt="" className="sbr-reply-thumb" draggable={false} />
+  return (
+    <span className="sbr-reply-thumb sbr-reply-thumb-emoji" aria-hidden>
+      {asset}
+    </span>
+  )
+}
+
+function ReplyRefLine({ replyTo, meId }: { replyTo: NonNullable<RoomMessage['replyTo']>; meId: string }) {
+  const name = replyTo.userId && replyTo.userId === meId ? 'You' : replyTo.name
+  const asset = replyTo.asset ?? null
+  return (
+    <div className="sbr-msg-reply-ref">
+      {asset ? <ReplyThumb asset={asset} /> : null}
+      <div className="sbr-msg-reply-copy">
+        <span className="sbr-msg-reply-name">{name}</span>
+        <span className="sbr-msg-reply-text">
+          {replyTo.kind === 'sticker' ? `Sticker — ${replyTo.text || 'sticker'}` : replyTo.text}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export function RoomChatPanel({
   messages,
@@ -382,8 +429,12 @@ export function RoomChatPanel({
   /** v3: opens the gift sheet (DB-driven catalog) — no more dead button. */
   onOpenGifts?: () => void
   /** Stickers — sends a sticker message into the room chat (the parent's
-   *  store validates ownership on the server). */
-  onSendSticker?: (sticker: { id: string; name: string; assetUrl: string }) => void
+   *  store validates ownership on the server). Carries the ACTIVE reply
+   *  target so a sticker can reply to a chat bubble or another sticker. */
+  onSendSticker?: (
+    sticker: { id: string; name: string; assetUrl: string },
+    replyTo?: RoomMessage['replyTo']
+  ) => void
   /** Bug-fix PRD §9: web sidebar → Game Contacts panel state. */
   onOpenGameChats?: () => void
   /** Total unread private game chats (badge on the entry button). */
@@ -403,21 +454,56 @@ export function RoomChatPanel({
   const [replyTo, setReplyTo] = useState<RoomMessage['replyTo']>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  // Sticker BOTTOM DRAWER: the drawer overlays the message area and stops
-  // exactly at the composer's top edge — the composer stays visible and
-  // usable below it. Measured from the live layout every time it opens
-  // (the composer moves when the reply banner / reactions row change).
+  // Sticker BOTTOM DRAWER — overlays the chat sheet's message area and
+  // slides up from the composer. THE ANCHORING RULE (fixes the out-of-view
+  // bug): the drawer is a DIRECT CHILD of .sbr-chat (position: relative),
+  // NEVER a child of .sbr-composer — the composer's own position:relative
+  // used to shrink the coordinate space to its ~51px row, pushing the
+  // drawer past the sheet edge where overflow:hidden clipped it. Mobile:
+  // the drawer fills the whole sheet area under the table; desktop: it
+  // rises from the panel bottom capped at 440px so the sidebar's top stays
+  // visible. top/height are measured from the LIVE layout and re-measured
+  // while open (reply banner, expanded sheet, window resize all move the
+  // composer row).
   const composerRowRef = useRef<HTMLDivElement | null>(null)
   const [composerTop, setComposerTop] = useState<number | null>(null)
 
   const openStickerDrawer = () => {
     const el = composerRowRef.current
-    setComposerTop(el && el.offsetParent ? el.offsetTop : 51)
+    setComposerTop(el && el.offsetParent ? el.offsetTop : null)
     setStickerOpen(true)
     setEmojiOpen(false)
   }
 
   const closeStickerDrawer = useCallback(() => setStickerOpen(false), [])
+
+  // Keep the drawer glued to the composer while it is open — the row moves
+  // when the reply banner appears, the sheet expands/collapses or the
+  // window resizes (rotate / desktop resize).
+  useEffect(() => {
+    if (!stickerOpen) return
+    const remeasure = () => {
+      const node = composerRowRef.current
+      if (node && node.offsetParent) setComposerTop(node.offsetTop)
+    }
+    remeasure()
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(remeasure)
+      const row = composerRowRef.current
+      if (row) {
+        ro.observe(row)
+        // sheet-height changes (expand / collapse) move the row too
+        const sheet = row.closest('.sbr-chat')
+        if (sheet) ro.observe(sheet)
+      }
+    }
+    window.addEventListener('resize', remeasure)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', remeasure)
+    }
+  }, [stickerOpen])
 
   // Escape closes the drawer (the X button + backdrop-style body tap do
   // the same); picking a sticker sends and closes in one gesture.
@@ -634,7 +720,14 @@ export function RoomChatPanel({
   const startReply = (m: RoomMessage) => {
     const p = playerFor(m.userId)
     const name = m.userId === meId ? 'You' : (p?.displayName ?? 'Someone')
-    setReplyTo({ id: m.id, name, text: m.text.slice(0, 80) })
+    // Sticker targets: the reply preview carries the sticker's media so the
+    // banner (and the persisted ref on every client) can show a thumbnail.
+    const isSticker = m.kind === 'sticker'
+    const asset = isSticker ? (m.metadata?.stickerAsset ?? null) : null
+    const text = isSticker
+      ? (m.metadata?.stickerName || m.text || 'Sticker').slice(0, 80)
+      : m.text.slice(0, 80)
+    setReplyTo({ id: m.id, name, text, userId: m.userId, kind: m.kind, asset })
     inputRef.current?.focus()
   }
 
@@ -829,7 +922,9 @@ export function RoomChatPanel({
               )
             }
             // STICKER message: the big sticker asset — uploaded image or emoji
-            // glyph — in a light themed bubble. Reply works like text rows.
+            // glyph — in a light themed bubble. Reply works like text rows;
+            // a sticker sent AS a reply renders the reference line above the
+            // bubble (with the target's thumbnail when it was a sticker).
             if (m.kind === 'sticker') {
               const isMe = m.userId === meId
               const p = playerFor(m.userId)
@@ -851,6 +946,7 @@ export function RoomChatPanel({
                           </span>
                           <span className="sbr-msg-time">{timeFor(m.createdAt)}</span>
                         </p>
+                        {m.replyTo && <ReplyRefLine replyTo={m.replyTo} meId={meId} />}
                         <div className="sbr-sticker-bubble" data-testid={`room-sticker-msg-${m.id}`}>
                           {isImg ? (
                             <img
@@ -895,12 +991,7 @@ export function RoomChatPanel({
                         </span>
                         <span className="sbr-msg-time">{timeFor(m.createdAt)}</span>
                       </p>
-                      {m.replyTo && (
-                        <div className="sbr-msg-reply-ref">
-                          <span className="sbr-msg-reply-name">{m.replyTo.name}</span>
-                          <span className="sbr-msg-reply-text">{m.replyTo.text}</span>
-                        </div>
-                      )}
+                      {m.replyTo && <ReplyRefLine replyTo={m.replyTo} meId={meId} />}
                       {/* §56: mention tokens render as distinct structured spans */}
                       <p className="sbr-msg-text">{renderMessageWithMentions(m)}</p>
                     </div>
@@ -912,10 +1003,9 @@ export function RoomChatPanel({
         )}
       </div>
 
-      {/* Placeholder in normal flex flow when composer pops on top */}
-      {kbOpen && <div className="sbr-composer-placeholder" />}
-
-      {/* Quick reactions — stay docked in the panel while the composer pops */}
+      {/* Quick reactions — stay docked in the panel. While the keyboard is
+          up the WHOLE sheet rides above it (CSS .sbr-kb-open), so the rows
+          stay reachable instead of hiding behind the keyboard. */}
       <div className="sbr-reactions no-scrollbar">
         {REACTIONS.map((r) => (
           <button
@@ -947,14 +1037,20 @@ export function RoomChatPanel({
         </button>
       )}
 
-      {/* Composer row (pops on top of the table when kbOpen) */}
-      <div ref={composerRowRef} className={`sbr-composer${kbOpen ? ' sbr-composer-popped' : ''}`}>
+      {/* Composer row — stays IN the sheet. When the keyboard opens the
+          whole chat sheet lifts over the table (see .sbr-kb-open CSS); the
+          input, reactions and timeline all stay visible above the keyboard
+          and the table keeps its size (no more resize-to-fit). */}
+      <div ref={composerRowRef} className="sbr-composer">
         {replyTo && (
           <div className="sbr-reply-banner">
             <Reply size={13} className="sbr-reply-icon" />
+            {replyTo.asset ? <ReplyThumb asset={replyTo.asset} /> : null}
             <div className="sbr-reply-content">
               <span className="sbr-reply-to-name">{replyTo.name}</span>
-              <span className="sbr-reply-to-text">{replyTo.text}</span>
+              <span className="sbr-reply-to-text">
+                {replyTo.kind === 'sticker' ? `Sticker — ${replyTo.text}` : replyTo.text}
+              </span>
             </div>
             <button
               className="sbr-reply-close"
@@ -973,46 +1069,6 @@ export function RoomChatPanel({
                 {e}
               </button>
             ))}
-          </div>
-        )}
-
-        {/* Stickers — a BOTTOM DRAWER above the composer (user request:
-            replaces the old inline tray). Slides up from the composer's
-            edge with an X to close; owned stickers grouped by set on the
-            My-Stickers tab, compact shop cards + pop-out preview on the
-            shop tab. Tapping a sticker sends it straight into the table
-            chat (the store validates ownership server-side). */}
-        {stickerOpen && (
-          <div
-            className="sbr-sticker-drawer"
-            style={composerTop != null ? { bottom: `calc(100% - ${composerTop}px)` } : undefined}
-            data-testid="room-sticker-drawer"
-          >
-            <div className="sbr-sticker-drawer-head">
-              <div className="sbr-sticker-drawer-title">
-                <Sticker size={14} aria-hidden />
-                <span>Stickers</span>
-              </div>
-              <button
-                className="sbr-sticker-drawer-x"
-                onClick={closeStickerDrawer}
-                aria-label="Close stickers"
-                data-testid="room-sticker-drawer-close"
-              >
-                <X size={17} />
-              </button>
-            </div>
-            <StickerPicker
-              className="flex-1 min-h-0"
-              pickLabel="Tap a sticker to send it to the table"
-              onPick={(s) => {
-                setStickerOpen(false)
-                onSendSticker?.(s)
-              }}
-              // No onCatalogChange: after a purchase/claim the picker reloads
-              // itself and switches to the owned tab — the drawer stays open
-              // so the user can immediately send from the new set.
-            />
           </div>
         )}
 
@@ -1179,6 +1235,63 @@ export function RoomChatPanel({
       {roomContent}
       {/* 'dating' renders the parent-provided embedded ChatView (§57) */}
       {panel !== 'room' && panelContent}
+
+      {/* ═══ STICKER BOTTOM DRAWER — a DIRECT CHILD of .sbr-chat (NOT of the
+          composer: .sbr-composer is position:relative, and an absolute child
+          inside it resolves bottom:calc(100% - Xpx) against the ~51px input
+          row — that pushed the drawer past the sheet edge where overflow:
+          hidden clipped it out of view on mobile). Anchored to the sheet:
+          mobile → overlays the whole chat area under the table; desktop →
+          rises from the panel bottom capped at 440px. Stays above the
+          composer so the row (and its sticker toggle) remain usable. */}
+      {stickerOpen && panel === 'room' && (
+        <div
+          className="sbr-sticker-drawer"
+          style={
+            composerTop != null
+              ? {
+                  top: Math.max(0, composerTop - Math.min(composerTop, STICKER_DRAWER_MAX_H)),
+                  height: Math.min(composerTop, STICKER_DRAWER_MAX_H),
+                }
+              : { top: 0, bottom: 51 }
+          }
+          data-testid="room-sticker-drawer"
+        >
+          <div className="sbr-sticker-drawer-head">
+            <div className="sbr-sticker-drawer-title">
+              <Sticker size={14} aria-hidden />
+              <span>Stickers</span>
+            </div>
+            <button
+              className="sbr-sticker-drawer-x"
+              onClick={closeStickerDrawer}
+              aria-label="Close stickers"
+              data-testid="room-sticker-drawer-close"
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <StickerPicker
+            className="flex-1 min-h-0"
+            pickLabel={
+              replyTo
+                ? `Tap a sticker to reply to ${replyTo.name}`
+                : 'Tap a sticker to send it to the table'
+            }
+            onPick={(s) => {
+              // Pick-to-send in one gesture; an active reply rides along —
+              // stickers can reply to chat bubbles AND other stickers.
+              setStickerOpen(false)
+              const rt = replyTo
+              setReplyTo(null)
+              onSendSticker?.(s, rt ?? undefined)
+            }}
+            // No onCatalogChange: after a purchase/claim the picker reloads
+            // itself and switches to the owned tab — the drawer stays open
+            // so the user can immediately send from the new set.
+          />
+        </div>
+      )}
 
       {/* ═══ PANEL-TOP GIFT DRAWER (gifting-revision) — shows a received-gift
           notification INSIDE the chat shell ONLY while the Room Chat list is

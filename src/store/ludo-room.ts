@@ -59,8 +59,13 @@ type LudoRoomState = {
     mentions?: { userId: string; displayName: string }[]
   ) => Promise<void>
   /** Send a sticker into the room chat — server re-validates ownership
-   *  (same endpoint as spin-bottle, Ludo PRD §79 shared room-chat storage). */
-  sendSticker: (sticker: { id: string; name: string; assetUrl: string }) => Promise<void>
+   *  (same endpoint as spin-bottle, Ludo PRD §79 shared room-chat storage).
+   *  Carries the active reply target: stickers can reply to chat bubbles
+   *  and other stickers (the ref is persisted server-side). */
+  sendSticker: (
+    sticker: { id: string; name: string; assetUrl: string },
+    replyTo?: RoomMessage['replyTo']
+  ) => Promise<void>
   reconcile: () => Promise<void>
   bumpEconomy: (delta: Partial<Economy>) => void
   setCoinBalance: (n: number) => void
@@ -532,10 +537,15 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       })
       try {
         // The room-chat STORAGE is shared with Spin Bottle (Ludo PRD §79) —
-        // the ludo API wrapper posts to the same room-chat endpoint.
-        const res = await api.ludo.sendChat(roomId, body, mentions)
+        // the ludo API wrapper posts to the same room-chat endpoint. The
+        // reply id rides along; the server re-resolves + persists the ref.
+        const res = await api.ludo.sendChat(roomId, body, mentions, undefined, replyTo?.id)
         if (res?.message) {
-          const confirmed: RoomMessage = { ...res.message, mentions: res.message.mentions ?? mentions ?? [], replyTo: replyTo ?? null }
+          const confirmed: RoomMessage = {
+            ...res.message,
+            mentions: res.message.mentions ?? mentions ?? [],
+            replyTo: res.message.replyTo ?? replyTo ?? null,
+          }
           ctl.channel?.sendChat({
             id: confirmed.id,
             messageId: confirmed.id,
@@ -558,7 +568,7 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       }
     },
 
-    sendSticker: async (sticker) => {
+    sendSticker: async (sticker, replyTo) => {
       const { roomId, chat } = get()
       if (!roomId) return
       const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -567,19 +577,20 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
       set({
         chat: [
           ...chat,
-          { id: tmpId, userId: meId, text: sticker.name, kind: 'sticker', createdAt: new Date().toISOString(), metadata: optimisticMeta },
+          { id: tmpId, userId: meId, text: sticker.name, kind: 'sticker', createdAt: new Date().toISOString(), metadata: optimisticMeta, replyTo: replyTo ?? null },
         ],
       })
       try {
         // Shared room-chat storage (Ludo PRD §79) — same endpoint, server
-        // validates sticker ownership before writing the row.
-        const res = await api.ludo.sendChat(roomId, sticker.name, [], sticker.id)
+        // validates sticker ownership before writing the row and persists
+        // the reply reference (stickers can reply to bubbles + stickers).
+        const res = await api.ludo.sendChat(roomId, sticker.name, [], sticker.id, replyTo?.id)
         if (res?.message) {
           const confirmed: RoomMessage = {
             ...res.message,
             metadata: res.message.metadata ?? optimisticMeta,
             mentions: [],
-            replyTo: null,
+            replyTo: res.message.replyTo ?? replyTo ?? null,
           }
           ctl.channel?.sendChat({
             id: confirmed.id,
@@ -589,7 +600,7 @@ export const useLudoRoomStore = create<LudoRoomState>((set, get) => {
             kind: 'sticker',
             createdAt: confirmed.createdAt,
             metadata: JSON.stringify(confirmed.metadata ?? optimisticMeta),
-            replyTo: null,
+            replyTo: confirmed.replyTo,
             mentions: [],
           })
           set((prev) => {

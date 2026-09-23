@@ -13,10 +13,16 @@
    MECHANICS (do not break when restyling):
    - --sbr-kb (keyboard overlay height) is set on <html> from JS
      and inherits in here — do NOT redeclare it on .sbr-root.
+   - --sbr-room-h (keyboard-free layout height) is set on <html> while
+     the keyboard is up: .sbr-root pins to it so a webview that resizes
+     its layout (resizes-content / old Capacitor APKs) can NEVER shrink
+     the game table to make room for the keyboard.
    - .sbr-composer must stay position:relative (reply banner and
      emoji tray anchor to the input row).
-   - .sbr-composer-popped floats above the keyboard over the
-     table; .sbr-composer-placeholder keeps the panel height.
+   - KEYBOARD RIDE: while the keyboard is up the WHOLE chat sheet
+     (.sbr-chat.sbr-kb-open) translates up over the table — the message
+     area overlays the table instead of resizing it. The old
+     .sbr-composer-popped fixed-composer float is GONE.
    ============================================================ */
 
 .sbr-root {
@@ -26,6 +32,16 @@
   --sbr-pill: var(--qk-elev);
   --sbr-line: color-mix(in srgb, var(--qk-text) 10%, transparent);
   --sbr-accent: var(--qk-accent);
+
+  /* Keyboard pin: while the soft keyboard is up JS sets --sbr-room-h to the
+     last keyboard-free layout height. A webview that resizes its layout
+     viewport (interactive-widget=resizes-content, or a Capacitor APK built
+     before KeyboardResize.None) would otherwise reflow the whole flex
+     column and shrink the table; pinning the root keeps the table EXACTLY
+     its pre-keyboard size while the chat sheet rides up over it. With the
+     var unset (normal state, resizes-visual webviews) this is a no-op and
+     the component's absolute inset-0 sizing stays in charge. */
+  height: var(--sbr-room-h, auto);
 
   /* responsive player-card size — same proportions on every screen.
      Bumped up: the quick-action icon row under the HUD was removed, its
@@ -1213,13 +1229,21 @@
 }
 .sbr-msg-reply-ref {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   margin: 3px 0 4px;
   padding: 3px 8px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.28);
   border-left: 2.5px solid var(--sbr-accent);
+}
+.sbr-msg-reply-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .sbr-msg-reply-name {
   font-size: 10px;
@@ -1431,34 +1455,24 @@
 .sbr-send:active { transform: scale(0.9); }
 .sbr-send:disabled { opacity: 0.45; }
 
-/* Placeholder to keep chat layout steady when composer pops on top
-   (real composer height = 7px padding + 36px input + ~8px padding) */
-.sbr-composer-placeholder {
-  flex-shrink: 0;
-  height: 51px;
-}
-/* When keyboard is active, pop the composer over the table above the keyboard */
-.sbr-composer.sbr-composer-popped {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: var(--sbr-kb, 0px);
-  z-index: 150;
-  padding: 8px 10px;
-  padding-bottom: 8px;
-  background: var(--qk-card);
-  border-top: 1.5px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.65), 0 0 0 1px color-mix(in srgb, var(--qk-text) 8%, transparent);
-  animation: sbr-pop-up 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes sbr-pop-up {
-  from { opacity: 0.8; transform: translateY(14px); }
-  to   { opacity: 1;   transform: translateY(0); }
+/* ═══ KEYBOARD RIDE (replaces the old fixed-composer pop) ═════════════════
+   While the soft keyboard is up the WHOLE chat sheet — timeline, reactions
+   AND composer — rides above the keyboard and OVERLAYS the game table:
+   the table keeps its pre-keyboard geometry (root pinned via
+   --sbr-room-h) and the bottom message area floats on top of it instead
+   of squeezing it. The sheet keeps its flow box (transform only), so
+   nothing reflows when the keyboard opens or closes. Mobile sheet only —
+   on ≥1024px the sidebar is a full column and keyboards are hardware. */
+@media (max-width: 1023.98px) {
+  .sbr-chat.sbr-kb-open {
+    transform: translateY(calc(-1 * var(--sbr-kb, 0px)));
+    z-index: 150;
+    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.65);
+  }
 }
 /* Reply preview banner — docks directly above the input row (relative to
-   .sbr-composer). Shows above the input in BOTH states: normal (docked in
-   the chat panel) and popped (floating over the table while the keyboard
-   is open). */
+   .sbr-composer). The banner shows the reply target's sticker thumbnail
+   (image or emoji glyph) when replying to a sticker. */
 .sbr-reply-banner {
   position: absolute;
   bottom: 100%;
@@ -1476,6 +1490,24 @@
   z-index: 15;
 }
 .sbr-reply-icon { color: var(--sbr-accent); flex-shrink: 0; }
+/* Reply-target sticker thumbnail (banner + timeline reply refs): a tiny
+   rendition of the referenced sticker — image asset or the emoji glyph. */
+.sbr-reply-thumb {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+}
+.sbr-reply-thumb.sbr-reply-thumb-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  background: transparent;
+}
 .sbr-reply-content {
   flex: 1;
   min-width: 0;
@@ -2033,9 +2065,11 @@
 .sbr-chat.sbr-chat-expanded {
   height: min(74dvh, 660px);
   border-radius: 22px 22px 0 0;
-  transition: height 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: height 0.32s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.sbr-chat { transition: height 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+.sbr-chat {
+  transition: height 0.32s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
 /* ── Mobile tools row (expanded state only — mirrors the web header) ────── */
 .sbr-chat-tools {
@@ -2433,16 +2467,18 @@
 
 /* ── STICKERS (room chat) — bottom drawer + sticker message rows ──────────── */
 /* The two-tab picker (My Stickers grouped by set | Sticker Shop cards) lives
-   in a BOTTOM DRAWER that slides up over the message area and stops exactly
-   at the composer's top edge (inline style bottom: calc(100% - <px>)) — the
-   composer row stays visible and usable underneath. Theme-aware through
-   --qk-* tokens so every theme paints it correctly. */
+   in a BOTTOM DRAWER that overlays the chat sheet's message area. The
+   drawer is a DIRECT CHILD of .sbr-chat with top/height set INLINE from
+   the measured composer position (JS in RoomChatPanel): mobile sheets fill
+   the whole area under the table, desktop sidebars rise from the panel
+   bottom capped at 440px. It must NEVER live inside .sbr-composer — that
+   row's position:relative would shrink the containing block to ~51px and
+   clip the drawer out of view (the old bug). Theme-aware through --qk-*
+   tokens so every theme paints it correctly. */
 .sbr-sticker-drawer {
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
-  bottom: 51px; /* fallback — overridden inline from the measured composer top */
   z-index: 60;
   display: flex;
   flex-direction: column;

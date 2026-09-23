@@ -5,6 +5,12 @@
 //      { stickerId, stickerName, stickerAsset }). The sticker MUST be
 //      active AND the sender must OWN its bundle (server-checked — the
 //      client never self-grants). Ludo rooms post here too (Ludo PRD §79).
+//      { replyToId } → reply reference (text OR sticker targets): the
+//      referenced message must exist in THIS room; the server resolves the
+//      author name / snippet / sticker asset and persists the ref inside
+//      the message's JSON metadata, so replies survive reloads and render
+//      identically for every client (stickers can reply to chat bubbles
+//      and other stickers).
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
@@ -16,7 +22,7 @@ const RATE_LIMIT_MS = 1500
 // A naive per-user rate limit (kept in-memory — fine for V1 single-process).
 const lastSentAt = new Map<string, number>()
 
-/** Parse a room-message JSON metadata blob defensively (gift / sticker). */
+/** Parse a room-message JSON metadata blob defensively (gift / sticker / reply). */
 function parseMessageMetadata(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null
   try {
@@ -24,6 +30,33 @@ function parseMessageMetadata(raw: string | null): Record<string, unknown> | nul
     return v && typeof v === 'object' ? (v as Record<string, unknown>) : null
   } catch {
     return null
+  }
+}
+
+/** Shape of the persisted reply reference (metadata.replyTo). */
+type ReplyRef = {
+  id: string
+  userId: string
+  name: string
+  text: string
+  kind: string
+  asset: string | null
+}
+
+/** Extract + normalise a reply reference from a message metadata blob. */
+function replyRefFromMetadata(raw: string | null): ReplyRef | null {
+  const meta = parseMessageMetadata(raw)
+  const r = meta?.replyTo
+  if (!r || typeof r !== 'object') return null
+  const ref = r as Record<string, unknown>
+  if (typeof ref.id !== 'string' || !ref.id) return null
+  return {
+    id: ref.id,
+    userId: typeof ref.userId === 'string' ? ref.userId : '',
+    name: typeof ref.name === 'string' ? ref.name.slice(0, 60) : 'Player',
+    text: typeof ref.text === 'string' ? ref.text.slice(0, 80) : '',
+    kind: typeof ref.kind === 'string' ? ref.kind : 'user',
+    asset: typeof ref.asset === 'string' ? ref.asset.slice(0, 2048) : null,
   }
 }
 
@@ -71,6 +104,7 @@ export async function GET(req: NextRequest) {
       createdAt: m.createdAt.toISOString(),
       author: { id: m.user.id, name: m.user.name },
       mentions: mentionsByMessage.get(m.id) ?? [],
+      replyTo: replyRefFromMetadata(m.metadata),
       metadata: parseMessageMetadata(m.metadata),
     })),
   })
@@ -104,6 +138,34 @@ export async function POST(req: NextRequest) {
     })
     if (!owned) return NextResponse.json({ error: 'sticker_not_owned' }, { status: 403 })
     stickerMeta = { stickerId: sticker.id, stickerName: sticker.name, stickerAsset: sticker.assetUrl }
+  }
+
+  // ── Reply reference (text OR sticker targets). Only the id is trusted;
+  // the referenced message must exist in THIS room — everything else
+  // (author name, snippet, sticker asset) is re-resolved server-side so a
+  // hostile client can never fabricate a ref into another room or a fake
+  // preview. Unknown/stale ids are ignored (the send still goes through).
+  const replyToId = body?.replyToId ? String(body.replyToId).slice(0, 64) : null
+  let replyMeta: ReplyRef | null = null
+  if (replyToId) {
+    const ref = await db.spinRoomMessage.findFirst({
+      where: { id: replyToId, roomId },
+      include: { user: { select: { id: true, name: true } } },
+    })
+    if (ref && (ref.kind === 'user' || ref.kind === 'sticker')) {
+      const refSticker = ref.kind === 'sticker' ? parseMessageMetadata(ref.metadata) : null
+      replyMeta = {
+        id: ref.id,
+        userId: ref.userId,
+        name: (ref.user.name ?? 'Player').slice(0, 60),
+        text: (ref.text || '').slice(0, 80),
+        kind: ref.kind,
+        asset:
+          ref.kind === 'sticker' && typeof refSticker?.stickerAsset === 'string'
+            ? refSticker.stickerAsset.slice(0, 2048)
+            : null,
+      }
+    }
   }
 
   // ── Mentions (§40/§41): NEVER trust client mention data. Each submitted
@@ -149,6 +211,12 @@ export async function POST(req: NextRequest) {
   // never outlive its message or vice versa. {timeout: 15s} guards against
   // Prisma's 5s default interactive-transaction timeout on slow dev setups
   // (same P2028 fix as gifts + sticker purchases).
+  // Sticker payload + reply reference share the JSON metadata column — a
+  // sticker sent AS a reply carries both blocks.
+  const metadataBlob =
+    stickerMeta || replyMeta
+      ? JSON.stringify({ ...(stickerMeta ?? {}), ...(replyMeta ? { replyTo: replyMeta } : {}) })
+      : null
   const { created, mentionRows } = await db.$transaction(
     async (tx) => {
       const created = await tx.spinRoomMessage.create({
@@ -159,7 +227,7 @@ export async function POST(req: NextRequest) {
           // snippets) and the full asset metadata in the JSON column.
           text: text || (stickerMeta ? stickerMeta.stickerName : text),
           kind: stickerMeta ? 'sticker' : 'user',
-          metadata: stickerMeta ? JSON.stringify(stickerMeta) : null,
+          metadata: metadataBlob,
         },
         include: { user: { select: { name: true, id: true } } },
       })
@@ -227,6 +295,7 @@ export async function POST(req: NextRequest) {
         userId: r.mentionedUserId,
         displayName: mentionName.get(r.mentionedUserId) ?? 'Player',
       })),
+      replyTo: replyMeta,
       metadata: stickerMeta,
     },
   })

@@ -296,24 +296,55 @@ export function SpinBottleRoom({
      
   }, [roomId, spinId])
 
-  // ─── Keyboard OVERLAY mode (unchanged from v2.1) ─────────────────────────
+  // ─── Keyboard OVERLAY mode (v3 — sheet ride) ──────────────────────────
+  // While the soft keyboard is up:
+  //   · --sbr-kb      → the chat sheet translates up over the table (CSS
+  //                     .sbr-chat.sbr-kb-open) — the message area OVERLAYS
+  //                     the table instead of resizing it.
+  //   · --sbr-room-h  → the room root pins to the last keyboard-free
+  //                     layout height, so a webview that resizes its LAYOUT
+  //                     viewport (resizes-content / old Capacitor APKs)
+  //                     can never shrink the table to make room.
+  // The unified formula (stableInner − visible area) works in BOTH resize
+  // modes: in resizes-visual stableInner == innerHeight (classic formula);
+  // in resizes-content innerHeight already shrank, so the stable baseline
+  // still yields the true keyboard height. Native Capacitor overrides with
+  // the plugin's exact pixel height either way.
   useEffect(() => {
     const doc = document.documentElement
+    let stableInner = window.innerHeight // last keyboard-free layout height
     const setKb = (px: number) => {
-      kbHeightRef.current = px
-      doc.style.setProperty('--sbr-kb', `${Math.round(px)}px`)
-      setKbHeight(px)
+      const h = Math.max(0, px)
+      kbHeightRef.current = h
+      doc.style.setProperty('--sbr-kb', `${Math.round(h)}px`)
+      if (h > 0) {
+        doc.style.setProperty('--sbr-room-h', `${Math.round(stableInner)}px`)
+      } else {
+        doc.style.removeProperty('--sbr-room-h')
+      }
+      setKbHeight(h)
     }
 
     // Web / safety net: derive keyboard height from the visual viewport.
     const vv = window.visualViewport ?? null
     const onVV = () => {
       if (!vv) return
-      const kb = window.innerHeight - vv.height - vv.offsetTop
-      setKb(Math.max(0, Math.min(kb, window.innerHeight * 0.6)))
+      const kb = stableInner - (vv.height + vv.offsetTop)
+      setKb(Math.min(kb, stableInner * 0.6))
     }
     vv?.addEventListener('resize', onVV)
     vv?.addEventListener('scroll', onVV)
+
+    // Track the keyboard-free layout height (rotation, browser chrome,
+    // desktop window resize) — never while a keyboard is up, so the pin
+    // baseline can never absorb the keyboard's own shrink.
+    const onResize = () => {
+      if (kbHeightRef.current === 0) {
+        stableInner = window.innerHeight
+        doc.style.removeProperty('--sbr-room-h')
+      }
+    }
+    window.addEventListener('resize', onResize)
 
     // Native (Capacitor): exact keyboard height from the Keyboard plugin.
     let handles: Awaited<ReturnType<typeof Keyboard.addListener>>[] = []
@@ -329,6 +360,7 @@ export function SpinBottleRoom({
     return () => {
       vv?.removeEventListener('resize', onVV)
       vv?.removeEventListener('scroll', onVV)
+      window.removeEventListener('resize', onResize)
       handles.forEach((h) => h.remove())
       setKb(0)
     }
@@ -1025,7 +1057,7 @@ export function SpinBottleRoom({
             meId={meId}
             roomId={roomId}
             onSend={sendChat}
-            onSendSticker={(s) => void useGameRoomStore.getState().sendSticker(s)}
+            onSendSticker={(s, r) => void useGameRoomStore.getState().sendSticker(s, r)}
             sending={sendingChat}
             kbOpen={kbHeight > 0}
             onOpenGifts={toolbox.openGiftSheet}

@@ -116,8 +116,13 @@ type GameRoomState = {
     replyTo?: RoomMessage['replyTo'],
     mentions?: { userId: string; displayName: string }[]
   ) => Promise<void>
-  /** Send a sticker into the room chat — server re-validates ownership. */
-  sendSticker: (sticker: { id: string; name: string; assetUrl: string }) => Promise<void>
+  /** Send a sticker into the room chat — server re-validates ownership.
+   *  Carries the active reply target: stickers can reply to chat bubbles
+   *  and other stickers (the ref is persisted server-side). */
+  sendSticker: (
+    sticker: { id: string; name: string; assetUrl: string },
+    replyTo?: RoomMessage['replyTo']
+  ) => Promise<void>
   reconcile: () => Promise<void>
   bumpEconomy: (delta: Partial<Economy>) => void
   setCoinBalance: (n: number) => void
@@ -540,9 +545,16 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
         chat: [...chat, { id: tmpId, userId: meId, text: body, kind: 'user', createdAt: new Date().toISOString(), replyTo: replyTo ?? null, mentions: mentions ?? [] }],
       })
       try {
-        const res = await api.spinBottle.sendChat(roomId, body, mentions)
+        // The reply id rides to the server, which re-resolves + persists
+        // the reference (author name, snippet, sticker asset) — the ref
+        // survives reloads and renders identically for every client.
+        const res = await api.spinBottle.sendChat(roomId, body, mentions, undefined, replyTo?.id)
         if (res?.message) {
-          const confirmed: RoomMessage = { ...res.message, mentions: res.message.mentions ?? mentions ?? [], replyTo: replyTo ?? null }
+          const confirmed: RoomMessage = {
+            ...res.message,
+            mentions: res.message.mentions ?? mentions ?? [],
+            replyTo: res.message.replyTo ?? replyTo ?? null,
+          }
           ctl.channel?.sendChat({
             id: confirmed.id,
             messageId: confirmed.id,
@@ -565,30 +577,31 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
       }
     },
 
-    sendSticker: async (sticker) => {
+    sendSticker: async (sticker, replyTo) => {
       const { roomId, chat } = get()
       if (!roomId) return
       const tmpId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const meId = useQuickyStore.getState().user?.id ?? ''
       // Optimistic sticker row — the asset metadata rides along so the
-      // timeline renders the big sticker immediately.
+      // timeline renders the big sticker immediately; an active reply
+      // target renders its reference line right away (server confirms).
       const optimisticMeta = { stickerId: sticker.id, stickerName: sticker.name, stickerAsset: sticker.assetUrl }
       set({
         chat: [
           ...chat,
-          { id: tmpId, userId: meId, text: sticker.name, kind: 'sticker', createdAt: new Date().toISOString(), metadata: optimisticMeta },
+          { id: tmpId, userId: meId, text: sticker.name, kind: 'sticker', createdAt: new Date().toISOString(), metadata: optimisticMeta, replyTo: replyTo ?? null },
         ],
       })
       try {
         // text rides as the sticker NAME for previews; the server validates
-        // ownership before writing the row.
-        const res = await api.spinBottle.sendChat(roomId, sticker.name, [], sticker.id)
+        // ownership before writing the row and persists the reply ref.
+        const res = await api.spinBottle.sendChat(roomId, sticker.name, [], sticker.id, replyTo?.id)
         if (res?.message) {
           const confirmed: RoomMessage = {
             ...res.message,
             metadata: res.message.metadata ?? optimisticMeta,
             mentions: [],
-            replyTo: null,
+            replyTo: res.message.replyTo ?? replyTo ?? null,
           }
           // Realtime: every other client renders the sticker card instantly.
           ctl.channel?.sendChat({
@@ -599,7 +612,7 @@ export const useGameRoomStore = create<GameRoomState>((set, get) => {
             kind: 'sticker',
             createdAt: confirmed.createdAt,
             metadata: JSON.stringify(confirmed.metadata ?? optimisticMeta),
-            replyTo: null,
+            replyTo: confirmed.replyTo,
             mentions: [],
           })
           set((prev) => {

@@ -395,7 +395,7 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
     },
 
     sendSticker: (sticker) => {
-      const { activePeer, activeConversationId } = get()
+      const { activePeer, activeConversationId, replyTo } = get()
       if (!activePeer) return
       const meId = useQuickyStore.getState().user?.id ?? ''
       const clientMessageId = `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -406,12 +406,19 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
         messageType: 'sticker',
         text: null,
         sticker,
+        // Stickers can be sent AS replies (to bubbles or other stickers):
+        // the active reply target rides along like text/media sends.
+        replyToMessageId: replyTo?.id ?? null,
+        replyTo: replyTo
+          ? { id: replyTo.id, senderId: replyTo.senderId, senderName: null, text: replyTo.text ?? '', messageType: replyTo.messageType }
+          : null,
         clientMessageId,
         createdAt: new Date().toISOString(),
         reactions: [],
         pending: true,
       }
       mergeMessages([optimistic])
+      set({ replyTo: null })
       void (async () => {
         try {
           const res = await api.gameChat.send({
@@ -419,6 +426,7 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
             conversationId: activeConversationId ?? undefined,
             messageType: 'sticker',
             stickerId: sticker.id,
+            replyToMessageId: replyTo?.id || undefined,
             clientMessageId,
           })
           mergeMessages([res.message])
