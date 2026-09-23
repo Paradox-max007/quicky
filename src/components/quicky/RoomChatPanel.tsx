@@ -469,6 +469,10 @@ export function RoomChatPanel({
   const [composerTop, setComposerTop] = useState<number | null>(null)
 
   const openStickerDrawer = () => {
+    // Drop the keyboard FIRST: the drawer anchors to the composer's DOCKED
+    // flow position, so an open keyboard (which pops the composer out)
+    // must not be riding while the drawer measures + shows.
+    inputRef.current?.blur()
     const el = composerRowRef.current
     setComposerTop(el && el.offsetParent ? el.offsetTop : null)
     setStickerOpen(true)
@@ -476,6 +480,13 @@ export function RoomChatPanel({
   }
 
   const closeStickerDrawer = useCallback(() => setStickerOpen(false), [])
+
+  // The keyboard popping the composer out of the panel forces the drawer
+  // closed — it is anchored to the composer's docked flow position and
+  // would otherwise render behind the keyboard.
+  useEffect(() => {
+    if (kbOpen && stickerOpen) setStickerOpen(false)
+  }, [kbOpen, stickerOpen])
 
   // Keep the drawer glued to the composer while it is open — the row moves
   // when the reply banner appears, the sheet expands/collapses or the
@@ -1004,8 +1015,8 @@ export function RoomChatPanel({
       </div>
 
       {/* Quick reactions — stay docked in the panel. While the keyboard is
-          up the WHOLE sheet rides above it (CSS .sbr-kb-open), so the rows
-          stay reachable instead of hiding behind the keyboard. */}
+          up ONLY the composer pops out of the panel; this row stays in the
+          sheet's flow box (hidden behind the keyboard) and never moves. */}
       <div className="sbr-reactions no-scrollbar">
         {REACTIONS.map((r) => (
           <button
@@ -1037,10 +1048,12 @@ export function RoomChatPanel({
         </button>
       )}
 
-      {/* Composer row — stays IN the sheet. When the keyboard opens the
-          whole chat sheet lifts over the table (see .sbr-kb-open CSS); the
-          input, reactions and timeline all stay visible above the keyboard
-          and the table keeps its size (no more resize-to-fit). */}
+      {/* Composer row — pops OUT of the message panel when the soft
+          keyboard opens (CSS .sbr-chat.sbr-kb-open .sbr-composer): the
+          input + its anchored reply banner / mention picker / emoji tray
+          float directly above the keyboard, overlaying the table by just
+          the strip they need — the message panel and the painted table
+          never move or resize. */}
       <div ref={composerRowRef} className="sbr-composer">
         {replyTo && (
           <div className="sbr-reply-banner">

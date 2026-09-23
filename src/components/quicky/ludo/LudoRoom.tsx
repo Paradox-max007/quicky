@@ -49,6 +49,23 @@ import { LudoGameArea } from './LudoGameArea'
 import '../spin-bottle-room.css'
 import './ludo-room.css'
 
+/* ── Keyboard helpers (twin of SpinBottleRoom's) ───────────────────────
+   A focused text element is the tell for "the soft keyboard is opening or
+   up": its layout resize lands on the FOCUS frame in resizes-content
+   webviews, so viewport re-baselining (and the stage-height lock
+   re-measure) must be suppressed while one holds focus — otherwise the
+   shrunk geometry gets baked into the baseline and the board squeezes. */
+function isTextElement(el: EventTarget | null): el is HTMLElement {
+  return (
+    el instanceof HTMLElement &&
+    el.matches('input, textarea, [contenteditable="true"], [contenteditable=""]')
+  )
+}
+
+function anyTextFocused(): boolean {
+  return isTextElement(document.activeElement)
+}
+
 export function LudoRoom({
   roomId: initialRoomId,
   onClose,
@@ -87,23 +104,39 @@ export function LudoRoom({
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
-  // Keyboard OVERLAY mode (v3 — sheet ride, same guard as the Spin Bottle
-  // room): while the soft keyboard is up the chat sheet translates up over
-  // the board (.sbr-chat.sbr-kb-open) and the room root pins to the last
-  // keyboard-free layout height (--sbr-room-h) — a webview that resizes its
-  // LAYOUT viewport (resizes-content / old Capacitor APKs) can never shrink
-  // the board; the message area overlays it instead (§33).
+  // Keyboard COMPOSER-POP mode (v4 — same as the Spin Bottle room): while
+  // the soft keyboard is up ONLY the chat composer pops out of the panel
+  // (CSS .sbr-chat.sbr-kb-open .sbr-composer) and floats above the
+  // keyboard. The board NEVER changes size, in any webview resize mode:
+  //   · --sbr-room-h  → the room root pins to the last keyboard-free
+  //                     layout height (blocks resizes-content /
+  //                     adjustResize layout shrinks).
+  //   · --sbr-sheet-h → the chat sheet's pixel height freezes (the 33dvh
+  //                     clamp re-derives when the ICB shrinks — freezing
+  //                     it keeps the board's flex allocation identical).
+  //   · --sbr-kb      → the composer's translateY: its bottom lands flush
+  //                     on the keyboard's top edge in BOTH resize modes.
+  //   · lockedStageHeight keeps the .ldo-stage-holder box frozen too.
+  // RACE FIX vs v3: baselines are captured at FOCUS time (the only moment
+  // the layout is guaranteed keyboard-free, BEFORE the webview resizes)
+  // and window-resize re-baselining is suppressed while a text input
+  // holds focus — in resizes-content webviews the layout resize can fire
+  // BEFORE the visual-viewport events, and the old kbHeight-only guard
+  // then baked the already-shrunk innerHeight into the baseline.
   useEffect(() => {
     const doc = document.documentElement
     let stableInner = window.innerHeight // last keyboard-free layout height
+    let stableSheetH: number | null = null // last keyboard-free sheet height
     const setKb = (px: number) => {
-      const h = Math.max(0, px)
+      const h = Math.max(0, Math.min(px, stableInner * 0.85))
       kbHeightRef.current = h
       doc.style.setProperty('--sbr-kb', `${Math.round(h)}px`)
       if (h > 0) {
         doc.style.setProperty('--sbr-room-h', `${Math.round(stableInner)}px`)
+        if (stableSheetH != null) doc.style.setProperty('--sbr-sheet-h', `${Math.round(stableSheetH)}px`)
       } else {
         doc.style.removeProperty('--sbr-room-h')
+        doc.style.removeProperty('--sbr-sheet-h')
       }
       setKbHeight(h)
     }
@@ -114,12 +147,32 @@ export function LudoRoom({
       // area. Works in BOTH resize modes (resizes-visual AND
       // resizes-content — where innerHeight already shrank).
       const kb = stableInner - (vv.height + vv.offsetTop)
-      setKb(Math.min(kb, stableInner * 0.6))
+      setKb(kb)
     }
     vv?.addEventListener('resize', onVV)
     vv?.addEventListener('scroll', onVV)
+
+    // FOCUS-TIME CAPTURE — the moment the input is tapped the layout is
+    // still keyboard-free: refresh the root baseline and remember the
+    // sheet's exact pixel height so the pin can freeze it (covers inputs
+    // inside the room composer AND the embedded personal/dating docks).
+    const onFocusIn = (e: FocusEvent) => {
+      if (!isTextElement(e.target)) return
+      if (kbHeightRef.current === 0) stableInner = Math.max(stableInner, window.innerHeight)
+      const sheet = e.target.closest('.sbr-chat') ?? document.querySelector('.sbr-chat')
+      if (sheet instanceof HTMLElement) {
+        const h = sheet.getBoundingClientRect().height
+        if (h > 100) stableSheetH = h
+      }
+    }
+    document.addEventListener('focusin', onFocusIn)
+
+    // Re-baseline ONLY when no text input holds focus: in resizes-content
+    // webviews the keyboard's layout resize lands while the composer is
+    // still focused — re-baselining there bakes the keyboard into the
+    // baseline (the v3 race).
     const onResize = () => {
-      if (kbHeightRef.current === 0) {
+      if (kbHeightRef.current === 0 && !anyTextFocused()) {
         stableInner = window.innerHeight
         doc.style.removeProperty('--sbr-room-h')
       }
@@ -133,18 +186,22 @@ export function LudoRoom({
     return () => {
       vv?.removeEventListener('resize', onVV)
       vv?.removeEventListener('scroll', onVV)
+      document.removeEventListener('focusin', onFocusIn)
       window.removeEventListener('resize', onResize)
       handles.forEach((h) => h.remove())
       setKb(0)
     }
   }, [])
 
-  // Locked stage height while the keyboard is open (same guard as SpinBottleRoom)
+  // Locked stage height while the keyboard is open (same guard as
+  // SpinBottleRoom). The measure ALSO skips while a text input holds
+  // focus — the keyboard's layout resize lands on the focus frame, and
+  // recording then would lock the ALREADY-SHRUNK board height in.
   useEffect(() => {
     const measure = () => {
       const el = stageRef.current
       if (!el) return
-      if (kbHeightRef.current > 0) return
+      if (kbHeightRef.current > 0 || anyTextFocused()) return
       const h = el.offsetHeight
       if (h > 60) setLockedStageHeight(h)
     }

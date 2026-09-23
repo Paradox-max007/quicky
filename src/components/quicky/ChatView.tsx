@@ -1124,6 +1124,12 @@ export function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* EMBED DOCK — reply preview bar + composer. Inside the room chat
+          shell (embedded dating panel) this stack pops out of the panel and
+          floats above the keyboard (.sbr-chat.sbr-kb-open .qk-embed-dock in
+          spin-bottle-room.css); standalone (full screen) it is a plain
+          passthrough column. */}
+      <div className="qk-embed-dock shrink-0 flex flex-col">
       {/* Reply preview bar */}
       <AnimatePresence>
         {replyTo && (
@@ -1215,6 +1221,7 @@ export function ChatView({
             <Send className="w-[18px] h-[18px]" />
           </button>
         )}
+      </div>
       </div>
       <div className="shrink-0 h-2 safe-area-bottom" />
 

@@ -722,6 +722,12 @@ function GameChatScreenInner({
           </AnimatePresence>
 
           {/* ─── Reply preview + cancel (§25/§26) ────────────────────────────────── */}
+          {/* ─── EMBED DOCK — reply banner + sticker tray + composer. Inside
+              the room chat shell this whole stack pops out of the panel and
+              floats above the keyboard (.sbr-chat.sbr-kb-open .qk-embed-dock
+              in spin-bottle-room.css); standalone (full screen) it is a
+              plain passthrough column. ───────────────────────────── */}
+          <div className="qk-embed-dock shrink-0 flex flex-col">
           <AnimatePresence>
             {replyTo && (
               <motion.div
@@ -907,6 +913,7 @@ function GameChatScreenInner({
             >
               <Send className="h-4 w-4" />
             </button>
+          </div>
           </div>
         </>
       )}
