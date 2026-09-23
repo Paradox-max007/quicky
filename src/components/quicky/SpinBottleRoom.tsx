@@ -46,6 +46,7 @@ import {
 } from '@/lib/quicky/spin-geometry'
 import { useRoundTimer } from '@/hooks/useRoundTimer'
 import { useOptimisticResponse } from '@/hooks/useOptimisticResponse'
+import { useRoomKeyboardPop } from './room-toolbox/useRoomKeyboardPop'
 import { RoomTopHud, RoomHudChips, RoomExitControl } from './RoomTopHud'
 import { RoomEventBanner } from './RoomEventBanner'
 import { useRoomRealm } from './realm/useRoomRealm'
@@ -91,22 +92,8 @@ function openSeatLabel(seatIndex: number) {
   return seatIndex === 6 ? 'Invite' : 'Open Seat'
 }
 
-/* ── Keyboard helpers ──────────────────────────────────────────────────
-   A focused text element is the tell for "the soft keyboard is opening or
-   up": its layout resize lands on the FOCUS frame in resizes-content
-   webviews, so viewport re-baselining must be suppressed while one holds
-   focus (that is the v3 race that still let the table squeeze). LudoRoom
-   keeps a twin copy of these next to its own keyboard effect. */
-function isTextElement(el: EventTarget | null): el is HTMLElement {
-  return (
-    el instanceof HTMLElement &&
-    el.matches('input, textarea, [contenteditable="true"], [contenteditable=""]')
-  )
-}
-
-function anyTextFocused(): boolean {
-  return isTextElement(document.activeElement)
-}
+/* ── Keyboard helpers moved to room-toolbox/useRoomKeyboardPop.ts (v5) —
+   shared by both room shells. ──────────────────────────────────── */
 
 // ─── SHARED GAME ROOM RUNTIME (game-chat PRD §5/§6) ─────────────────────────
 // ALL game state (snapshot, chat, economy, optimistic response, closure) and
@@ -152,7 +139,14 @@ export function SpinBottleRoom({
   const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
   const [displayedRotation, setDisplayedRotation] = useState({ start: 0, end: 0 })
   const [settleDone, setSettleDone] = useState(true)
-  const [kbHeight, setKbHeight] = useState(0)
+  // Keyboard COMPOSER-POP mode (v5 — shared hook). While the soft keyboard
+  // is up ONLY the composer row (and the embedded personal/dating docks)
+  // pops out of the chat sheet and lands FLUSH on the keyboard's top edge —
+  // a live getBoundingClientRect measurement, re-run every frame the
+  // viewport changes, with zero baseline-derived positions (the v4 stale
+  // pins + transform let webviews that auto-scroll the document throw the
+  // composer up to the table with a huge gap). See useRoomKeyboardPop.ts.
+  const { kbUp, kbHeightRef } = useRoomKeyboardPop()
   // ─── v3 state domains (§91): coin store, gift sheet, player interaction —
   // each isolated so a gift arriving never rebuilds the table.
   const [gamesPlayed, setGamesPlayed] = useState(0) // HUD 🏆 (DB-driven)
@@ -172,7 +166,6 @@ export function SpinBottleRoom({
   // the room runtime keeps running underneath (§44: nothing is reset).
   const datingUnread = useDatingUnread(true)
   const [datingBannerHidden, setDatingBannerHidden] = useState(false)
-  const kbHeightRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageBox, setStageBox] = useState({ w: 0, h: 0 })
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
@@ -313,104 +306,8 @@ export function SpinBottleRoom({
      
   }, [roomId, spinId])
 
-  // ─── Keyboard COMPOSER-POP mode (v4) ─────────────────────────────
-  // While the soft keyboard is up ONLY the composer pops out of the chat
-  // panel (CSS .sbr-chat.sbr-kb-open .sbr-composer) and floats above the
-  // keyboard, overlaying the table by just the strip it needs. The painted
-  // table NEVER changes size, in any webview resize mode:
-  //   · --sbr-room-h  → the room root pins to the last keyboard-free
-  //                     layout height (blocks resizes-content /
-  //                     adjustResize layout shrinks).
-  //   · --sbr-sheet-h → the chat sheet's pixel height freezes (the 33dvh
-  //                     clamp re-derives when the ICB shrinks — freezing
-  //                     it keeps the table's flex allocation identical).
-  //   · --sbr-kb      → the composer's translateY: its bottom lands flush
-  //                     on the keyboard's top edge in BOTH resize modes.
-  // RACE FIX vs v3: baselines are captured at FOCUS time (the only moment
-  // the layout is guaranteed keyboard-free, BEFORE the webview resizes)
-  // and window-resize re-baselining is suppressed while a text input
-  // holds focus. In resizes-content webviews the keyboard's layout resize
-  // can fire BEFORE the visual-viewport events — the old kbHeight-only
-  // guard then baked the already-shrunk innerHeight into the baseline,
-  // which is exactly what still let the table squeeze.
-  useEffect(() => {
-    const doc = document.documentElement
-    let stableInner = window.innerHeight // last keyboard-free layout height
-    let stableSheetH: number | null = null // last keyboard-free sheet height
-    const setKb = (px: number) => {
-      const h = Math.max(0, Math.min(px, stableInner * 0.85))
-      kbHeightRef.current = h
-      doc.style.setProperty('--sbr-kb', `${Math.round(h)}px`)
-      if (h > 0) {
-        doc.style.setProperty('--sbr-room-h', `${Math.round(stableInner)}px`)
-        if (stableSheetH != null) doc.style.setProperty('--sbr-sheet-h', `${Math.round(stableSheetH)}px`)
-      } else {
-        doc.style.removeProperty('--sbr-room-h')
-        doc.style.removeProperty('--sbr-sheet-h')
-      }
-      setKbHeight(h)
-    }
-
-    // Web / safety net: derive keyboard height from the visual viewport.
-    const vv = window.visualViewport ?? null
-    const onVV = () => {
-      if (!vv) return
-      // Unified formula: keyboard = last stable layout height − visible
-      // area. Works in BOTH resize modes (resizes-visual AND
-      // resizes-content — where innerHeight already shrank).
-      const kb = stableInner - (vv.height + vv.offsetTop)
-      setKb(kb)
-    }
-    vv?.addEventListener('resize', onVV)
-    vv?.addEventListener('scroll', onVV)
-
-    // FOCUS-TIME CAPTURE — the moment the input is tapped the layout is
-    // still keyboard-free: refresh the root baseline and remember the
-    // sheet's exact pixel height so the pin can freeze it (covers inputs
-    // inside the room composer AND the embedded personal/dating docks).
-    const onFocusIn = (e: FocusEvent) => {
-      if (!isTextElement(e.target)) return
-      if (kbHeightRef.current === 0) stableInner = Math.max(stableInner, window.innerHeight)
-      const sheet = e.target.closest('.sbr-chat') ?? document.querySelector('.sbr-chat')
-      if (sheet instanceof HTMLElement) {
-        const h = sheet.getBoundingClientRect().height
-        if (h > 100) stableSheetH = h
-      }
-    }
-    document.addEventListener('focusin', onFocusIn)
-
-    // Re-baseline ONLY when no text input holds focus: in resizes-content
-    // webviews the keyboard's layout resize lands while the composer is
-    // still focused — re-baselining there bakes the keyboard into the
-    // baseline (the v3 race).
-    const onResize = () => {
-      if (kbHeightRef.current === 0 && !anyTextFocused()) {
-        stableInner = window.innerHeight
-        doc.style.removeProperty('--sbr-room-h')
-      }
-    }
-    window.addEventListener('resize', onResize)
-
-    // Native (Capacitor): exact keyboard height from the Keyboard plugin.
-    let handles: Awaited<ReturnType<typeof Keyboard.addListener>>[] = []
-    if (Capacitor.isNativePlatform()) {
-      Keyboard.addListener('keyboardWillShow', (i) => setKb(i.keyboardHeight ?? 0)).then((h) => {
-        handles.push(h)
-      })
-      Keyboard.addListener('keyboardWillHide', () => setKb(0)).then((h) => {
-        handles.push(h)
-      })
-    }
-
-    return () => {
-      vv?.removeEventListener('resize', onVV)
-      vv?.removeEventListener('scroll', onVV)
-      document.removeEventListener('focusin', onFocusIn)
-      window.removeEventListener('resize', onResize)
-      handles.forEach((h) => h.remove())
-      setKb(0)
-    }
-  }, [])
+  // (v4 keyboard effect removed — the v5 shared hook useRoomKeyboardPop,
+  // called above, owns the whole composer-pop lifecycle now.)
 
   // Supabase room realtime channel + SSE + recovery poll + presence ping now
   // live in the shared runtime (useGameRoomStore.attach above).
@@ -837,7 +734,7 @@ export function SpinBottleRoom({
                   '--ring-rx': `${geometry.radiusX}%`,
                   '--ring-ry': `${geometry.radiusY}%`,
                 } as React.CSSProperties),
-                ...(kbHeight > 0 && lockedStageHeight
+                ...(kbUp && lockedStageHeight
                   ? {
                       height: `${lockedStageHeight}px`,
                       flex: `0 0 ${lockedStageHeight}px`,
@@ -1105,7 +1002,7 @@ export function SpinBottleRoom({
             onSend={sendChat}
             onSendSticker={(s, r) => void useGameRoomStore.getState().sendSticker(s, r)}
             sending={sendingChat}
-            kbOpen={kbHeight > 0}
+            kbOpen={kbUp}
             onOpenGifts={toolbox.openGiftSheet}
             onOpenGameChats={openRoomContacts}
             gameChatsUnread={gameChatsUnread}

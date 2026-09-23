@@ -33,7 +33,7 @@ export const viewport: Viewport = {
   // the whole page, including the game table). 'resizes-visual' shrinks only
   // the visual viewport, so the keyboard becomes a pure overlay on top of a
   // fixed-size page. The chat composer lifts itself above the keyboard via
-  // --sbr-kb (see SpinBottleRoom.tsx). Native Capacitor mirrors this with
+  // --sbr-pop (see useRoomKeyboardPop.ts). Native Capacitor mirrors this with
   // plugins.Keyboard.resize = KeyboardResize.None in capacitor.config.ts.
   interactiveWidget: 'resizes-visual',
 }

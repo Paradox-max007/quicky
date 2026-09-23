@@ -91,7 +91,7 @@ export function GameChatScreen({
 }: {
   onBack?: () => void
   /** Inside the room chat panel: the host lifts the overlay via the room's
-   * --sbr-kb var, so this screen must NOT run its own visualViewport
+   * --sbr-pop var, so this screen must NOT run its own visualViewport
    * keyboard shim — a second shift pushes the composer out of the sheet. */
   embedded?: boolean
   /** READ-RECEIPT GATE — true ONLY while this screen is actually the panel
@@ -259,7 +259,7 @@ function GameChatScreenInner({
 
   // ── keyboard overlay (§80): composer rides above the keyboard ────────────
   // `embedded` (inside the room chat panel) skips this shim: the room lifts
-  // the whole overlay with its own --sbr-kb var — a second shift here would
+  // the whole overlay with its own --sbr-pop var — a second shift here would
   // push the composer out of the sheet.
   const [kb, setKb] = useState(0)
   useEffect(() => {
@@ -467,7 +467,10 @@ function GameChatScreenInner({
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden">
+    /* `qk-embed-root` (embedded only): while the room keyboard pops the
+       .qk-embed-dock out of this column, the root must not clip the dock
+       above its top edge (spin-bottle-room.css, .sbr-kb-open rule). */
+    <div className={`w-full h-full flex flex-col bg-[var(--qk-bg)] text-white relative overflow-hidden${embedded ? ' qk-embed-root' : ''}`}>
       {/* ambient glow — decorative only, never swallows taps */}
       <div className="pointer-events-none absolute -top-24 -right-16 w-72 h-72 rounded-full bg-[var(--qk-purple)]/15 blur-3xl" aria-hidden />
 

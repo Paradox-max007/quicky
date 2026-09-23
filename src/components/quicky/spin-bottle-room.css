@@ -11,21 +11,19 @@
    Scoped under .sbr-root so it never leaks.
 
    MECHANICS (do not break when restyling):
-   - --sbr-kb (keyboard height) + --sbr-sheet-h (keyboard-free chat
-     sheet pixel height) are set on <html> from JS and inherit in here —
-     do NOT redeclare them on .sbr-root.
-   - --sbr-room-h (keyboard-free layout height) is set on <html> while
-     the keyboard is up: .sbr-root pins to it so a webview that resizes
-     its layout (resizes-content / adjustResize APKs / pre-108 webviews
-     that ignore interactive-widget) can NEVER shrink the game table to
-     make room for the keyboard.
+   - --sbr-pop (pop-up shift, set on the composer / embed-dock elements
+     from JS by useRoomKeyboardPop) rides the composer as a pure
+     translateY out of the chat sheet while the soft keyboard is up — the
+     bar lands FLUSH on the keyboard's top edge (zero gap, same contract
+     as the personal chat screen). The painted table never resizes.
    - .sbr-composer must stay position:relative (reply banner and
      emoji tray anchor to the input row).
-   - KEYBOARD COMPOSER POP: while the keyboard is up ONLY the composer
-     row pops out of the chat panel and floats above the keyboard
-     (transform on .sbr-composer) — the message panel stays put (its
-     bottom hides behind the keyboard) and the painted table keeps its
-     exact pre-keyboard size. The old whole-sheet ride is GONE.
+   - KEYBOARD COMPOSER POP (v5): live-measured, no baseline pins. The
+     room root is never height-pinned, so the document can never overflow
+     and webviews have nothing to auto-scroll (the v4 pin + stale
+     translate was what threw the composer up to the table with a dead
+     gap in auto-scrolling webviews). The table keeps its exact
+     pre-keyboard size via each room's lockedStageHeight inline pin.
    ============================================================ */
 
 .sbr-root {
@@ -36,16 +34,10 @@
   --sbr-line: color-mix(in srgb, var(--qk-text) 10%, transparent);
   --sbr-accent: var(--qk-accent);
 
-  /* Keyboard pin: while the soft keyboard is up JS sets --sbr-room-h to the
-     last keyboard-free layout height. A webview that resizes its layout
-     viewport (interactive-widget=resizes-content, or a Capacitor APK built
-     before KeyboardResize.None) would otherwise reflow the whole flex
-     column and shrink the table; pinning the root keeps the table EXACTLY
-     its pre-keyboard size while only the composer pops out above the
-     keyboard. With the var unset (normal state, resizes-visual webviews)
-     this is a no-op and the component's absolute inset-0 sizing stays in
-     charge. */
-  height: var(--sbr-room-h, auto);
+  /* v5: NO height pin. The root always fills its shell exactly — a pin
+     taller than the viewport would overflow the document and invite the
+     webview's focus auto-scroll (the v4 bug). The table's size while the
+     keyboard is up is protected by the room's inline lockedStageHeight. */
 
   /* responsive player-card size — same proportions on every screen.
      Bumped up: the quick-action icon row under the HUD was removed, its
@@ -1465,66 +1457,56 @@
 .sbr-send:active { transform: scale(0.9); }
 .sbr-send:disabled { opacity: 0.45; }
 
-/* ═══ KEYBOARD COMPOSER POP (v4 — replaces the v3 whole-sheet ride) ═════════
-   While the soft keyboard is up ONLY the composer row pops out of the
-   chat panel and floats directly above the keyboard, overlaying the
-   painted table by just the strip it needs. The message panel itself
-   stays in place (its lower part hides behind the keyboard) and the
-   table keeps its EXACT pre-keyboard geometry:
-   · --sbr-room-h  (on <html>) pins the room root to the last
-                    keyboard-free layout height — webviews that resize
-                    the LAYOUT viewport can never shrink the table.
-   · --sbr-sheet-h (on <html>) freezes the chat sheet's pixel height —
-                    the 33dvh clamp re-derives when the ICB shrinks,
-                    which would re-allocate flex space and resize the
-                    table even with the root pinned.
-   · --sbr-kb      rides the composer as a pure transform: the sheet's
-                    flow bottom sits at the root's pinned bottom, and the
-                    keyboard overlays exactly the bottom --sbr-kb pixels
-                    of the layout — so the translated composer lands
-                    flush on the keyboard's top edge in BOTH resize
-                    modes (resizes-visual AND resizes-content).
-   The popped bar loses its home-indicator padding (it floats above the
-   keyboard) and gains a floating surface + shadow; its anchored children
-   (reply banner, mention picker, emoji tray) ride along because they are
-   absolute children of .sbr-composer. overflow goes visible so the bar
-   may rise past the sheet's top onto the table. Mobile only — ≥1024px
-   sidebars have hardware keyboards and never match .sbr-kb-open. */
+/* ═══ KEYBOARD COMPOSER POP (v5 — live flush measurement) ════════════════
+   While the soft keyboard is up the composer row (and the embedded
+   personal/dating docks) pops OUT of the chat sheet and lands FLUSH on
+   the keyboard's top edge — zero gap, exactly like the personal chat
+   screen's composer. useRoomKeyboardPop (shared by both room shells)
+   measures the distance live on every keyboard / visual-viewport event
+   and writes it as --sbr-pop on the pop targets; the transform below is
+   a pure translate, so nothing reflows and the painted table keeps its
+   exact pre-keyboard geometry (each room's inline lockedStageHeight).
+   The message panel stays put — its lower part hides behind the
+   keyboard. Mobile only — ≥1024px sidebars have hardware keyboards and
+   never see a --sbr-pop value. */
 @media (max-width: 1023.98px) {
-  .sbr-chat.sbr-kb-open {
-    height: var(--sbr-sheet-h, clamp(228px, 33dvh, 350px));
-    overflow: visible;
-    z-index: 150;
+  /* The sheet may never clip the popped bar (it rides ABOVE the sheet's
+     top edge while translated), so overflow stays visible on mobile at
+     all times — including the un-pop animation's tail. The scroll area
+     clips its own content, so nothing else can escape the sheet. */
+  .sbr-chat { overflow: visible; }
+
+  /* The pop ride — always declared, driven by the JS-measured var:
+     translate up by exactly the sheet-bottom → keyboard-top distance. */
+  .sbr-chat .sbr-composer,
+  .sbr-chat .qk-embed-dock {
+    transform: translateY(calc(-1 * var(--sbr-pop, 0px)));
   }
-  .sbr-chat.sbr-chat-expanded.sbr-kb-open {
-    height: var(--sbr-sheet-h, min(74dvh, 660px));
-  }
-  .sbr-chat.sbr-kb-open .sbr-composer {
-    transform: translateY(calc(-1 * var(--sbr-kb, 0px) - 6px));
-    z-index: 40;
-    margin: 0 6px;
-    border-radius: 16px;
-    border: 1px solid color-mix(in srgb, var(--qk-text) 12%, transparent);
-    padding-bottom: 9px; /* no home-indicator inset while floating */
-    box-shadow:
-      0 -12px 34px rgba(0, 0, 0, 0.55),
-      0 2px 10px rgba(0, 0, 0, 0.4);
-  }
-  /* Embedded game-chat / dating docks (the personal/dating states the
-     room renders INSIDE this shell) ride the same pop so their composers
-     also float above the keyboard. The standalone full-screen versions
-     of those screens never match this selector (no .sbr-chat ancestor). */
-  .sbr-chat.sbr-kb-open .qk-embed-dock {
-    transform: translateY(calc(-1 * var(--sbr-kb, 0px) - 6px));
-    margin: 0 6px;
-    border-radius: 16px;
-    border: 1px solid color-mix(in srgb, var(--qk-text) 12%, transparent);
-    background: var(--qk-bg);
-    overflow: hidden;
-    box-shadow:
-      0 -12px 34px rgba(0, 0, 0, 0.55),
-      0 2px 10px rgba(0, 0, 0, 0.4);
+  .sbr-chat .qk-embed-dock {
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Floating cosmetics while the keyboard is up: full-width bar flush on
+     the keyboard (no side margins, no radius — the personal chat
+     contract), no home-indicator inset (the home indicator is behind the
+     keyboard), a soft shadow for depth over the table. Anchored children
+     (reply banner, mention picker, emoji tray) ride along because they
+     are absolute children of .sbr-composer. */
+  .sbr-chat.sbr-kb-open { z-index: 150; }
+  /* The embedded personal-chat column normally clips (overflow-hidden in
+     its own Tailwind class) — while its dock pops above the sheet that
+     would clip the bar, so the kb-open state opens it. The decorative
+     ambient glow escaping is 15%-opacity blur — invisible in practice. */
+  .sbr-chat.sbr-kb-open .qk-embed-root { overflow: visible; }
+  .sbr-chat.sbr-kb-open .sbr-composer {
+    z-index: 40;
+    padding-bottom: 9px;
+    background: color-mix(in srgb, var(--qk-bg) 94%, transparent);
+    box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.55);
+  }
+  .sbr-chat.sbr-kb-open .qk-embed-dock {
+    background: color-mix(in srgb, var(--qk-bg) 94%, transparent);
+    box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.55);
   }
 }
 /* Reply preview banner — docks directly above the input row (relative to

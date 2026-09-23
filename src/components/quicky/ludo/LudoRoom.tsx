@@ -44,27 +44,15 @@ import { ChatView } from '../ChatView'
 import { useDatingUnread } from '../game-hub/useDatingUnread'
 import { CoinStoreSheet } from '../CoinStoreSheet'
 import { useRoomPlayerToolbox } from '../room-toolbox/useRoomPlayerToolbox'
+import { useRoomKeyboardPop, anyTextFocused } from '../room-toolbox/useRoomKeyboardPop'
 import { GiftSheet } from '../GiftSheet'
 import { LudoGameArea } from './LudoGameArea'
 import '../spin-bottle-room.css'
 import './ludo-room.css'
 
-/* ── Keyboard helpers (twin of SpinBottleRoom's) ───────────────────────
-   A focused text element is the tell for "the soft keyboard is opening or
-   up": its layout resize lands on the FOCUS frame in resizes-content
-   webviews, so viewport re-baselining (and the stage-height lock
-   re-measure) must be suppressed while one holds focus — otherwise the
-   shrunk geometry gets baked into the baseline and the board squeezes. */
-function isTextElement(el: EventTarget | null): el is HTMLElement {
-  return (
-    el instanceof HTMLElement &&
-    el.matches('input, textarea, [contenteditable="true"], [contenteditable=""]')
-  )
-}
-
-function anyTextFocused(): boolean {
-  return isTextElement(document.activeElement)
-}
+/* Keyboard helpers (isTextElement / anyTextFocused) + the v5 composer-pop
+   shim live in room-toolbox/useRoomKeyboardPop.ts — shared with
+   SpinBottleRoom. */
 
 export function LudoRoom({
   roomId: initialRoomId,
@@ -92,7 +80,12 @@ export function LudoRoom({
 
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
-  const [kbHeight, setKbHeight] = useState(0)
+  // Keyboard COMPOSER-POP mode (v5 — the shared hook, same as the Spin
+  // Bottle room): while the soft keyboard is up only the composer row (and
+  // the embedded personal/dating docks) pops out of the chat sheet and
+  // lands FLUSH on the keyboard's top edge via a live rect measurement.
+  // The board never changes size (lockedStageHeight below).
+  const { kbUp, kbHeightRef } = useRoomKeyboardPop()
   const [gamesPlayed, setGamesPlayed] = useState(0)
   const [showCoinStore, setShowCoinStore] = useState(false)
   const [isDesktop, setIsDesktop] = useState(false)
@@ -100,98 +93,11 @@ export function LudoRoom({
   const isDeskShell = useIsDesktopShell() === true
   const datingUnread = useDatingUnread(true)
   const [datingBannerHidden, setDatingBannerHidden] = useState(false)
-  const kbHeightRef = useRef(0)
   const [lockedStageHeight, setLockedStageHeight] = useState<number | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
-  // Keyboard COMPOSER-POP mode (v4 — same as the Spin Bottle room): while
-  // the soft keyboard is up ONLY the chat composer pops out of the panel
-  // (CSS .sbr-chat.sbr-kb-open .sbr-composer) and floats above the
-  // keyboard. The board NEVER changes size, in any webview resize mode:
-  //   · --sbr-room-h  → the room root pins to the last keyboard-free
-  //                     layout height (blocks resizes-content /
-  //                     adjustResize layout shrinks).
-  //   · --sbr-sheet-h → the chat sheet's pixel height freezes (the 33dvh
-  //                     clamp re-derives when the ICB shrinks — freezing
-  //                     it keeps the board's flex allocation identical).
-  //   · --sbr-kb      → the composer's translateY: its bottom lands flush
-  //                     on the keyboard's top edge in BOTH resize modes.
-  //   · lockedStageHeight keeps the .ldo-stage-holder box frozen too.
-  // RACE FIX vs v3: baselines are captured at FOCUS time (the only moment
-  // the layout is guaranteed keyboard-free, BEFORE the webview resizes)
-  // and window-resize re-baselining is suppressed while a text input
-  // holds focus — in resizes-content webviews the layout resize can fire
-  // BEFORE the visual-viewport events, and the old kbHeight-only guard
-  // then baked the already-shrunk innerHeight into the baseline.
-  useEffect(() => {
-    const doc = document.documentElement
-    let stableInner = window.innerHeight // last keyboard-free layout height
-    let stableSheetH: number | null = null // last keyboard-free sheet height
-    const setKb = (px: number) => {
-      const h = Math.max(0, Math.min(px, stableInner * 0.85))
-      kbHeightRef.current = h
-      doc.style.setProperty('--sbr-kb', `${Math.round(h)}px`)
-      if (h > 0) {
-        doc.style.setProperty('--sbr-room-h', `${Math.round(stableInner)}px`)
-        if (stableSheetH != null) doc.style.setProperty('--sbr-sheet-h', `${Math.round(stableSheetH)}px`)
-      } else {
-        doc.style.removeProperty('--sbr-room-h')
-        doc.style.removeProperty('--sbr-sheet-h')
-      }
-      setKbHeight(h)
-    }
-    const vv = window.visualViewport ?? null
-    const onVV = () => {
-      if (!vv) return
-      // Unified formula: keyboard = last stable layout height − visible
-      // area. Works in BOTH resize modes (resizes-visual AND
-      // resizes-content — where innerHeight already shrank).
-      const kb = stableInner - (vv.height + vv.offsetTop)
-      setKb(kb)
-    }
-    vv?.addEventListener('resize', onVV)
-    vv?.addEventListener('scroll', onVV)
-
-    // FOCUS-TIME CAPTURE — the moment the input is tapped the layout is
-    // still keyboard-free: refresh the root baseline and remember the
-    // sheet's exact pixel height so the pin can freeze it (covers inputs
-    // inside the room composer AND the embedded personal/dating docks).
-    const onFocusIn = (e: FocusEvent) => {
-      if (!isTextElement(e.target)) return
-      if (kbHeightRef.current === 0) stableInner = Math.max(stableInner, window.innerHeight)
-      const sheet = e.target.closest('.sbr-chat') ?? document.querySelector('.sbr-chat')
-      if (sheet instanceof HTMLElement) {
-        const h = sheet.getBoundingClientRect().height
-        if (h > 100) stableSheetH = h
-      }
-    }
-    document.addEventListener('focusin', onFocusIn)
-
-    // Re-baseline ONLY when no text input holds focus: in resizes-content
-    // webviews the keyboard's layout resize lands while the composer is
-    // still focused — re-baselining there bakes the keyboard into the
-    // baseline (the v3 race).
-    const onResize = () => {
-      if (kbHeightRef.current === 0 && !anyTextFocused()) {
-        stableInner = window.innerHeight
-        doc.style.removeProperty('--sbr-room-h')
-      }
-    }
-    window.addEventListener('resize', onResize)
-    let handles: Awaited<ReturnType<typeof Keyboard.addListener>>[] = []
-    if (Capacitor.isNativePlatform()) {
-      Keyboard.addListener('keyboardWillShow', (i) => setKb(i.keyboardHeight ?? 0)).then((h) => handles.push(h))
-      Keyboard.addListener('keyboardWillHide', () => setKb(0)).then((h) => handles.push(h))
-    }
-    return () => {
-      vv?.removeEventListener('resize', onVV)
-      vv?.removeEventListener('scroll', onVV)
-      document.removeEventListener('focusin', onFocusIn)
-      window.removeEventListener('resize', onResize)
-      handles.forEach((h) => h.remove())
-      setKb(0)
-    }
-  }, [])
+  // (v4 keyboard effect removed — the v5 shared hook useRoomKeyboardPop,
+  // called above, owns the whole composer-pop lifecycle now.)
 
   // Locked stage height while the keyboard is open (same guard as
   // SpinBottleRoom). The measure ALSO skips while a text input holds
@@ -421,7 +327,7 @@ export function LudoRoom({
               ref={stageRef}
               className="ldo-stage-holder"
               style={
-                kbHeight > 0 && lockedStageHeight
+                kbUp && lockedStageHeight
                   ? {
                       height: `${lockedStageHeight}px`,
                       flex: `0 0 ${lockedStageHeight}px`,
@@ -458,7 +364,7 @@ export function LudoRoom({
             onSend={sendChat}
             onSendSticker={(s, r) => void useLudoRoomStore.getState().sendSticker(s, r)}
             sending={sendingChat}
-            kbOpen={kbHeight > 0}
+            kbOpen={kbUp}
             onOpenGifts={toolbox.openGiftSheet}
             onOpenGameChats={openRoomContacts}
             gameChatsUnread={gameChatsUnread}
