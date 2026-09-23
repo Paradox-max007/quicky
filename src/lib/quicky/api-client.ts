@@ -559,9 +559,15 @@ export const api = {
           body: JSON.stringify({ id, data }),
         }),
       removeSticker: (id: string) =>
-        jsonFetch<{ ok: boolean }>('/api/quicky/admin/stickers', {
+        jsonFetch<{ ok: boolean; deleted: number }>('/api/quicky/admin/stickers', {
           method: 'DELETE',
           body: JSON.stringify({ id }),
+        }),
+      /** Bulk delete — the admin multi-select flow posts the whole selection. */
+      removeStickers: (ids: string[]) =>
+        jsonFetch<{ ok: boolean; deleted: number }>('/api/quicky/admin/stickers', {
+          method: 'DELETE',
+          body: JSON.stringify({ ids }),
         }),
     },
     // Games PRD §64/§65 — Live Tables monitor (read-only room inspection).

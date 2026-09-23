@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud, Images, PackagePlus } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, X, UploadCloud, Images, PackagePlus, ListChecks } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import {
   STICKER_BATCH_MAX,
@@ -187,6 +187,12 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // ── sticker multi-select delete (single OR many stickers from a set) ──
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [confirmStickerDelete, setConfirmStickerDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -205,6 +211,12 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
   useEffect(() => {
     void load()
   }, [load])
+
+  // Opening a different sticker (or closing the editor) always disarms the
+  // single-delete confirm — an armed "confirm?" must never carry over.
+  useEffect(() => {
+    setConfirmStickerDelete(false)
+  }, [stickerForm?.id])
 
   const saveBundle = async () => {
     if (!bundleForm || saving) return
@@ -305,6 +317,59 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
       toast.error(e.message ?? 'Save failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // ── Sticker deletion ──────────────────────────────────────────────────
+  // Single delete lives in the sticker EDIT modal; the multi-select bar
+  // deletes one or many straight from the bundle grids (bulk API call).
+
+  const deleteSingleSticker = async () => {
+    if (!stickerForm?.id || deleting) return
+    setDeleting(true)
+    try {
+      await api.admin.stickers.removeSticker(stickerForm.id)
+      toast.success('Sticker deleted')
+      setStickerForm(null)
+      await load()
+    } catch (e: any) {
+      toast.error(e.message ?? 'Delete failed')
+    } finally {
+      setDeleting(false)
+      setConfirmStickerDelete(false)
+    }
+  }
+
+  const toggleStickerSel = (id: string) => {
+    // Any selection change resets the armed bulk-delete confirm.
+    setConfirmBulkDelete(false)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setConfirmBulkDelete(false)
+  }
+
+  const deleteSelectedStickers = async () => {
+    if (deleting || selectedIds.size === 0) return
+    setDeleting(true)
+    try {
+      const res = await api.admin.stickers.removeStickers([...selectedIds])
+      const n = res?.deleted ?? selectedIds.size
+      toast.success(`Deleted ${n} sticker${n === 1 ? '' : 's'}`)
+      exitSelectMode()
+      await load()
+    } catch (e: any) {
+      toast.error(e.message ?? 'Delete failed')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -482,6 +547,17 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <button
+            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            className={cn(
+              'rounded-xl px-3 py-2 text-xs font-black flex items-center gap-1.5',
+              selectMode ? 'bg-[var(--qk-accent)] text-white' : 'bg-white/10 hover:bg-white/15'
+            )}
+            aria-pressed={selectMode}
+            data-testid="sticker-select-mode"
+          >
+            <ListChecks className="h-4 w-4" /> {selectMode ? 'Selecting' : 'Select'}
+          </button>
+          <button
             onClick={() => setBatchForm({ ...EMPTY_BATCH, mode: 'existing', targetBundleId: bundles[0]?.id ?? '' })}
             className="rounded-xl px-3 py-2 text-xs font-black flex items-center gap-1.5 bg-white/10 hover:bg-white/15"
             aria-label="Batch add a sticker pack"
@@ -497,7 +573,7 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
+      <div className={cn('flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3', selectMode && 'pb-16')}>
         {loading && <p className="text-white/40 text-sm py-8 text-center">Loading…</p>}
 
         {!loading && bundles.length === 0 && (
@@ -605,40 +681,97 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
               </div>
             </div>
 
-            {/* §72: bundle preview — the stickers under it */}
+            {/* §72: bundle preview — the stickers under it. In SELECT mode the
+                tiles toggle a selection (✓ badge + accent ring) instead of
+                opening the editor — one tap each, delete from the bottom bar. */}
             {(b.stickers?.length ?? 0) > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t border-white/10">
-                {b.stickers.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() =>
-                      setStickerForm({
-                        id: s.id,
-                        bundleId: b.id,
-                        name: s.name,
-                        assetUrl: s.assetUrl,
-                        sortOrder: String(s.sortOrder),
-                        isActive: s.isActive,
-                      })
-                    }
-                    className={cn(
-                      'w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/15 relative group',
-                      !s.isActive && 'opacity-40'
-                    )}
-                    title={`${s.name} · order ${s.sortOrder}${s.isActive ? '' : ' · inactive'}`}
-                  >
-                    {isImageIcon(s.assetUrl) ? (
-                      <img src={s.assetUrl} alt={s.name} className="w-7 h-7 object-contain" />
-                    ) : (
-                      <span className="text-xl" aria-hidden>{s.assetUrl}</span>
-                    )}
-                  </button>
-                ))}
+              <div className={cn('flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t border-white/10', selectMode && 'pb-1')}>
+                {b.stickers.map((s) => {
+                  const sel = selectMode && selectedIds.has(s.id)
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() =>
+                        selectMode ? toggleStickerSel(s.id) : setStickerForm({
+                          id: s.id,
+                          bundleId: b.id,
+                          name: s.name,
+                          assetUrl: s.assetUrl,
+                          sortOrder: String(s.sortOrder),
+                          isActive: s.isActive,
+                        })
+                      }
+                      className={cn(
+                        'w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/15 relative group',
+                        !s.isActive && 'opacity-40',
+                        sel && 'border-[var(--qk-accent)] bg-[color-mix(in_srgb,var(--qk-accent)_20%,var(--qk-card))] opacity-100'
+                      )}
+                      title={`${s.name} · order ${s.sortOrder}${s.isActive ? '' : ' · inactive'}${selectMode ? ' · tap to select' : ''}`}
+                      aria-pressed={selectMode ? sel : undefined}
+                      data-testid={`sticker-tile-${s.id}`}
+                    >
+                      {isImageIcon(s.assetUrl) ? (
+                        <img src={s.assetUrl} alt={s.name} className="w-7 h-7 object-contain" />
+                      ) : (
+                        <span className="text-xl" aria-hidden>{s.assetUrl}</span>
+                      )}
+                      {selectMode && (
+                        <span
+                          className={cn(
+                            'absolute -top-1 -right-1 w-4 h-4 rounded-full border flex items-center justify-center text-[9px] font-black leading-none',
+                            sel
+                              ? 'bg-[var(--qk-accent)] border-transparent text-white'
+                              : 'bg-black/70 border-white/40 text-transparent'
+                          )}
+                          aria-hidden
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>
         ))}
       </div>
+
+      {/* ─── Sticker multi-select action bar ──────────────────────────────────
+          Shows only in select mode: how many stickers are ticked, one-tap
+          bulk DELETE (two-step confirm, same pattern as bundle delete) and
+          Done to leave select mode. Stays under the modals (z-[200]). */}
+      {selectMode && (
+        <div
+          className="fixed bottom-0 inset-x-0 z-[150] flex items-center gap-2.5 px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom,0px))] border-t border-white/15 bg-[var(--qk-card)]/95 backdrop-blur"
+          data-testid="sticker-bulk-bar"
+        >
+          <p className="text-xs font-bold text-white/70 shrink-0">
+            {selectedIds.size} selected
+            <span className="text-white/35 font-normal hidden sm:inline"> · tap stickers to select</span>
+          </p>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={exitSelectMode}
+              className="px-3 py-2 rounded-xl text-xs font-black bg-white/10 hover:bg-white/15"
+              data-testid="sticker-bulk-done"
+            >
+              Done
+            </button>
+            <button
+              onClick={() => (confirmBulkDelete ? void deleteSelectedStickers() : setConfirmBulkDelete(true))}
+              disabled={selectedIds.size === 0 || deleting}
+              className={cn(
+                'px-3.5 py-2 rounded-xl text-xs font-black disabled:opacity-40',
+                confirmBulkDelete ? 'bg-rose-600 animate-pulse' : 'bg-rose-500/90 hover:bg-rose-500'
+              )}
+              data-testid="sticker-bulk-delete"
+            >
+              {deleting ? 'Deleting…' : confirmBulkDelete ? `Delete ${selectedIds.size}?` : 'Delete'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Bundle form (§116/§117) ─────────────────────────────────────────── */}
       <AnimatePresenceSheet>
@@ -1222,6 +1355,27 @@ export function AdminStickersScreen({ onBack }: { onBack?: () => void } = {}) {
               >
                 {saving ? 'Saving…' : stickerForm.id ? 'Save Sticker' : 'Add Sticker'}
               </button>
+              {/* Single-sticker delete — only when EDITING an existing sticker.
+                  Two-step confirm, same pattern as the bundle delete. */}
+              {stickerForm.id && (
+                <button
+                  onClick={() => {
+                    if (confirmStickerDelete) void deleteSingleSticker()
+                    else setConfirmStickerDelete(true)
+                  }}
+                  disabled={deleting}
+                  className={cn(
+                    'flex items-center justify-center gap-1.5 rounded-2xl py-2.5 text-xs font-black border disabled:opacity-50',
+                    confirmStickerDelete
+                      ? 'bg-rose-600 border-rose-400/50 text-white animate-pulse'
+                      : 'bg-rose-500/10 border-rose-400/30 text-rose-300 hover:bg-rose-500/20'
+                  )}
+                  data-testid="sticker-delete-single"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  {deleting ? 'Deleting…' : confirmStickerDelete ? 'Delete this sticker — confirm?' : 'Delete this sticker'}
+                </button>
+              )}
             </motion.div>
           </div>
         )}

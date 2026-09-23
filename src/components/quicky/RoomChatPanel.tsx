@@ -25,7 +25,7 @@
 // sending passes the mention metadata to the server (§40) which re-validates
 // everything (§41).
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Reply, X, MoreHorizontal, Flag, MessageCircle, Volume2, VolumeX, Settings, ArrowLeft, Gift, ChevronDown, Sticker } from 'lucide-react'
 import { toast } from 'sonner'
@@ -403,6 +403,32 @@ export function RoomChatPanel({
   const [replyTo, setReplyTo] = useState<RoomMessage['replyTo']>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  // Sticker BOTTOM DRAWER: the drawer overlays the message area and stops
+  // exactly at the composer's top edge — the composer stays visible and
+  // usable below it. Measured from the live layout every time it opens
+  // (the composer moves when the reply banner / reactions row change).
+  const composerRowRef = useRef<HTMLDivElement | null>(null)
+  const [composerTop, setComposerTop] = useState<number | null>(null)
+
+  const openStickerDrawer = () => {
+    const el = composerRowRef.current
+    setComposerTop(el && el.offsetParent ? el.offsetTop : 51)
+    setStickerOpen(true)
+    setEmojiOpen(false)
+  }
+
+  const closeStickerDrawer = useCallback(() => setStickerOpen(false), [])
+
+  // Escape closes the drawer (the X button + backdrop-style body tap do
+  // the same); picking a sticker sends and closes in one gesture.
+  useEffect(() => {
+    if (!stickerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeStickerDrawer()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [stickerOpen, closeStickerDrawer])
   // §17: scroll preservation — remember where the user was, never yank them.
   const savedScrollTop = useRef(0)
   const atBottomRef = useRef(true)
@@ -922,7 +948,7 @@ export function RoomChatPanel({
       )}
 
       {/* Composer row (pops on top of the table when kbOpen) */}
-      <div className={`sbr-composer${kbOpen ? ' sbr-composer-popped' : ''}`}>
+      <div ref={composerRowRef} className={`sbr-composer${kbOpen ? ' sbr-composer-popped' : ''}`}>
         {replyTo && (
           <div className="sbr-reply-banner">
             <Reply size={13} className="sbr-reply-icon" />
@@ -950,18 +976,42 @@ export function RoomChatPanel({
           </div>
         )}
 
-        {/* Stickers section — the two-tab picker (My Stickers | Sticker Shop
-            with coin purchase). Owned sticker tap → straight into the table
-            chat; the store validates ownership server-side. */}
+        {/* Stickers — a BOTTOM DRAWER above the composer (user request:
+            replaces the old inline tray). Slides up from the composer's
+            edge with an X to close; owned stickers grouped by set on the
+            My-Stickers tab, compact shop cards + pop-out preview on the
+            shop tab. Tapping a sticker sends it straight into the table
+            chat (the store validates ownership server-side). */}
         {stickerOpen && (
-          <div className="sbr-sticker-tray" data-testid="room-sticker-tray">
+          <div
+            className="sbr-sticker-drawer"
+            style={composerTop != null ? { bottom: `calc(100% - ${composerTop}px)` } : undefined}
+            data-testid="room-sticker-drawer"
+          >
+            <div className="sbr-sticker-drawer-head">
+              <div className="sbr-sticker-drawer-title">
+                <Sticker size={14} aria-hidden />
+                <span>Stickers</span>
+              </div>
+              <button
+                className="sbr-sticker-drawer-x"
+                onClick={closeStickerDrawer}
+                aria-label="Close stickers"
+                data-testid="room-sticker-drawer-close"
+              >
+                <X size={17} />
+              </button>
+            </div>
             <StickerPicker
-              className="max-h-56"
+              className="flex-1 min-h-0"
               pickLabel="Tap a sticker to send it to the table"
               onPick={(s) => {
                 setStickerOpen(false)
                 onSendSticker?.(s)
               }}
+              // No onCatalogChange: after a purchase/claim the picker reloads
+              // itself and switches to the owned tab — the drawer stays open
+              // so the user can immediately send from the new set.
             />
           </div>
         )}
@@ -1010,6 +1060,11 @@ export function RoomChatPanel({
             ref={inputRef}
             className={`sbr-input${mirror !== null ? ' sbr-input-mentions' : ''}`}
             value={text}
+            onFocus={() => {
+              // Typing closes the sticker drawer — the drawer is anchored
+              // to the docked composer and must not fight the keyboard.
+              if (stickerOpen) setStickerOpen(false)
+            }}
             onChange={(e) => {
               setText(e.target.value)
               caretRef.current = e.target.selectionStart ?? e.target.value.length
@@ -1054,14 +1109,29 @@ export function RoomChatPanel({
           />
           <button
             className="sbr-comp-emoji"
-            onClick={() => setEmojiOpen((v) => !v)}
+            onClick={() => {
+              setEmojiOpen((v) => !v)
+              // The emoji tray and the sticker drawer never share the space
+              // above the composer.
+              if (stickerOpen) setStickerOpen(false)
+            }}
             aria-label="Emoji"
           >
             😊
           </button>
         </div>
 
-        <button className="sbr-comp-btn sbr-comp-sticker" onClick={() => { setStickerOpen((v) => !v); setEmojiOpen(false) }} aria-label="Stickers" title="Stickers" data-testid="composer-stickers-btn">
+        <button
+          className={`sbr-comp-btn sbr-comp-sticker${stickerOpen ? ' sbr-comp-on' : ''}`}
+          onClick={() => {
+            if (stickerOpen) closeStickerDrawer()
+            else openStickerDrawer()
+          }}
+          aria-label="Stickers"
+          title="Stickers"
+          aria-pressed={stickerOpen}
+          data-testid="composer-stickers-btn"
+        >
           <Sticker size={15} strokeWidth={2.4} />
         </button>
 

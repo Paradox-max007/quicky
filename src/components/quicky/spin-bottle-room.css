@@ -1373,8 +1373,10 @@
   justify-content: center;
   border-radius: 999px;
   font-size: 16px;
-  background: rgba(251, 191, 36, 0.16);
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  /* Theme gold (the 🎁 gift button) — follows --qk-gold per theme instead
+     of a hardcoded amber. */
+  background: color-mix(in srgb, var(--qk-gold, #f5c570) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qk-gold, #f5c570) 40%, transparent);
   transition: transform 0.12s ease;
 }
 .sbr-comp-btn:active { transform: scale(0.88); }
@@ -1382,12 +1384,18 @@
 /* ── Unified PRD §25/§100 — the composer MESSAGE/CONTACTS button (💬) with
    unread badge. Sits between the gift button and the send button; opens the
    contacts surface (full-screen page on mobile/Capacitor, embedded panel on
-   desktop web). */
+   desktop web). THEME-ROBUST: the 💬 icon renders in the theme ACCENT (not a
+   fixed white) on an accent-tinted pill — the previous --qk-on-accent-soft
+   white vanished on the light theme's pale pill and went near-black on
+   lavender/gold's dark pill; the accent always contrasts in all 6 themes. */
 .sbr-comp-btn.sbr-comp-msgs {
   position: relative;
-  color: var(--qk-on-accent-soft);
-  background: color-mix(in srgb, var(--qk-accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--qk-accent) 42%, transparent);
+  color: var(--qk-accent, #ff2d55);
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qk-accent, #ff2d55) 42%, transparent);
+}
+.sbr-comp-btn.sbr-comp-msgs:hover {
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 22%, transparent);
 }
 .sbr-comp-msgs-badge {
   position: absolute;
@@ -2423,22 +2431,76 @@
   box-shadow: 0 0 10px color-mix(in srgb, var(--qk-accent) 35%, transparent);
 }
 
-/* ── STICKERS (room chat) — composer tray + sticker message rows ──────────── */
-/* The two-tab picker (My Stickers | Sticker Shop) lives in a themed tray
-   above the composer — same layering as the emoji tray, but taller to fit
-   the sticker grid + shop cards. */
-.sbr-sticker-tray {
-  margin: 0 8px 8px;
-  padding: 8px;
-  border-radius: 14px;
-  background: var(--qk-elev);
-  border: 1.5px solid color-mix(in srgb, var(--qk-text) 10%, transparent);
-  max-height: 248px;
+/* ── STICKERS (room chat) — bottom drawer + sticker message rows ──────────── */
+/* The two-tab picker (My Stickers grouped by set | Sticker Shop cards) lives
+   in a BOTTOM DRAWER that slides up over the message area and stops exactly
+   at the composer's top edge (inline style bottom: calc(100% - <px>)) — the
+   composer row stays visible and usable underneath. Theme-aware through
+   --qk-* tokens so every theme paints it correctly. */
+.sbr-sticker-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 51px; /* fallback — overridden inline from the measured composer top */
+  z-index: 60;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: var(--qk-bg);
+  border-bottom: 1.5px solid color-mix(in srgb, var(--qk-text) 12%, transparent);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -16px 42px rgba(0, 0, 0, 0.55);
   overflow: hidden;
+  transform-origin: 50% 100%;
+  animation: sbr-sticker-drawer-up 0.34s cubic-bezier(0.16, 1, 0.3, 1);
 }
+@keyframes sbr-sticker-drawer-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.sbr-sticker-drawer-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px 6px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--qk-text) 8%, transparent);
+  background: color-mix(in srgb, var(--qk-card) 92%, transparent);
+}
+.sbr-sticker-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--qk-text);
+}
+/* The little header icon follows the theme accent in EVERY theme. */
+.sbr-sticker-drawer-title svg {
+  color: var(--qk-accent, #ff2d55);
+  flex-shrink: 0;
+}
+.sbr-sticker-drawer-x {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--qk-text);
+  background: color-mix(in srgb, var(--qk-text) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qk-text) 10%, transparent);
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.sbr-sticker-drawer-x:hover {
+  background: color-mix(in srgb, var(--qk-text) 14%, transparent);
+}
+.sbr-sticker-drawer-x:active { transform: scale(0.9); }
 /* Sticker bubble in the timeline — a light glass card holding the big
    uploaded image (or the emoji glyph when the asset is an emoji). */
 .sbr-sticker-bubble {
@@ -2460,12 +2522,25 @@
   font-size: 42px;
   line-height: 1.15;
 }
-/* The composer's sticker button — accent-tinted like the messages button. */
+/* The composer's sticker button — THEME-ROBUST: the icon color IS the theme
+   accent (never a hardcoded white/dark), on an accent-tinted pill. Works on
+   every theme: dark, light, midnight, coral, lavender, gold — the accent is
+   always chosen to contrast with its own tinted surface. */
 .sbr-comp-btn.sbr-comp-sticker {
-  color: var(--qk-on-accent-soft);
-  background: color-mix(in srgb, var(--qk-accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--qk-accent) 42%, transparent);
+  color: var(--qk-accent, #ff2d55);
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qk-accent, #ff2d55) 42%, transparent);
+}
+.sbr-comp-btn.sbr-comp-sticker:hover {
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 22%, transparent);
 }
 .sbr-comp-btn.sbr-comp-sticker:active {
-  background: color-mix(in srgb, var(--qk-accent) 24%, transparent);
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 26%, transparent);
+}
+/* Lit state while the sticker drawer is open. */
+.sbr-comp-btn.sbr-comp-sticker.sbr-comp-on {
+  color: var(--qk-on-accent, #fff);
+  background: var(--qk-accent, #ff2d55);
+  border-color: var(--qk-accent, #ff2d55);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--qk-accent, #ff2d55) 40%, transparent);
 }

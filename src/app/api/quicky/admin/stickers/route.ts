@@ -5,7 +5,12 @@
 // POST   { bundleId, name, assetUrl, sortOrder?, isActive? }
 // PATCH  { id, data { name?, assetUrl?, sortOrder?, isActive?, bundleId? } }
 //        (bundleId = re-map a sticker to a different pack — admin request)
-// DELETE { id }
+// DELETE { id }                    → remove ONE sticker
+//        { ids: string[] }         → remove MANY stickers in one call (the
+//                                     admin multi-select "delete from set"
+//                                     flow). ids are validated, deduped and
+//                                     capped; the response reports the exact
+//                                     number of rows removed.
 // §119 asset validation: emoji/short-glyph assets or an image URL — either
 // an https Supabase/object-storage URL (jpg/jpeg included — the upload route
 // accepts image/jpeg) or the ROOT-RELATIVE `/uploads/assets/...` URL the
@@ -141,10 +146,25 @@ export async function DELETE(req: NextRequest) {
   if (gate.error) return gate.error
 
   const body = await req.json().catch(() => null)
-  const id = String(body?.id ?? '')
-  if (!id) return NextResponse.json({ error: 'id_required' }, { status: 400 })
-  const gone = await db.gameSticker.delete({ where: { id } }).catch(() => null)
-  if (!gone) return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  await logAdminAction(gate.me.id, 'delete', 'sticker', id, { name: gone.name })
-  return NextResponse.json({ ok: true })
+  // Single delete { id } and bulk delete { ids: [...] } share this handler —
+  // the multi-select UI posts the whole selection as one request.
+  const rawIds: unknown[] = Array.isArray(body?.ids)
+    ? body.ids
+    : body?.id !== undefined && body?.id !== null
+      ? [body.id]
+      : []
+  const ids = Array.from(
+    new Set(rawIds.map((v) => String(v ?? '').trim()).filter(Boolean))
+  ).slice(0, 200)
+  if (ids.length === 0) return NextResponse.json({ error: 'id_required' }, { status: 400 })
+
+  // One round-trip for any selection size — the count tells the admin exactly
+  // how many rows actually existed and were removed.
+  const gone = await db.gameSticker.deleteMany({ where: { id: { in: ids } } }).catch(() => null)
+  if (!gone) return NextResponse.json({ error: 'delete_failed' }, { status: 500 })
+  await logAdminAction(gate.me.id, 'delete', 'sticker', ids.length === 1 ? ids[0] : `${ids.length} stickers`, {
+    deleted: gone.count,
+    ids,
+  })
+  return NextResponse.json({ ok: true, deleted: gone.count })
 }
