@@ -11,6 +11,7 @@ import { ensureRealmBootstrap } from './realm-config'
 import { ensureRealmParticipation, settleDueCycles } from './realm-cycle'
 import { eligibleForPromotion } from './realm-promotion'
 import { getSeason, realmDisplayName } from './realm-seasons'
+import { parseConsolationCoins, DEFAULT_CONSOLATION_COINS, type ConsolationCoinsConfig } from './realm-rewards'
 
 export type LeaderboardRow = {
   rank: number
@@ -34,6 +35,9 @@ export type RealmStatus = {
   cohortSize: number
   lifetimeRealmPoints: number
   leaderboard: LeaderboardRow[]
+  /** Consolation coin gift per place 4-8 (cycle snapshot, live fallback) —
+   *  shown on the realm leaderboard screen for the non-promotion zone. */
+  consolationCoins: ConsolationCoinsConfig
   /** Unseen settled-cycle result (drives the Realm result screen, §58). */
   pendingResult: {
     cycleId: string
@@ -74,6 +78,12 @@ export async function getRealmStatus(userId: string): Promise<RealmStatus | null
   if (!ur) return null
 
   const cycle = await db.realmCycle.findUnique({ where: { id: part.cycleId } })
+  // Consolation coins for places 4-8 — the cycle SNAPSHOT first, the live
+  // definition as fallback (older cycles created before the block existed).
+  const consolation =
+    parseConsolationCoins(cycle?.rewardSnapshot ?? null) ??
+    parseConsolationCoins(def?.rewards ?? null) ??
+    DEFAULT_CONSOLATION_COINS
 
   // Cohort standings (§43) — users + first public photo in ONE join-ish pass.
   const members = await db.realmCohortMember.findMany({ where: { cohortId: part.cohortId } })
@@ -160,6 +170,7 @@ export async function getRealmStatus(userId: string): Promise<RealmStatus | null
     cohortSize: rows.length,
     lifetimeRealmPoints: ur.lifetimeRealmPoints,
     leaderboard: rows,
+    consolationCoins: consolation,
     pendingResult,
   }
 }

@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Crown, Coins } from 'lucide-react'
+import { X, Crown, Coins, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   COIN_PACKS,
@@ -21,6 +21,7 @@ import {
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
 import { cn } from '@/lib/utils'
+import { RewardedAdModal } from '../RewardedAdModal'
 
 type Pack = {
   id: string
@@ -42,6 +43,7 @@ type Props = {
 export function CoinStoreModal({ open, onClose, coinBalance, onPurchased }: Props) {
   const isPremium = useQuickyStore((s) => s.user?.isPremium ?? false)
   const [buying, setBuying] = useState<string | null>(null)
+  const [adOpen, setAdOpen] = useState(false)
 
   const standardPacks = COIN_PACKS as unknown as Pack[]
   const exclusivePacks = PREMIUM_EXCLUSIVE_COIN_PACKS as unknown as Pack[]
@@ -151,6 +153,21 @@ export function CoinStoreModal({ open, onClose, coinBalance, onPurchased }: Prop
               🧪 MOCK / DEVELOPMENT PURCHASE — no real money is charged.
             </p>
 
+            {/* Rewarded ad — free coins OR realm points (server-rolled 1-1000) */}
+            <button
+              onClick={() => setAdOpen(true)}
+              className="mt-3 w-full flex items-center gap-2.5 rounded-2xl border border-[var(--qk-accent)]/30 bg-[var(--qk-accent)]/10 px-3.5 py-3 text-left hover:bg-[var(--qk-accent)]/18 transition-colors active:scale-[0.99]"
+              data-testid="coin-store-watch-ad"
+            >
+              <span className="w-8 h-8 rounded-full bg-[var(--qk-accent)]/15 flex items-center justify-center shrink-0">
+                <Play className="w-4 h-4 text-[var(--qk-accent)]" fill="currentColor" aria-hidden />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-bold">Watch an ad — free coins or points</span>
+                <span className="block text-[10.5px] text-white/50">Random reward of 1 to 1,000 — collect after the ad</span>
+              </span>
+            </button>
+
             {/* Standard packs */}
             <p className="text-[10px] font-bold tracking-[0.18em] text-white/35 uppercase mt-4 mb-2">Coin packs</p>
             <div className="grid grid-cols-2 gap-2.5">
@@ -191,6 +208,13 @@ export function CoinStoreModal({ open, onClose, coinBalance, onPurchased }: Prop
           </motion.div>
         </motion.div>
       )}
+      <RewardedAdModal
+        open={adOpen}
+        onClose={() => setAdOpen(false)}
+        onRewarded={(r) => {
+          if (r.kind === 'COINS' && r.coinBalance != null) onPurchased(r.coinBalance)
+        }}
+      />
     </AnimatePresence>
   )
 }

@@ -50,6 +50,19 @@ export function RealmResult() {
                 </p>
                 <p className="text-[11.5px] font-semibold opacity-80">You finished Top 3 above the {pending.threshold.toLocaleString()}-point threshold.</p>
               </div>
+            ) : pending.rank >= 4 ? (
+              // Places 4-8 — the "try hard next time" card. Consolation coins
+              // (admin-configured per place) are credited at settlement and
+              // listed in the rewards block below.
+              <div className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 flex flex-col gap-1">
+                <p className="text-[12.5px] font-black uppercase tracking-wide" style={{ color: 'var(--qk-gold)' }}>
+                  🏁 Try hard next time
+                </p>
+                <p className="text-[11.5px] font-semibold opacity-80">
+                  You finished #{pending.rank} — the Top 3 took the promotion spots this cycle.
+                </p>
+                <p className="text-[11px] font-semibold opacity-60">A new cycle in {pending.realmName} starts now — climb back into the Top 3!</p>
+              </div>
             ) : (
               <div className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 flex flex-col gap-1">
                 <p className="text-[12.5px] font-bold opacity-85">
@@ -63,7 +76,9 @@ export function RealmResult() {
 
             {pending.rewards.length > 0 && (
               <div className="w-full rounded-2xl bg-white/5 border border-white/10 px-4 py-3 flex flex-col gap-2">
-                <p className="text-[10px] font-black uppercase tracking-wider opacity-60">Rewards added to your inventory</p>
+                <p className="text-[10px] font-black uppercase tracking-wider opacity-60">
+                  {pending.rank >= 4 ? 'Consolation gift added' : 'Rewards added to your inventory'}
+                </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {pending.rewards.map((r) => (
                     <span key={r.itemId} className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[11px] font-bold">

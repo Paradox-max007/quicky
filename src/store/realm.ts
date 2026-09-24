@@ -24,6 +24,9 @@ export type RealmLeaderboardRow = {
   qualifies: boolean
 }
 
+/** Consolation coin gift per place 4-8 (server-verified, admin-configurable). */
+export type RealmConsolationCoins = { '4': number; '5': number; '6': number; '7': number; '8': number }
+
 export type RealmSnapshot = {
   realm: { level: number; name: string; description: string | null }
   nextRealm: { level: number; name: string } | null
@@ -34,6 +37,7 @@ export type RealmSnapshot = {
   cohortSize: number
   lifetimeRealmPoints: number
   leaderboard: RealmLeaderboardRow[]
+  consolationCoins: RealmConsolationCoins
   pendingResult: {
     cycleId: string
     realmName: string
@@ -75,12 +79,18 @@ type RealmState = {
   lastAward: { points: number; at: number } | null
   /** Global Realm details sheet (opened from any room HUD, PRD §71). */
   detailsOpen: boolean
+  /** The dedicated realm-leaderboard surface: full screen on mobile web /
+   *  Capacitor, a LEFT DRAWER on desktop web (opened from the Games hub
+   *  trophy icon). */
+  leaderboardOpen: boolean
   refresh: () => Promise<void>
   refreshHistory: () => Promise<void>
   applyPointPush: (awardedPoints: number, newCyclePoints?: number) => void
   dismissResult: (cycleId?: string) => Promise<void>
   openDetails: () => void
   closeDetails: () => void
+  openLeaderboard: () => void
+  closeLeaderboard: () => void
 }
 
 const IDLE_MULTIPLIER: MultiplierSnapshot = { multiplier: 1, eventId: null, name: null, expiresAt: null }
@@ -97,6 +107,7 @@ export const useRealmStore = create<RealmState>((set, get) => ({
   historyLoaded: false,
   lastAward: null,
   detailsOpen: false,
+  leaderboardOpen: false,
 
   refresh: async () => {
     if (get().loading) return
@@ -157,6 +168,13 @@ export const useRealmStore = create<RealmState>((set, get) => ({
 
   openDetails: () => set({ detailsOpen: true }),
   closeDetails: () => set({ detailsOpen: false }),
+
+  openLeaderboard: () => {
+    set({ leaderboardOpen: true })
+    // Fresh server standings every time the screen opens (§68).
+    void useRealmStore.getState().refresh()
+  },
+  closeLeaderboard: () => set({ leaderboardOpen: false }),
 }))
 
 /** ONE `realm:${userId}` broadcast subscription for the whole app (§44). */

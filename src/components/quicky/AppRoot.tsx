@@ -49,6 +49,8 @@ import { GiftFlyLayer } from './gift-fly/GiftFlyLayer'
 import { GiftBackSheet } from './gift-back/GiftBackSheet'
 import { RealmDetails } from './realm/RealmDetails'
 import { RealmResult } from './realm/RealmResult'
+import { RealmLeaderboardScreen } from './realm/RealmLeaderboardScreen'
+import { initPushSession } from '@/lib/quicky/push-client'
 import { RewardCollectPopup } from './rewards/RewardCollectPopup'
 import { useRealmStore } from '@/store/realm'
 import { useRewardsStore, subscribeRewardsChannel, resetRewardsChannel } from '@/store/rewards'
@@ -203,6 +205,9 @@ export function AppRoot() {
   useEffect(() => {
     if (!user?.id) return
     void useRealmStore.getState().refresh()
+    // FCM — reconcile the device token while the permission stands (never
+    // prompts; the explicit enable lives in Settings → Notifications).
+    initPushSession()
   }, [user?.id])
 
   // ─── Rewards collection (admin-console PRD §12) ──────────────────────────
@@ -563,9 +568,12 @@ export function AppRoot() {
 
       {/* Realm PRD §41/§58/§71 — global realm surfaces: the 👑-chip details
           sheet (works on any screen, no navigation) + the settled-cycle
-          result modal (shown once per completed cycle). */}
+          result modal (shown once per completed cycle) + the dedicated realm
+          leaderboard (mobile full screen / desktop left drawer, opened from
+          the Games hub trophy badge). */}
       <RealmDetails />
       <RealmResult />
+      <RealmLeaderboardScreen />
 
       {/* Admin-console PRD §12 — the reward-collection popup: pending grants
           from settled realm cycles (online push + offline return). */}

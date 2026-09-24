@@ -7,11 +7,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { getRemainingLimits } from '@/lib/quicky/discovery'
+import { pushNotify } from '@/lib/quicky/push'
 
 type SwipeType = 'like' | 'superlike' | 'pass'
 
 async function recordSwipe(
   meId: string,
+  meName: string | null,
   toUserId: string,
   type: SwipeType,
   budget: { likes: number; superLikes: number } // mutated: tracks remaining allowance within this request
@@ -61,8 +63,30 @@ async function recordSwipe(
           },
         })
         match = { id: m.id, partnerId: toUserId }
+        // FCM — the liked-back user gets the MATCH notification.
+        void pushNotify(toUserId, 'match', {
+          title: 'It\u{2019}s a match! \u{1F525}',
+          body: `You and ${meName ?? 'someone'} liked each other. Say hi!`,
+          data: { view: 'matches', matchId: m.id },
+        })
       } else if (existingMatch.status === 'active') {
         match = { id: existingMatch.id, partnerId: toUserId }
+      }
+    } else {
+      // FCM — the LIKED user gets a like / super-like notification (only when
+      // no match forms from this swipe, so nobody gets a like + match double).
+      if (type === 'superlike') {
+        void pushNotify(toUserId, 'superlike', {
+          title: 'Someone super liked you \u2764\uFE0F',
+          body: `${meName ?? 'Someone'} super liked your profile — check them out!`,
+          data: { view: 'likes-you' },
+        })
+      } else {
+        void pushNotify(toUserId, 'like', {
+          title: 'You have a new like \u{2764}\uFE0F',
+          body: `${meName ?? 'Someone'} liked your profile.`,
+          data: { view: 'likes-you' },
+        })
       }
     }
   }
@@ -120,7 +144,7 @@ export async function POST(req: NextRequest) {
       paywall?: 'likes' | 'superlikes'
     }[] = []
     for (const it of valid) {
-      const result = await recordSwipe(me.id, it.toUserId, it.type as SwipeType, budget)
+      const result = await recordSwipe(me.id, me.name, it.toUserId, it.type as SwipeType, budget)
       results.push({ toUserId: it.toUserId, ...result })
     }
 

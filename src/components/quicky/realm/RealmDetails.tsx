@@ -111,7 +111,7 @@ export function RealmDetails() {
                       )}
                       <div className="grid grid-cols-3 gap-2">
                         <Stat label="Rank" value={snapshot.rank ? `#${snapshot.rank}` : '—'} />
-                        <Stat label="Cohort" value={snapshot.cohortSize ? `${snapshot.cohortSize}/7` : '—'} />
+                        <Stat label="Cohort" value={snapshot.cohortSize ? `${snapshot.cohortSize}/8` : '—'} />
                         <Stat label="Lifetime" value={snapshot.lifetimeRealmPoints.toLocaleString()} />
                       </div>
                       {snapshot.realm.description && (

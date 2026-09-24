@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
+import { pushNotify } from '@/lib/quicky/push'
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
@@ -63,6 +64,13 @@ export async function POST(req: NextRequest) {
   await db.match.update({
     where: { id: match.id },
     data: { lastMessageAt: new Date() },
+  })
+
+  // FCM — message notification to the recipient (gated by their settings).
+  void pushNotify(toUserId, 'message', {
+    title: `${me.name ?? 'Quicky'} · new message`,
+    body: text.slice(0, 90),
+    data: { view: 'chat', matchId: match.id },
   })
 
   return NextResponse.json({ ok: true, matchId: match.id, createdMatch, message: msg })

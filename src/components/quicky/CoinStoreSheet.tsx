@@ -11,10 +11,11 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Check } from 'lucide-react'
+import { X, Check, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { COIN_PACKS } from '@/lib/quicky/constants'
 import { api } from '@/lib/quicky/api-client'
+import { RewardedAdModal } from './RewardedAdModal'
 
 type Props = {
   open: boolean
@@ -26,6 +27,7 @@ type Props = {
 
 export function CoinStoreSheet({ open, onClose, coinBalance, onPurchased }: Props) {
   const [buying, setBuying] = useState<string | null>(null)
+  const [adOpen, setAdOpen] = useState(false)
 
   const purchase = async (packageId: string) => {
     if (buying) return
@@ -78,6 +80,21 @@ export function CoinStoreSheet({ open, onClose, coinBalance, onPurchased }: Prop
               Balance: <b className="text-white tabular-nums">🪙 {coinBalance.toLocaleString('en-US')}</b>
             </p>
 
+            {/* Rewarded ad — free coins OR realm points (server-rolled 1-1000) */}
+            <button
+              onClick={() => setAdOpen(true)}
+              className="flex items-center gap-2.5 rounded-xl border border-[var(--qk-accent)]/30 bg-[var(--qk-accent)]/10 px-3.5 py-3 text-left active:scale-[0.98] transition-transform"
+              data-testid="coin-store-watch-ad"
+            >
+              <span className="w-8 h-8 rounded-full bg-[var(--qk-accent)]/15 flex items-center justify-center shrink-0">
+                <Play className="w-4 h-4 text-[var(--qk-accent)]" fill="currentColor" aria-hidden />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-bold">Watch an ad — free coins or points</span>
+                <span className="block text-[10.5px] text-white/50">Random reward of 1 to 1,000 — collect after the ad</span>
+              </span>
+            </button>
+
             <div className="grid grid-cols-2 gap-2">
               {COIN_PACKS.map((pack) => (
                 <button
@@ -103,6 +120,13 @@ export function CoinStoreSheet({ open, onClose, coinBalance, onPurchased }: Prop
               ))}
             </div>
           </motion.div>
+          <RewardedAdModal
+            open={adOpen}
+            onClose={() => setAdOpen(false)}
+            onRewarded={(r) => {
+              if (r.kind === 'COINS' && r.coinBalance != null) onPurchased(r.coinBalance)
+            }}
+          />
         </>
       )}
     </AnimatePresence>

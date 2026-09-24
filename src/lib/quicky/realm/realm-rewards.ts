@@ -12,6 +12,14 @@ import { db } from '@/lib/db'
 export type RewardItem = { itemId: string; quantity: number }
 export type RewardsConfig = { first: RewardItem[]; second: RewardItem[]; third: RewardItem[] }
 
+/** Consolation coin gifts for cohort places 4-8 (config per realm, admin-editable).
+ *  Keys are the PLACE numbers — { "4": 50, "5": 30, "6": 20, "7": 10, "8": 5 }. */
+export type ConsolationCoinsConfig = { '4': number; '5': number; '6': number; '7': number; '8': number }
+
+export const CONSOLATION_PLACES = [4, 5, 6, 7, 8] as const
+export const CONSOLATION_PLACE_LIMIT = 100_000
+export const DEFAULT_CONSOLATION_COINS: ConsolationCoinsConfig = { 4: 50, 5: 30, 6: 20, 7: 10, 8: 5 }
+
 export const REWARD_LIMITS = { first: 5, second: 3, third: 1 } as const
 const MAX_ITEM_QTY = 1000
 
@@ -37,9 +45,45 @@ export function parseRewardsConfig(json: string | null | undefined): RewardsConf
   }
 }
 
+/** Parse the consolation-coins block from a rewards JSON (positions 4-8,
+ *  clamped 0..100000; missing places → 0). Returns null when absent. */
+export function parseConsolationCoins(json: string | null | undefined): ConsolationCoinsConfig | null {
+  if (!json) return null
+  try {
+    const raw = JSON.parse(json) as { consolationCoins?: Record<string, unknown> }
+    if (!raw?.consolationCoins || typeof raw.consolationCoins !== 'object') return null
+    const out = { 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 } as ConsolationCoinsConfig
+    let any = false
+    for (const place of CONSOLATION_PLACES) {
+      const v = Number(raw.consolationCoins[String(place)])
+      if (Number.isFinite(v) && v > 0) {
+        out[place] = Math.min(CONSOLATION_PLACE_LIMIT, Math.floor(v))
+        any = true
+      }
+    }
+    return any ? out : null
+  } catch {
+    return null
+  }
+}
+
+/** Extract ONLY the consolation block (for merging into a snapshot without
+ *  trusting the rest of an admin payload). */
+function sanitizeConsolation(input: unknown): ConsolationCoinsConfig {
+  const out = { 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 } as ConsolationCoinsConfig
+  if (!input || typeof input !== 'object') return out
+  const raw = input as Record<string, unknown>
+  for (const place of CONSOLATION_PLACES) {
+    const v = Number(raw[String(place)])
+    if (Number.isInteger(v) && v >= 0 && v <= CONSOLATION_PLACE_LIMIT) out[place] = v
+  }
+  return out
+}
+
 /**
  * Validate + serialize an admin-submitted rewards config. Returns an error
- * message on limit violations (shown directly in the admin screen).
+ * message on limit violations (shown directly in the admin screen). Accepts
+ * the legacy per-place items AND the consolationCoins block (4th-8th places).
  */
 export function validateRewardsConfig(input: unknown): { ok: true; json: string } | { ok: false; message: string } {
   if (input == null) return { ok: true, json: JSON.stringify({ first: [], second: [], third: [] }) }
@@ -69,7 +113,7 @@ export function validateRewardsConfig(input: unknown): { ok: true; json: string 
     }
     out[place] = items
   }
-  return { ok: true, json: JSON.stringify(out) }
+  return { ok: true, json: JSON.stringify({ ...out, consolationCoins: sanitizeConsolation(raw.consolationCoins) }) }
 }
 
 /**

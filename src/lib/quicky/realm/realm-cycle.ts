@@ -18,13 +18,14 @@ import { db } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { ensureRealmBootstrap } from './realm-config'
 import { eligibleForPromotion } from './realm-promotion'
-import { parseRewardsConfig, grantRewardItems } from './realm-rewards'
+import { parseRewardsConfig, grantRewardItems, parseConsolationCoins } from './realm-rewards'
 import { nextAfterPromotion } from './realm-seasons'
 import { createPendingGrants, type GrantSpec } from '@/lib/quicky/rewards/catalog'
 import { getClient } from '@/lib/quicky/realtime'
 
-/** PRD §27/§29 — target cohort size. */
-export const COHORT_SIZE = 7
+/** PRD §27/§29 — target cohort size. 8 seats: places 1-3 promote, places
+ *  4-8 receive the admin-configured consolation coin gift (try-hard card). */
+export const COHORT_SIZE = 8
 /** A SETTLING cycle older than this is treated as crashed and re-processed. */
 const SETTLING_RECOVERY_MS = 10 * 60_000
 
@@ -279,6 +280,11 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
 
   const cohorts = await db.realmCohort.findMany({ where: { cycleId }, select: { id: true } })
   const rewardSnapshot = parseRewardsConfig(cycle.rewardSnapshot)
+  // Consolation coins for places 4-8: cycle SNAPSHOT first (§26/§39 — admin
+  // edits never rewrite a running cycle), the live realm definition as the
+  // fallback for cycles created before the consolation system existed.
+  const defRow = await db.realmDefinition.findUnique({ where: { level: cycle.realmLevel }, select: { rewards: true } }).catch(() => null)
+  const consolation = parseConsolationCoins(cycle.rewardSnapshot) ?? parseConsolationCoins(defRow?.rewards ?? null)
   // Admin-console PRD §10 — catalog-based rewards assigned per position,
   // SNAPSHOTTED into the cycle at creation ("catalog" block in the JSON):
   //   { "catalog": { "first": [{rewardId, level, quantity}], ... } }
@@ -353,6 +359,30 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
         if (catalogSpecs.length > 0) {
           const created = await createPendingGrants(member.userId, cycleId, cycle.realmLevel, catalogSpecs)
           if (created > 0) notifyRewardsPending(member.userId)
+        }
+      } else if (rank >= 4) {
+        // Places 4-8 — the "try hard next time" card: an admin-configured
+        // consolation coin gift per place (e.g. 4th=50 … 8th=5). The claim row
+        // is create-only (unique userId+cycleId) so a re-settled crashed run
+        // can never double-credit the coins.
+        const coins = consolation ? consolation[String(rank) as '4' | '5' | '6' | '7' | '8'] ?? 0 : 0
+        const created = await db.realmRewardClaim
+          .create({
+            data: {
+              userId: member.userId,
+              cycleId,
+              cohortId: cohort.id,
+              rank,
+              promoted: false,
+              rewards: JSON.stringify(coins > 0 ? [{ rewardId: 'consolation_coins', name: 'Consolation Coins', icon: '🪙', quantity: coins }] : []),
+            },
+          })
+          .then(() => true)
+          .catch(() => false)
+        if (created && coins > 0) {
+          await db.user
+            .update({ where: { id: member.userId }, data: { coinBalance: { increment: coins } } })
+            .catch(() => {})
         }
       }
 

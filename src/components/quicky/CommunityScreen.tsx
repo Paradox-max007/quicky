@@ -4,7 +4,7 @@
 // Tapping any avatar/name opens that member's dating profile (ProfileView),
 // where you can like them and (premium) message directly.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Heart,
@@ -25,6 +25,7 @@ import { filterCss, timeAgo } from '@/lib/quicky/filters'
 import { useDoubleTap } from '@/lib/quicky/useDoubleTap'
 import { Avatar, CommentsSheet, CommentItem, CommentsLoadResult } from './CommentsSheet'
 import { MediaComposer } from './MediaComposer'
+import { AdCard, AD_EVERY } from './AdCard'
 import { RollsViewer, RollGroup } from './RollsViewer'
 import { cn } from '@/lib/utils'
 
@@ -301,17 +302,17 @@ export function CommunityScreen() {
           </div>
         ) : (
           <div className="flex flex-col gap-6 pt-3">
-            {posts.map((post) => {
-              const isHighlighted = highlightedPostId === post.id
-              return (
-                <article
-                  key={post.id}
-                  id={`community-post-${post.id}`}
-                  className={cn(
-                    'transition-all duration-500 rounded-3xl pb-2',
-                    isHighlighted && 'ring-2 ring-[var(--qk-accent)] bg-white/[0.04] shadow-2xl scale-[1.01]'
-                  )}
-                >
+          {posts.map((post, index) => {
+            const isHighlighted = highlightedPostId === post.id
+            return (
+              <Fragment key={post.id}>
+              <article
+                id={`community-post-${post.id}`}
+                className={cn(
+                  'transition-all duration-500 rounded-3xl pb-2',
+                  isHighlighted && 'ring-2 ring-[var(--qk-accent)] bg-white/[0.04] shadow-2xl scale-[1.01]'
+                )}
+              >
                   {/* Card header — game posts show both owners */}
                   <div className="flex items-center gap-2.5 px-4 pb-2">
                   <div className="flex -space-x-2">
@@ -417,6 +418,9 @@ export function CommunityScreen() {
                   )}
                 </div>
               </article>
+              {/* Instagram-style Sponsored slot — after every 3rd post */}
+              {(index + 1) % AD_EVERY === 0 && index + 1 < posts.length && <AdCard index={Math.floor((index + 1) / AD_EVERY) - 1} />}
+              </Fragment>
             )
           })}
           </div>

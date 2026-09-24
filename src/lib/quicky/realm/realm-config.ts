@@ -8,6 +8,7 @@
 // The Apex (15) is the final realm — no promotion beyond it (PRD §40).
 
 import { db } from '@/lib/db'
+import { DEFAULT_CONSOLATION_COINS } from './realm-rewards'
 
 export type RealmDefault = {
   level: number
@@ -58,7 +59,16 @@ export async function ensureRealmBootstrap(): Promise<void> {
     await db.realmDefinition
       .upsert({
         where: { level: r.level },
-        create: { level: r.level, name: r.name, description: r.description, promotionThreshold: r.promotionThreshold, cycleDurationDays: r.cycleDurationDays },
+        create: {
+          level: r.level,
+          name: r.name,
+          description: r.description,
+          promotionThreshold: r.promotionThreshold,
+          cycleDurationDays: r.cycleDurationDays,
+          // Seed the 4th-8th place consolation coins (4th=50 … 8th=5) —
+          // admins edit them per realm afterwards from the console.
+          rewards: JSON.stringify({ first: [], second: [], third: [], consolationCoins: DEFAULT_CONSOLATION_COINS }),
+        },
         update: {},
       })
       .catch(() => {})

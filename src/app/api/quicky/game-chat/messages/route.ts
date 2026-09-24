@@ -33,6 +33,7 @@ import {
 import { emitGameChatPair } from '@/lib/quicky/game-chat-events'
 import { rateLimit } from '@/lib/quicky/rate-limit'
 import { getEquippedCosmetics, type CosmeticView } from '@/lib/quicky/rewards/cosmetics'
+import { pushNotify } from '@/lib/quicky/push'
 
 export const dynamic = 'force-dynamic'
 
@@ -280,6 +281,26 @@ export async function POST(req: NextRequest) {
     message: serialized,
   })
   emitGameChatPair(userAId, userBId, { type: 'conversation', conversationId: conversationId! })
+
+  // ── FCM push to the RECIPIENT (fresh inserts only — retries never re-notify).
+  if (freshInsert) {
+    const recipientId = userAId === me.id ? userBId : userAId
+    const preview =
+      created.messageType === 'text'
+        ? (text ?? '').slice(0, 90)
+        : created.messageType === 'sticker'
+          ? 'Sent a sticker'
+          : created.messageType === 'voice'
+            ? 'Sent a voice message'
+            : created.messageType === 'quicky_image'
+              ? 'Sent a Quicky Image'
+              : 'Sent a photo'
+    void pushNotify(recipientId, 'message', {
+      title: `${me.name ?? 'Quicky'} · game chat`,
+      body: preview,
+      data: { view: 'game-chat', peer: me.id, conversationId: conversationId! },
+    })
+  }
 
   return NextResponse.json({ ok: true, conversationId, message: serialized })
 }

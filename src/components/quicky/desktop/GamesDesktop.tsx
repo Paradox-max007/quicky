@@ -16,6 +16,7 @@ import { useGames } from '../game-hub/useGames'
 import { GameCard } from '../game-hub/GameCard'
 import { artworkGradient } from '../game-hub/types'
 import { GamesFilterBar } from '../game-hub/GamesFilterBar'
+import { PointsBadges } from '../realm/PointsBadges'
 
 export function GamesDesktop() {
   const setView = useQuickyStore((s) => s.setView)
@@ -61,11 +62,16 @@ export function GamesDesktop() {
           <h1 className="text-3xl font-bold tracking-tight">Games</h1>
           <p className="text-sm text-white/50 mt-1">Discover games, compete and connect.</p>
         </div>
-        {roomId && (
-          <span className="text-[11px] font-semibold text-[var(--qk-accent)] bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/25 rounded-full px-3 py-1.5">
-            Your table is live
-          </span>
-        )}
+        <div className="flex items-center gap-3 pb-1">
+          {/* ❤ lifetime points + 🏆 current realm points (tap → realm
+              leaderboard drawer) — the connected pair on every Games hub. */}
+          <PointsBadges />
+          {roomId && (
+            <span className="text-[11px] font-semibold text-[var(--qk-accent)] bg-[var(--qk-accent)]/10 border border-[var(--qk-accent)]/25 rounded-full px-3 py-1.5">
+              Your table is live
+            </span>
+          )}
+        </div>
       </header>
 
       {/* ── Featured game (§41) — DB-driven, honest live numbers ─────────── */}

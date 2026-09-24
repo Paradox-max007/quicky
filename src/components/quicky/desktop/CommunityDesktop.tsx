@@ -8,7 +8,7 @@
 // same optimistic likes, same rolls/composer overlays (§56: the alternating
 // layout is a desktop treatment only; mobile keeps its feed).
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Heart,
@@ -29,6 +29,7 @@ import { filterCss, timeAgo } from '@/lib/quicky/filters'
 import { useDoubleTap } from '@/lib/quicky/useDoubleTap'
 import { Avatar, CommentsSheet, CommentItem, CommentsLoadResult } from '../CommentsSheet'
 import { MediaComposer } from '../MediaComposer'
+import { AdCard, AD_EVERY } from '../AdCard'
 import { RollsViewer, RollGroup } from '../RollsViewer'
 import { cn } from '@/lib/utils'
 import { SkeletonBlock, EmptyState, ErrorState } from './web-ui'
@@ -270,9 +271,9 @@ export function CommunityDesktop() {
         />
       ) : (
         <div className="flex flex-col gap-5 mx-auto w-full max-w-[500px]" data-testid="community-compact-feed">
-          {posts.map((post) => (
+          {posts.map((post, index) => (
+            <Fragment key={post.id}>
             <article
-              key={post.id}
               className="qk-card-hover rounded-3xl border border-white/8 bg-[var(--qk-card)]/50 overflow-hidden"
               data-testid={`community-post-${post.id}`}
             >
@@ -364,6 +365,9 @@ export function CommunityDesktop() {
                 )}
               </div>
             </article>
+            {/* Instagram-style Sponsored slot — after every 3rd post */}
+            {(index + 1) % AD_EVERY === 0 && index + 1 < posts.length && <AdCard index={Math.floor((index + 1) / AD_EVERY) - 1} />}
+            </Fragment>
           ))}
         </div>
       )}

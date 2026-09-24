@@ -953,6 +953,27 @@ export const api = {
   },
   upload: uploadFile,
   uploadWithProgress: uploadFileWithProgress,
+  // ─── FCM PUSH (Settings → Notifications → Enable push) ───────────────
+  push: {
+    register: (token: string, platform: 'web' | 'ios' | 'android') =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/push/register', {
+        method: 'POST',
+        body: JSON.stringify({ token, platform }),
+      }),
+    unregister: (token: string) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/push/register', {
+        method: 'DELETE',
+        body: JSON.stringify({ token }),
+      }),
+  },
+  // ─── REWARDED ADS (coin store + realm leaderboard entries) ──────────
+  ads: {
+    reward: () =>
+      jsonFetch<{ ok: boolean; kind: 'COINS' | 'POINTS'; amount: number; coinBalance: number | null; cyclePoints: number | null }>(
+        '/api/quicky/ads/reward',
+        { method: 'POST' }
+      ),
+  },
   // ─── REALM PROGRESSION (realm PRD §61) — shared across every game ─────
   realm: {
     status: () => jsonFetch<{ realm: any }>('/api/quicky/realm/me'),

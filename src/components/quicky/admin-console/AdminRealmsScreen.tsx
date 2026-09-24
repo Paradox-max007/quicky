@@ -62,6 +62,24 @@ type CohortDetail = {
 type RewardItem = { itemId: string; quantity: number }
 type RewardsConfig = { first: RewardItem[]; second: RewardItem[]; third: RewardItem[] }
 
+/** Consolation coin gifts for places 4-8 — { '4': 50, '5': 30, '6': 20, '7': 10, '8': 5 }. */
+type ConsolationCoins = Record<'4' | '5' | '6' | '7' | '8', number>
+const CONSOLATION_PLACES = ['4', '5', '6', '7', '8'] as const
+
+function parseConsolation(json: string | null | undefined): ConsolationCoins {
+  const out = { 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 } as ConsolationCoins
+  try {
+    const raw = JSON.parse(json ?? '{}') as { consolationCoins?: Record<string, unknown> }
+    for (const p of CONSOLATION_PLACES) {
+      const v = Number(raw?.consolationCoins?.[p])
+      if (Number.isFinite(v) && v >= 0 && v <= 100_000) out[p] = Math.floor(v)
+    }
+  } catch {
+    // defaults (all zero) are fine
+  }
+  return out
+}
+
 function parseRewards(json: string | null | undefined): RewardsConfig {
   try {
     const raw = JSON.parse(json ?? '{}') as Partial<RewardsConfig>
@@ -99,6 +117,7 @@ export function AdminRealmsScreen() {
   const [durationDraft, setDurationDraft] = useState('')
   const [activeDraft, setActiveDraft] = useState(true)
   const [rewardsDraft, setRewardsDraft] = useState<RewardsConfig>({ first: [], second: [], third: [] })
+  const [consolationDraft, setConsolationDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -134,6 +153,7 @@ export function AdminRealmsScreen() {
     setDurationDraft(String(r.cycleDurationDays))
     setActiveDraft(r.isActive)
     setRewardsDraft(parseRewards(r.rewards))
+    setConsolationDraft(Object.fromEntries(CONSOLATION_PLACES.map((p) => [p, String(parseConsolation(r.rewards)[p])])))
     setCatalogDraft(
       catalogRules
         .filter((rule) => rule.realmLevel === r.level)
@@ -151,9 +171,17 @@ export function AdminRealmsScreen() {
         return toast.error(`${place.label.split(' (')[0]} allows at most ${place.limit} item${place.limit > 1 ? 's' : ''}.`)
       }
     }
+    const consolation: Record<string, number> = {}
+    for (const p of CONSOLATION_PLACES) {
+      const v = Math.floor(Number(consolationDraft[p] ?? '0'))
+      if (!Number.isInteger(v) || v < 0 || v > 100_000) {
+        return toast.error('Consolation coins must be whole numbers between 0 and 100,000.')
+      }
+      consolation[p] = v
+    }
     setSaving(true)
     try {
-      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, rewards: rewardsDraft })
+      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, rewards: { ...rewardsDraft, consolationCoins: consolation } })
       if (rewardFor === level) {
         await api.admin.realmRewards.set(
           level,
@@ -364,6 +392,41 @@ export function AdminRealmsScreen() {
                         </div>
                       ))}
                       <p className="text-[10px] text-white/30">Legacy gift-item rewards are granted into the existing player inventory at settlement. Cycle-start snapshots keep history stable.</p>
+
+                      {/* Consolation coins — places 4th-8th ("try hard next time") */}
+                      <div className="mt-1 rounded-xl border border-[var(--qk-gold)]/20 bg-[var(--qk-gold)]/[0.04] p-3">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-[var(--qk-gold)] mb-2">Consolation coins — places 4th to 8th</p>
+                        {rewardFor === r.level ? (
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {CONSOLATION_PLACES.map((p) => (
+                              <label key={p} className="flex flex-col items-center gap-1">
+                                <span className="text-[9px] font-black text-white/40">{p}th</span>
+                                <input
+                                  value={consolationDraft[p] ?? '0'}
+                                  onChange={(e) => setConsolationDraft({ ...consolationDraft, [p]: e.target.value.replace(/[^0-9]/g, '').slice(0, 6) })}
+                                  inputMode="numeric"
+                                  className="w-full rounded-lg bg-[#0B0E14] border border-white/10 px-1 py-1.5 text-[11px] font-bold tabular-nums text-center outline-none focus:border-[var(--qk-accent)]/50"
+                                  aria-label={`${p}th place consolation coins`}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {CONSOLATION_PLACES.map((p) => {
+                              const v = parseConsolation(r.rewards)[p]
+                              return (
+                                <span key={p} className="rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[10.5px] font-bold tabular-nums">
+                                  {p}th <span style={{ color: 'var(--qk-gold)' }}>+{v.toLocaleString()} 🪙</span>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        )}
+                        <p className="text-[10px] text-white/30 mt-2 leading-relaxed">
+                          Credited to the players finishing 4th-8th at settlement (the “try hard next time” card). Snapshotted at cycle start — edits apply to future cycles.
+                        </p>
+                      </div>
 
                       {/* Admin-console PRD §10 — catalog rewards (claimable via the reward popup) */}
                       <div className="mt-2.5 rounded-xl border border-[var(--qk-accent)]/20 bg-[var(--qk-accent)]/[0.04] p-3 flex flex-col gap-2.5">

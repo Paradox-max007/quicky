@@ -10,10 +10,10 @@ const DEFAULT_SETTINGS = {
   notifMessages: true,
   notifConnectionReqs: true,
   notifLikes: true,
+  notifSuperLikes: true,
   notifProfileViews: true,
   notifSnackbars: true,
   // In-game notification toggle (game alerts while off the game screen).
-  // Free for all users — gameplay surface, not a marketing preference.
   notifGameEvents: true,
   privacyHideAge: false,
   privacyHideDistance: false,
@@ -54,10 +54,12 @@ export async function PATCH(req: NextRequest) {
         { status: 402 }
       )
     }
-    // Notification preferences are premium-only — EXCEPT notifGameEvents:
-    // in-game alerts (turn prompts, private game-chat message modals) are a
-    // gameplay surface every player needs, so the toggle is free.
-    const notifKeys = ['notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifProfileViews', 'notifSnackbars']
+    // ALL notification preferences are premium-only (Settings → Notifications
+    // is a premium surface — matches the paywall in the Notifications screen).
+    const notifKeys = [
+      'notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifSuperLikes',
+      'notifProfileViews', 'notifSnackbars', 'notifGameEvents',
+    ]
     if (notifKeys.some((k) => body[k] !== undefined)) {
       return NextResponse.json(
         { error: 'premium_required', paywall: 'notifications' },
@@ -69,7 +71,7 @@ export async function PATCH(req: NextRequest) {
   // Whitelist allowed fields
   const allowed: Record<string, any> = {}
   const boolFields = [
-    'notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifProfileViews', 'notifSnackbars', 'notifGameEvents',
+    'notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifSuperLikes', 'notifProfileViews', 'notifSnackbars', 'notifGameEvents',
     'privacyHideAge', 'privacyHideDistance', 'privacyHideOnline', 'privacyHideTyping', 'privacyHideReadReceipts',
   ]
   for (const f of boolFields) {

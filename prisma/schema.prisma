@@ -133,6 +133,9 @@ model User {
   // ─── Admin console PRD — reward grants + cosmetics inventory ────────────
   rewardGrants      UserRewardGrant[]
   cosmetics         UserCosmetic[]
+  // ─── FCM push + rewarded ads ────────────────────────────────────────────
+  pushTokens        PushToken[]
+  adRewards         AdRewardEvent[]
 }
 
 model Photo {
@@ -384,10 +387,11 @@ model EmailOtpCode {
 model UserSettings {
   id                   String   @id @default(cuid())
   userId               String   @unique
-  // Notification toggles
+  // Notification toggles (premium-gated in the settings UI + PATCH route)
   notifMessages        Boolean  @default(true)
   notifConnectionReqs  Boolean  @default(true)
   notifLikes           Boolean  @default(true)
+  notifSuperLikes      Boolean  @default(true)
   notifProfileViews    Boolean  @default(true)
   notifSnackbars       Boolean  @default(true)
   // In-game notifications (game alerts while off the game screen: turn
@@ -405,6 +409,47 @@ model UserSettings {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Community ──────────────────────────────────────────────────────────────
+
+// ─── PUSH NOTIFICATIONS (FCM) ──────────────────────────────────────────────────
+
+// One row per installed device/browser. The client (web FCM SDK or the
+// Capacitor Firebase Messaging plugin) resolves an FCM registration token
+// and registers it here after login; event routes call lib/quicky/push.ts
+// which fans out to every ACTIVE token of the recipient (gated by the
+// recipient's UserSettings notification toggles).
+model PushToken {
+  id         String   @id @default(cuid())
+  userId     String
+  // FCM registration token (unique — a token always belongs to ONE device
+  // and one install; re-registering moves it to the current user).
+  token      String   @unique
+  // web | ios | android
+  platform   String   @default("web")
+  active     Boolean  @default(true)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+}
+
+// ─── REWARDED ADS ─────────────────────────────────────────────────────────────
+
+// Every granted rewarded-ad reward (server-generated, 1-1000 coins OR realm
+// points). The latest row per user also drives the anti-farm cooldown.
+model AdRewardEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  // COINS | POINTS
+  kind      String
+  amount    Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // ─── Community ────────────────────────────────────────────────────────────────

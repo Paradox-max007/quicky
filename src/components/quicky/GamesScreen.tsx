@@ -13,6 +13,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { useGames } from './game-hub/useGames'
 import { GameCard } from './game-hub/GameCard'
 import { GamesFilterBar } from './game-hub/GamesFilterBar'
+import { PointsBadges } from './realm/PointsBadges'
 
 export function GamesScreen() {
   const setView = useQuickyStore((s) => s.setView)
@@ -70,6 +71,11 @@ export function GamesScreen() {
             <Sparkles className="w-3 h-3 text-[var(--qk-gold)]" aria-hidden />
             PLAY &amp; CONNECT
           </p>
+        </div>
+        {/* ❤ lifetime points + 🏆 current realm points (tap → realm
+            leaderboard) — the connected pair lives in every Games hub. */}
+        <div className="ml-auto">
+          <PointsBadges />
         </div>
       </header>
 

@@ -27,10 +27,11 @@
     "android:run": "bun scripts/android.ts run",
     "scripts:gen-personas": "bun scripts/gen-personas.ts",
     "scripts:seed": "bun scripts/seed.ts",
-  "scripts:seed:games": "bun scripts/seed-game-definitions.mjs"
+    "scripts:seed:games": "bun scripts/seed-game-definitions.mjs"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor-firebase/messaging": "^8.5.2",
     "@capacitor/android": "^8.5.0",
     "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.5.0",
@@ -82,6 +83,8 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
     "framer-motion": "^12.23.2",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.525.0",

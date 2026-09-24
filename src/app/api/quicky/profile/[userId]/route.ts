@@ -3,6 +3,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
+import { pushNotify } from '@/lib/quicky/push'
+
+// Profile-view push throttle: one "X viewed your profile" notification per
+// (viewer → viewed) pair per 30 minutes (in-process map; cheap and good
+// enough — every profile GET would otherwise spam on refreshes).
+const VIEW_PUSH_COOLDOWN_MS = 30 * 60_000
+const viewPushAt = new Map<string, number>()
+function shouldPushView(viewerId: string, viewedId: string): boolean {
+  const key = `${viewerId}>${viewedId}`
+  const now = Date.now()
+  const last = viewPushAt.get(key) ?? 0
+  if (now - last < VIEW_PUSH_COOLDOWN_MS) return false
+  viewPushAt.set(key, now)
+  return true
+}
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: string }> }) {
   const me = await getCurrentUser()
@@ -72,6 +87,16 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
         }),
       ])
     : [null, null]
+
+  // FCM — profile-view notification to the OWNER (gated by their settings,
+  // throttled per viewer pair, never on self/block views).
+  if (me.id !== userId && !myBlock && !theirBlock && shouldPushView(me.id, userId)) {
+    void pushNotify(userId, 'profileView', {
+      title: 'Someone viewed your profile \u{1F440}',
+      body: `${me.name ?? 'Someone'} checked out your profile.`,
+      data: { view: 'profile-view', userId: me.id },
+    })
+  }
 
   return NextResponse.json({
     profile: {
