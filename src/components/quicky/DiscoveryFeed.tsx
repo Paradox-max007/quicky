@@ -77,7 +77,7 @@ export function DiscoveryFeed() {
               matchId: r.match.id,
               partnerId: entry.candidate.id,
               partnerName: entry.candidate.name,
-              partnerPhoto: entry.candidate.photos[0]?.url ?? null,
+              partnerPhoto: entry.candidate.photos?.[0]?.url ?? null,
             })
           }
         }
@@ -436,9 +436,13 @@ export function CardLayout({
   const [photoIdx, setPhotoIdx] = useState(0)
   const [infoTab, setInfoTab] = useState<'about' | 'details'>('about')
   const tier = getScoreTier(candidate.quickyScore)
-  const total = candidate.photos.length
+  // Defensive against malformed/stale cached rows (a null photos array would
+  // otherwise crash the whole feed render — now caught by error.tsx, but
+  // guarding here keeps one bad row from taking the screen down).
+  const photos = Array.isArray(candidate.photos) ? candidate.photos : []
+  const total = photos.length
   const visibleLimit = viewerIsPremium ? total : Math.min(total, FREE_PHOTO_LIMIT)
-  const photo = candidate.photos[photoIdx]
+  const photo = photos[photoIdx]
   const isLocked = photoIdx >= visibleLimit
 
   // Touch-based swipe detection (separate from card-drag swipe)

@@ -558,8 +558,15 @@ export function ChatView({
     recordingRef.current?.stream.getTracks().forEach((t) => t.stop())
   }, [])
 
+  // No match selected → this screen has nothing to render. The navigation
+  // back to the list lives in an EFFECT (calling setView during render is a
+  // React anti-pattern — it schedules an update on another component while
+  // this one is still rendering and can cascade re-renders).
+  useEffect(() => {
+    if (!matchId && !embedded) setView('matches')
+  }, [matchId, embedded, setView])
+
   if (!matchId) {
-    if (!embedded) setView('matches')
     return null
   }
 

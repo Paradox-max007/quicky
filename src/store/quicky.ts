@@ -416,5 +416,12 @@ export const useQuickyStore = create<State>((set) => ({
   setGamesReturnView: (v) => set({ gamesReturnView: v }),
   setChatsSection: (s) => set({ chatsSection: s }),
   setActiveMatchId: (id) => set({ activeMatchId: id }),
-  logout: () => set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, ludoRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', gameFriendsReturnView: 'games', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' }),
+  logout: () => {
+    // Session view persistence (view-restore.ts): logging out must never
+    // resurrect this session's screen on the next login.
+    try {
+      window.localStorage.removeItem('quicky_session_view_v1')
+    } catch {}
+    set({ user: null, view: 'splash', activeMatchId: null, activeProfileUserId: null, unreadByMatch: {}, unviewedLikes: 0, totalUnread: 0, spinBottleRoomId: null, ludoRoomId: null, gameLandingSlug: null, gamesReturnView: null, chatReturnView: null, gameChatPeer: null, gameChatReturnView: 'spin-bottle', roomChatPanel: 'room', gameChatPinnedPeer: null, gameChatContactsReturnView: 'spin-bottle-room', gameFriendsReturnView: 'games', roomChatMentionDraft: null, communityFocusPostId: null, chatsSection: 'game' })
+  },
 }))
