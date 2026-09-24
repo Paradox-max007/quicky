@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRoundTimer } from '@/hooks/useRoundTimer'
 import { hapticNotification } from '@/lib/capacitor'
+import { useQuickyStore } from '@/store/quicky'
 import type { TurnAlertState } from './turn-alert-sources'
 
 export function TurnAlertCard({
@@ -47,13 +48,16 @@ export function TurnAlertCard({
   const secsLeft = Math.max(0, remaining)
   const urgent = secsLeft <= 10
 
-  // One light haptic the FIRST time the card arms for a turn.
+  // One light haptic the FIRST time the card arms for a turn — silenced
+  // when the in-game notification toggle is OFF (the whole alert layer,
+  // haptics included, follows that switch).
+  const notifGameEvents = useQuickyStore((s) => s.user?.settings?.notifGameEvents) !== false
   const buzzedKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (buzzedKeyRef.current === state.turnKey) return
     buzzedKeyRef.current = state.turnKey
-    void hapticNotification('warning')
-  }, [state.turnKey])
+    if (notifGameEvents) void hapticNotification('warning')
+  }, [state.turnKey, notifGameEvents])
 
   // The turn expired while off-screen (skipped) → no card, no pill; the next
   // turn re-arms everything.

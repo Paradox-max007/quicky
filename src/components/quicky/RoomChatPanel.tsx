@@ -39,6 +39,7 @@ import { api } from '@/lib/quicky/api-client'
 import { isMentionSoundEnabled, setMentionSoundEnabled } from '@/lib/quicky/mention-sound'
 import { GiftIcon } from '@/components/quicky/GiftIcon'
 import { StickerPicker } from '@/components/quicky/game-chat/StickerPicker'
+import { EmojiReactDrawer } from '@/components/quicky/EmojiReactDrawer'
 
 export type RoomMention = { userId: string; displayName: string }
 
@@ -114,14 +115,16 @@ function timeFor(iso: string): string {
 
 const EMOJIS = ['😄', '😂', '🥰', '😍', '🤔', '😅', '🙌', '👏', '🔥', '💔', '💋', '🍾', '🎉', '👀', '😎', '🤩', '😇', '🤣']
 
+// Emoji react options now live in the shared EmojiReactDrawer (quick row +
+// the full catalog, anchored under the reacted message) — the QUICK_REACTS
+// row is gone.
+
 const REACTIONS = [
   { emoji: '❤️', label: 'Kiss', tone: 'kiss' },
   { emoji: '🥂', label: 'Cheers', tone: 'cheers' },
   { emoji: '🔥', label: 'Wow', tone: 'wow' },
   { emoji: '💃', label: 'Dance', tone: 'dance' },
 ] as const
-
-const QUICK_REACTS = ['❤️', '🔥', '😂'] as const
 
 /** Sticker drawer height cap — mobile sheets (≤350px) fill fully under the
  *  table; tall desktop sidebars cap here so the drawer rises from the panel
@@ -183,7 +186,10 @@ function SwipeableBubble({
 }) {
   const [offset, setOffset] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; side: 'above' | 'below' } | null>(null)
+  // The row element captured WHEN the menu opens (state, not a render-time
+  // ref read) — anchors the emoji react drawer under the message.
+  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const startX = useRef(0)
@@ -192,10 +198,16 @@ function SwipeableBubble({
   const directionLocked = useRef<'x' | 'y' | null>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const openMenu = useCallback(() => setMenuOpen(true), [])
+  // The anchor element is read from the ref inside the EVENT HANDLER (legal
+  // ref access) and stored in state; the drawer receives it as a prop.
+  const openMenu = useCallback(() => {
+    setMenuAnchorEl(wrapRef.current)
+    setMenuOpen(true)
+  }, [])
   const closeMenu = useCallback(() => {
     setMenuOpen(false)
     setMenuPos(null)
+    setMenuAnchorEl(null)
   }, [])
 
   // TOOLBOX PLACEMENT: the actions menu is PORTAL'd to <body> as a
@@ -218,19 +230,25 @@ function SwipeableBubble({
     const mh = menu.offsetHeight
     const M = 8
     let top: number
+    // side rides along with the position so the EMOJI REACT DRAWER can take
+    // the OPPOSITE side of the row (drawer + menu sandwich the message).
+    let side: 'above' | 'below'
     if (wr.top - M > mh) {
       top = wr.top - mh - 6
+      side = 'above'
     } else if (vh - wr.bottom - M > mh) {
       top = wr.bottom + 6
+      side = 'below'
     } else {
       // not enough room either way — clamp into the viewport, prefer below
       top = Math.max(M, Math.min(wr.bottom + 6, vh - mh - M))
+      side = 'below'
     }
     // horizontal: hug the row's trailing edge (mine → right edge, others →
     // left edge) then clamp so the toolbox always stays fully on-screen
     let left = mine ? wr.right - mw : wr.left
     left = Math.max(M, Math.min(left, vw - mw - M))
-    setMenuPos({ top, left })
+    setMenuPos({ top, left, side })
   }, [menuOpen, mine])
 
   // Any scroll (capture catches the chat's inner scroll container) or a
@@ -266,7 +284,7 @@ function SwipeableBubble({
           navigator.vibrate(8)
         } catch {}
       }
-      setMenuOpen(true)
+      openMenu()
       isDragging.current = false
     }, 500)
   }
@@ -397,21 +415,6 @@ function SwipeableBubble({
             >
               <Reply size={13} /> Reply
             </button>
-            <div className="sbr-msg-menu-reacts">
-              {QUICK_REACTS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  aria-label={`React ${emoji}`}
-                  onClick={() => {
-                    closeMenu()
-                    onReact(emoji)
-                  }}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
             <button
               type="button"
               className="sbr-msg-menu-report"
@@ -425,6 +428,24 @@ function SwipeableBubble({
           </div>
         </>,
         document.body
+      )}
+
+      {/* EMOJI REACT DRAWER (reaction revision) — anchored to this row on the
+          OPPOSITE side from the actions menu, so the drawer + menu sandwich
+          the message. The quick row + ⌄ expand arrow → the full emoji
+          catalog; picking sends the emoji into the room chat (the existing
+          room-chat reaction semantics). */}
+      {menuOpen && typeof document !== 'undefined' && (
+        <EmojiReactDrawer
+          anchorEl={menuAnchorEl}
+          align={mine ? 'right' : 'left'}
+          side={menuPos?.side === 'below' ? 'above' : 'below'}
+          onPick={(emoji) => {
+            onReact(emoji)
+            closeMenu()
+          }}
+          onClose={closeMenu}
+        />
       )}
     </div>
   )
@@ -1011,7 +1032,12 @@ export function RoomChatPanel({
               const asset = m.metadata?.stickerAsset ?? '✨'
               const isImg = /^https?:\/\//i.test(asset) || asset.startsWith('/') || asset.startsWith('data:image/')
               return (
-                <div key={m.id}>
+                <motion.div
+                  key={m.id}
+                  initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                >
                   <SwipeableBubble onReply={() => startReply(m)} onReact={(emoji) => onSend(emoji)} mine={isMe}>
                     <div className={`sbr-msg${isMe ? ' me' : ''} sbr-msg--sticker`}>
                       <GiftAvatar player={p} me={isMe} />
@@ -1043,7 +1069,7 @@ export function RoomChatPanel({
                       </div>
                     </div>
                   </SwipeableBubble>
-                </div>
+                </motion.div>
               )
             }
             if (m.kind !== 'user') return null
@@ -1052,7 +1078,12 @@ export function RoomChatPanel({
             const displayName = isMe ? 'You' : (p?.displayName ?? 'Guest')
 
             return (
-              <div key={m.id}>
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+              >
                 <SwipeableBubble
                   onReply={() => startReply(m)}
                   onReact={(emoji) => onSend(emoji)}
@@ -1076,7 +1107,7 @@ export function RoomChatPanel({
                     </div>
                   </div>
                 </SwipeableBubble>
-              </div>
+              </motion.div>
             )
           })
         )}

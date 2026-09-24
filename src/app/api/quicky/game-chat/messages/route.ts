@@ -75,6 +75,17 @@ export async function GET(req: NextRequest) {
   }
 
   const peer = await peerInfo(peerId!)
+  // BLOCKED flag (refactor PRD §55): either side blocked → the pair can
+  // never DM. The chat screen blurs the peer avatar and shows the
+  // failed-to-send caution state from this flag.
+  const blockRow = await db.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: me.id, blockedId: peerId! },
+        { blockerId: peerId!, blockedId: me.id },
+      ],
+    },
+  })
   // Admin-console PRD §9 — equipped cosmetics for both participants so the
   // chat screen can render bubbles + name decorators + frames.
   const cosmeticsByUser = await getEquippedCosmetics([me.id, peerId!]).catch(() => new Map<string, CosmeticView[]>())
@@ -93,7 +104,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     conversationId: conversation?.id ?? null,
-    peer: { ...peer, cosmetics: compact(cosmeticsByUser.get(peerId!)) },
+    peer: { ...peer, blocked: !!blockRow, cosmetics: compact(cosmeticsByUser.get(peerId!)) },
     myCosmetics: compact(cosmeticsByUser.get(me.id)),
     hasMore: conversation ? visibleRows.length === MESSAGE_PAGE_SIZE : false,
     oldestCursor: visibleRows.length > 0 ? visibleRows[0].createdAt.toISOString() : null,
@@ -152,7 +163,7 @@ export async function POST(req: NextRequest) {
       ],
     },
   })
-  if (blockRow) return NextResponse.json({ error: 'Not available' }, { status: 403 })
+  if (blockRow) return NextResponse.json({ error: 'blocked' }, { status: 403 })
 
   // ── Validate payload (§75 — never trust the client) ─────────────────────
   let text: string | null = null

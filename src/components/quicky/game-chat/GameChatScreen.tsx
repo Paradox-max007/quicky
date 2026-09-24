@@ -26,7 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Plus, Send, X, Mic, Image as ImageIcon, Zap, Play, Square, MoreVertical, UserPlus, UserMinus, Ban, Eraser, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, Plus, Send, X, Mic, Image as ImageIcon, Zap, Play, Square, MoreVertical, UserPlus, UserMinus, Ban, Eraser, ShieldAlert, AlertCircle } from 'lucide-react'
 import { api, uploadFile } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { ComplaintModal } from '../ComplaintModal'
@@ -34,9 +34,11 @@ import { CosmeticAvatar, NameDecorators, chatBubbleStyle, ChatBubbleFrame, type 
 import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore, type GameChatMessage } from '@/store/game-chat'
 import { StickerPicker } from './StickerPicker'
+import { EmojiReactDrawer } from '../EmojiReactDrawer'
 import { Component, type ReactNode } from 'react'
 
-const REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🔥'] // §28 picker set
+// Emoji react options now live in the shared EmojiReactDrawer (quick row +
+// the full catalog). §28
 const NEAR_BOTTOM_PX = 140
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
@@ -119,6 +121,9 @@ function GameChatScreenInner({
 }) {
   const me = useQuickyStore((s) => s.user)
   const peer = useGameChatStore((s) => s.activePeer)
+  // BLOCKED (refactor PRD §55): drives the blurred peer avatar + the
+  // failed-to-send caution state on new messages.
+  const peerBlocked = useGameChatStore((s) => s.peerBlocked)
   // Admin-console PRD §9 — equipped cosmetics for both participants
   // (peer: avatar + name decorators + bubble; mine: bubble).
   const peerCosmetics = useGameChatStore((s) => s.peerCosmetics)
@@ -491,11 +496,18 @@ function GameChatScreenInner({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        {peer.peerAvatar || (peerCosmetics && peerCosmetics.length > 0) ? (
-          <CosmeticAvatar src={peer.peerAvatar} name={peerName ?? 'Player'} cosmetics={peerCosmetics} size="sm" />
-        ) : (
-          <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>🎲</span>
-        )}
+        {/* BLOCKED (refactor PRD §55): the peer's avatar renders as a highly
+            blurred image for BOTH sides of a blocked pair. */}
+        <span
+          className={peerBlocked ? 'inline-flex blur-[7px] scale-95 pointer-events-none' : 'inline-flex'}
+          data-testid={peerBlocked ? 'gm-peer-avatar-blurred' : undefined}
+        >
+          {peer.peerAvatar || (peerCosmetics && peerCosmetics.length > 0) ? (
+            <CosmeticAvatar src={peer.peerAvatar} name={peerName ?? 'Player'} cosmetics={peerCosmetics} size="sm" />
+          ) : (
+            <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm" aria-hidden>🎲</span>
+          )}
+        </span>
         <div className="min-w-0 flex-1">
           <p className="text-white font-bold text-sm leading-tight truncate">
             <NameDecorators name={peerName} cosmetics={peerCosmetics} />
@@ -695,32 +707,27 @@ function GameChatScreenInner({
             )}
           </AnimatePresence>
 
-          {/* ─── Reaction picker (§28) — same for web hover ⋯ → React (§30) ─────── */}
+          {/* ─── Reaction picker (§28 + emoji revision) — the WhatsApp-style
+              drawer anchored JUST UNDER the message being reacted: quick
+              emojis + ⌄ expand arrow → the full emoji catalog with an
+              enlarging animation. Same drawer on web, mobile web and the
+              Capacitor app. */}
           <AnimatePresence>
             {pickerFor && (
-              <>
-                <div className="fixed inset-0 z-[60]" onClick={() => setPickerFor(null)} />
-                <motion.div
-                  initial={{ opacity: 0, y: 16, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 16, scale: 0.95 }}
-                  transition={{ duration: 0.18 }}
-                  className="absolute inset-x-0 bottom-28 z-[61] mx-auto w-fit flex items-center gap-1 bg-[var(--qk-card)] border border-white/15 rounded-full px-3 py-2 shadow-2xl"
-                  role="menu"
-                  aria-label="React"
-                >
-                  {REACTIONS.map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => react(pickerFor, r)}
-                      className="text-2xl p-1 rounded-full hover:bg-white/10 active:scale-90 transition-transform"
-                      aria-label={`React ${r}`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </motion.div>
-              </>
+              <EmojiReactDrawer
+                key={`react-${pickerFor}`}
+                anchorEl={
+                  typeof document !== 'undefined' ? document.getElementById(`gm-msg-${pickerFor}`) : null
+                }
+                align={messages.find((m) => m.id === pickerFor)?.senderId === meId ? 'right' : 'left'}
+                activeEmoji={
+                  messages
+                    .find((m) => m.id === pickerFor)
+                    ?.reactions.find((r) => r.userIds.includes(meId))?.reaction ?? null
+                }
+                onPick={(emoji) => react(pickerFor, emoji)}
+                onClose={() => setPickerFor(null)}
+              />
             )}
           </AnimatePresence>
 
@@ -1036,6 +1043,7 @@ function GameBubble({
 
   return (
     <motion.div
+      id={`gm-msg-${m.id}`}
       drag="x"
       dragConstraints={{ left: 0, right: 72 }}
       dragElastic={0.14}
@@ -1044,6 +1052,11 @@ function GameBubble({
         // §25: swipe right past the threshold → reply mode
         if (info.offset.x > 56) onReply()
       }}
+      // SEND ANIMATION: a freshly mounted bubble (i.e. a message just sent
+      // or received) springs in — rise + scale, matching the dating chat.
+      initial={{ opacity: 0, y: 14, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 28 }}
       className={`flex flex-col ${mine ? 'items-end' : 'items-start'} touch-pan-y`}
     >
       <div className={`flex items-end gap-1.5 max-w-[85%] group ${mine ? 'flex-row-reverse' : ''}`}>
@@ -1082,9 +1095,19 @@ function GameBubble({
       {mine && (
         <div className="text-[10px] mt-0.5 mr-1 flex items-center gap-1">
           {m.failed ? (
-            <button onClick={onRetry} className="text-rose-300 font-bold underline underline-offset-2" aria-label="Retry send">
-              {m.messageType === 'voice' ? 'Voice failed — tap to retry' : m.messageType === 'image' || m.messageType === 'quicky_image' ? 'Upload failed — tap to retry' : 'Failed — tap to retry'}
-            </button>
+            m.blocked ? (
+              // BLOCKED (refactor PRD §55): the send was refused server-side
+              // BEFORE storage — permanent caution state, nothing to retry.
+              <span className="flex items-center gap-1 text-rose-300 font-bold" data-testid="gm-msg-blocked">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-label="Failed to send" />
+                Blocked — message not sent
+              </span>
+            ) : (
+              <button onClick={onRetry} className="text-rose-300 font-bold underline underline-offset-2 flex items-center gap-1" aria-label="Retry send">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                {m.messageType === 'voice' ? 'Voice failed — tap to retry' : m.messageType === 'image' || m.messageType === 'quicky_image' ? 'Upload failed — tap to retry' : 'Failed to send — tap to retry'}
+              </button>
+            )
           ) : m.pending ? (
             <span className="text-white/35">Sending…</span>
           ) : isLastMine ? (

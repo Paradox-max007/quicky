@@ -611,3 +611,93 @@ html[data-theme='gold'] {
 }
 .qk-input:focus { border-color: var(--qk-accent, #f43f5e); }
 .qk-input option { color: #111; }
+
+/* ══════════════════════════════════════════════════════════════════
+   EMOJI REACT DRAWER (WhatsApp-style) — shared by dating chat,
+   personal game chat and room chat. Portaled to <body>, fixed, anchored
+   under the reacted message. Compact pill (quick emojis + ⌄ expand
+   arrow) → enlarges into the full categorised emoji grid.
+   ══════════════════════════════════════════════════════════════════ */
+.qk-emoji-drawer {
+  background: var(--qk-card, #1c1a26);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  width: min(340px, calc(100vw - 16px));
+  transform-origin: top left;
+  /* hidden until the pre-paint layout effect measures the anchor and writes
+     the final top/left/visibility inline (no visible jump) */
+  visibility: hidden;
+  top: 0;
+  left: 0;
+}
+.qk-emoji-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.qk-emoji-quick,
+.qk-emoji-expand {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 19px;
+  line-height: 1;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.qk-emoji-quick:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.18); }
+.qk-emoji-quick:active { transform: scale(0.9); }
+.qk-emoji-cell-on {
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 22%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--qk-accent, #ff2d55) 65%, transparent);
+}
+.qk-emoji-expand {
+  color: var(--qk-accent, #ff2d55);
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 12%, transparent);
+  margin-left: 2px;
+}
+.qk-emoji-expand:hover {
+  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 24%, transparent);
+}
+.qk-emoji-grid {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px 8px 10px;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+}
+.qk-emoji-cat { margin-bottom: 6px; }
+.qk-emoji-cat-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--qk-text-muted, rgba(255, 255, 255, 0.45));
+  margin: 4px 2px 5px;
+}
+.qk-emoji-cat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+  gap: 1px;
+}
+.qk-emoji-cell {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 8px;
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+.qk-emoji-cell:hover { background: rgba(255, 255, 255, 0.09); transform: scale(1.22); }
+.qk-emoji-cell:active { transform: scale(0.9); }

@@ -59,6 +59,15 @@ export async function GET() {
       isAdmin: full.isAdmin,
       coinBalance: full.coinBalance,
       kissPoints: full.kissPoints,
+      // DUAL PROFILE (profile revision) — the GAME profile side: lifetime
+      // game stats for the Game tab on my own profile page.
+      gamesPlayed: full.gamesPlayed,
+      kissesGiven: full.kissesGiven,
+      ludoWins: full.ludoWins,
+      ludoTokensFinished: full.ludoTokensFinished,
+      ludoCaptures: full.ludoCaptures,
+      giftsSentCount: full.giftsSentCount,
+      giftsReceivedCount: full.giftsReceivedCount,
       posts,
       postCount: posts.length,
       onboardedAt: full.onboardedAt,

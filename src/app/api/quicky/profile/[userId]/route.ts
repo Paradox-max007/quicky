@@ -56,6 +56,23 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
     },
   })
 
+  // DUAL PROFILE (profile revision): every user has a DATING profile (the
+  // classic fields below) and a GAME profile — the permanent lifetime game
+  // stats that survive room deletion (spin kiss points, Ludo, gifting).
+  // Exposed as profile.gameStats for the Game tab.
+  // Block state (refactor PRD §55) — when blocked, BOTH users see each
+  // other's profile images as highly blurred.
+  const [myBlock, theirBlock] = me.id !== userId
+    ? await Promise.all([
+        db.block.findUnique({
+          where: { blockerId_blockedId: { blockerId: me.id, blockedId: userId } },
+        }),
+        db.block.findUnique({
+          where: { blockerId_blockedId: { blockerId: userId, blockedId: me.id } },
+        }),
+      ])
+    : [null, null]
+
   return NextResponse.json({
     profile: {
       id: u.id,
@@ -74,6 +91,20 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ userId: st
       quickyScore: u.quickyScore,
       posts,
       postCount: posts.length,
+      gameStats: {
+        gamesPlayed: u.gamesPlayed,
+        kissPoints: u.kissPoints,
+        kissesGiven: u.kissesGiven,
+        ludoWins: u.ludoWins,
+        ludoTokensFinished: u.ludoTokensFinished,
+        ludoCaptures: u.ludoCaptures,
+        giftsSent: u.giftsSentCount,
+        giftsReceived: u.giftsReceivedCount,
+        coinBalance: me.id === u.id ? u.coinBalance : undefined,
+      },
+      blocked: !!(myBlock || theirBlock),
+      iBlockedThem: !!myBlock,
+      theyBlockedMe: !!theirBlock,
     },
     isMe: me.id === u.id,
     relationship: {

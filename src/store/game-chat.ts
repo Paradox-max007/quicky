@@ -40,6 +40,9 @@ export type GameChatMessage = {
   // client-only states
   pending?: boolean
   failed?: boolean
+  // failed BECAUSE the pair is blocked (refactor PRD §55) — no retry,
+  // rendered with the caution icon; never stored server-side.
+  blocked?: boolean
   // media still uploading locally (never persisted)
   localPreview?: string | null
 }
@@ -60,6 +63,9 @@ type GameChatState = {
   // active conversation
   activePeer: { peerUserId: string; peerName: string | null; peerAvatar: string | null } | null
   activeConversationId: string | null
+  // BLOCKED (refactor PRD §55): either side blocked → sends fail with the
+  // caution state and the peer avatar renders heavily blurred.
+  peerBlocked: boolean
   messages: GameChatMessage[]
   hasMore: boolean
   oldestCursor: string | null
@@ -167,6 +173,7 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
     listLoading: false,
     activePeer: null,
     activeConversationId: null,
+    peerBlocked: false,
     messages: [],
     hasMore: false,
     oldestCursor: null,
@@ -271,6 +278,7 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
       set({
         activePeer: peer,
         activeConversationId: null,
+        peerBlocked: false,
         messages: [],
         hasMore: false,
         oldestCursor: null,
@@ -286,6 +294,7 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
           set({
             activeConversationId: res.conversationId,
             peerLastReadAt: res.peerLastReadAt,
+            peerBlocked: !!(res.peer as { blocked?: boolean } | undefined)?.blocked,
             hasMore: res.hasMore,
             oldestCursor: res.oldestCursor,
             peerCosmetics: ((res.peer as unknown as { cosmetics?: EquippedCosmetic[] })?.cosmetics ?? []) as EquippedCosmetic[],
@@ -317,6 +326,7 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
       set({
         activePeer: null,
         activeConversationId: null,
+        peerBlocked: false,
         messages: [],
         hasMore: false,
         oldestCursor: null,
@@ -383,11 +393,14 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
           }
           // my own send also refreshes the list order (§88/§90)
           get().refreshList(true)
-        } catch {
-          // §22: never silently lose the message — mark failed, keep visible
+        } catch (e: any) {
+          // §22: never silently lose the message — mark failed, keep visible.
+          // A 403 'blocked' is permanent (refactor PRD §55): no retry, the
+          // row renders the caution icon and nothing is stored server-side.
+          const isBlocked = e?.status === 403 || e?.body?.error === 'blocked' || e?.message === 'blocked'
           set((prev) => ({
             messages: prev.messages.map((m) =>
-              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true } : m
+              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true, blocked: isBlocked } : m
             ),
           }))
         }
@@ -432,10 +445,11 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
           mergeMessages([res.message])
           if (!activeConversationId && res.conversationId) set({ activeConversationId: res.conversationId })
           get().refreshList(true)
-        } catch {
+        } catch (e: any) {
+          const isBlocked = e?.status === 403 || e?.body?.error === 'blocked' || e?.message === 'blocked'
           set((prev) => ({
             messages: prev.messages.map((m) =>
-              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true } : m
+              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true, blocked: isBlocked } : m
             ),
           }))
         }
@@ -483,12 +497,14 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
             set({ activeConversationId: res.conversationId })
           }
           get().refreshList(true)
-        } catch {
+        } catch (e: any) {
           // §116: upload/send failure stays visible with a retry — never a
-          // broken message row, never a silent loss.
+          // broken message row, never a silent loss. A blocked pair gets the
+          // permanent caution state (refactor PRD §55).
+          const isBlocked = e?.status === 403 || e?.body?.error === 'blocked' || e?.message === 'blocked'
           set((prev) => ({
             messages: prev.messages.map((m) =>
-              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true } : m
+              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true, blocked: isBlocked } : m
             ),
           }))
         }
@@ -519,10 +535,11 @@ export const useGameChatStore = create<GameChatState>((set, get) => {
           })
           mergeMessages([res.message])
           if (!activeConversationId && res.conversationId) set({ activeConversationId: res.conversationId })
-        } catch {
+        } catch (e: any) {
+          const isBlocked = e?.status === 403 || e?.body?.error === 'blocked' || e?.message === 'blocked'
           set((prev) => ({
             messages: prev.messages.map((m) =>
-              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true } : m
+              m.clientMessageId === clientMessageId ? { ...m, pending: false, failed: true, blocked: isBlocked } : m
             ),
           }))
         }

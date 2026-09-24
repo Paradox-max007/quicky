@@ -39,6 +39,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
 
   const partner = match.userAId === me.id ? match.userB : match.userA
 
+  // BLOCKED (refactor PRD §55 parity with game-chat): either side blocked →
+  // the pair can never DM. The client renders the failed-to-send state with
+  // the caution icon and blurs the partner avatar from this flag.
+  const blockRow = await db.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: me.id, blockedId: partner.id },
+        { blockerId: partner.id, blockedId: me.id },
+      ],
+    },
+  })
+  const blocked = !!blockRow
+
   void sweepExpiredQuickies(matchId) // fire-and-forget: cleanup doesn't block the response
 
   // Refactor PRD §56 — per-user Clear Chat: MY view starts after my marker;
@@ -99,6 +112,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
         hideOnline: !!partner.settings?.privacyHideOnline,
         hideTyping: !!partner.settings?.privacyHideTyping,
         hideReadReceipts: partnerHidesReceipts,
+        blocked,
       },
     },
     me: { id: me.id, isPremium: me.isPremium },
@@ -151,6 +165,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
   if (match.status !== 'active') return NextResponse.json({ error: 'Unmatched' }, { status: 410 })
+
+  // ── BLOCK ENFORCEMENT (refactor PRD §55): a blocked pair can never DM,
+  // no matter which surface fires the request. The message is refused
+  // BEFORE the row is created — nothing is stored, so after a re-login or
+  // refresh the failed message is simply gone. Both directions blocked.
+  const dmPeer = match.userAId === me.id ? match.userBId : match.userAId
+  const blockRow = await db.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: me.id, blockedId: dmPeer },
+        { blockerId: dmPeer, blockedId: me.id },
+      ],
+    },
+  })
+  if (blockRow) return NextResponse.json({ error: 'blocked' }, { status: 403 })
 
   const body = await req.json()
   const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'sticker' | 'system'

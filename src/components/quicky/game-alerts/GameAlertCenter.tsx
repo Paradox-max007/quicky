@@ -10,16 +10,12 @@
 // preview + Reply → that sender's chat screen).
 //
 // GATES — split by notification KIND (notification-policy revision):
-//   1. GAMEPLAY alerts (turn cards) are ALWAYS ON while the user plays on
-//      the mobile surface. The "In-game Notifications" toggle does NOT
-//      touch them — a game round can not be muted, exactly like the Spin
-//      the Bottle decision drawer: the modal opens every time the user is
-//      selected, wherever they are.
-//   2. PERSONAL-MESSAGE modals are gated by the "In-game Notifications"
-//      toggle (user.settings.notifGameEvents, the row in Settings →
-//      Notifications). Toggling it off affects ONLY these private chat
-//      popups — never the gameplay layer. Default ON; free for every user.
-//   3. MOBILE SURFACE ONLY: Capacitor app or mobile web view (<1024px). On
+//   1. IN-GAME NOTIFICATIONS toggle (user.settings.notifGameEvents, the row
+//      in Settings → Notifications): when OFF, NOTHING from this layer
+//      shows — neither the personal-message modals NOR the gameplay turn
+//      cards — and the related haptics are silenced too. Default ON; free
+//      for every user.
+//   2. MOBILE SURFACE ONLY: Capacitor app or mobile web view (<1024px). On
 //      the ≥1024px desktop shell the game table stays visible beside the
 //      chat (embedded panels), so an overlay alert has no job there —
 //      exactly like the Spin Bottle decision drawer.
@@ -38,10 +34,11 @@ export function GameAlertCenter() {
   const user = useQuickyStore((s) => s.user)
   const isDeskShell = useIsDesktopShell()
 
-  // Gate — the in-game notification toggle governs the PERSONAL-MESSAGE
-  // modal ONLY. Unknown (missing row / legacy response) defaults to ON: the
-  // column defaults true in the schema. Gameplay cards below ignore it.
-  const messagesEnabled = user?.settings?.notifGameEvents !== false
+  // Gate — the in-game notification toggle governs EVERYTHING this layer
+  // renders (turn cards + private-message modals) and their haptics.
+  // Unknown (missing row / legacy response) defaults to ON: the column
+  // defaults true in the schema.
+  const alertsEnabled = user?.settings?.notifGameEvents !== false
 
   // Mobile / Capacitor surface only. null (SSR first paint) is treated as
   // mobile so the layer is present from the first paint.
@@ -51,12 +48,12 @@ export function GameAlertCenter() {
 
   return (
     <>
-      {/* Gameplay layer — ALWAYS on while a room runtime is attached. */}
-      {TURN_ALERT_SOURCES.map((source) => (
+      {/* Gameplay layer — gated by the in-game notification toggle. */}
+      {alertsEnabled && TURN_ALERT_SOURCES.map((source) => (
         <SourceAlert key={source.gameId} source={source} />
       ))}
-      {/* Personal-message layer — switchable by the user. */}
-      {messagesEnabled && <GameMessageAlert />}
+      {/* Personal-message layer — same switch. */}
+      {alertsEnabled && <GameMessageAlert />}
     </>
   )
 }

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
-import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check, Ruler, GraduationCap, Wine, MoreVertical, UserPlus, UserMinus, Ban, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Crown, MapPin, Sparkles, Lock, ChevronLeft, ChevronRight, Heart, MessageCircle, Check, Ruler, GraduationCap, Wine, MoreVertical, UserPlus, UserMinus, Ban, ShieldAlert, Gamepad2 } from 'lucide-react'
 import { ComplaintModal } from './ComplaintModal'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { ProfilePostsGrid } from './ProfilePostsGrid'
@@ -13,6 +13,12 @@ import useEmblaCarousel from 'embla-carousel-react'
 
 // Free users can view this many photos on a profile
 const FREE_PHOTO_LIMIT = 3
+
+// DUAL PROFILE (profile revision): every user page has a DATING profile and
+// a GAME profile. The Game tab shows the lifetime game stats (they survive
+// room deletion — spin kiss points, Ludo counters, gifting) plus the game
+// posts grid. The Dating tab keeps the classic profile content.
+type ProfileTab = 'dating' | 'game'
 
 export function ProfileView() {
   const userId = useQuickyStore((s) => s.activeProfileUserId)
@@ -35,6 +41,7 @@ export function ProfileView() {
   }, [userId])
   const showMatchCelebration = useQuickyStore((s) => s.showMatchCelebration)
   const [profile, setProfile] = useState<any | null>(null)
+  const [profileTab, setProfileTab] = useState<ProfileTab>('dating')
   const [relationship, setRelationship] = useState<{ hasMatch: boolean; matchId: string | null; theyLikedMe: boolean; superLike: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedIdx, setSelectedIdx] = useState(0)
@@ -110,6 +117,10 @@ export function ProfileView() {
 
   const tier = getScoreTier(profile.quickyScore ?? 0)
   const isMe = profile.id === currentUser?.id
+  // BLOCKED (refactor PRD §55): when either side has blocked, BOTH users see
+  // the other's profile images as a highly blurred image.
+  const blocked = !!(profile.blocked || rel?.iBlockedThem || rel?.theyBlockedMe)
+  const gs = profile.gameStats ?? {}
 
   // Like back — instant match when they already liked you
   const likeBack = async () => {
@@ -248,7 +259,8 @@ export function ProfileView() {
       {/* Photo Carousel */}
       {allPhotos.length > 0 && (
         <div className="relative">
-          {/* Embla container */}
+          {/* Embla container — every photo renders HEAVILY BLURRED while the
+              pair is blocked (blocked users never see each other's images). */}
           <div ref={emblaRef} className="overflow-hidden aspect-[3/4] w-full">
             <div className="flex h-full">
               {allPhotos.map((photo: any, i: number) => {
@@ -277,7 +289,11 @@ export function ProfileView() {
                         </div>
                       </div>
                     ) : (
-                      <img src={photo.url} alt={profile.name} className="w-full h-full object-cover" />
+                      <img
+                        src={photo.url}
+                        alt={profile.name}
+                        className={cn('w-full h-full object-cover', blocked && 'blur-2xl scale-125')}
+                      />
                     )}
                   </div>
                 )
@@ -342,10 +358,17 @@ export function ProfileView() {
           </div>
 
           {/* Private photo notice */}
-          {profile.hasPrivatePhotos && (
+          {profile.hasPrivatePhotos && !blocked && (
             <div className="absolute top-16 right-3 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
               <Lock className="w-2.5 h-2.5 text-[var(--qk-gold)]" />
               <span className="text-[10px] text-[var(--qk-gold)] font-semibold">Has private photos</span>
+            </div>
+          )}
+          {/* Blocked badge over the blurred hero */}
+          {blocked && (
+            <div className="absolute top-16 right-3 flex items-center gap-1.5 bg-black/70 rounded-full px-2.5 py-1 border border-white/10">
+              <Ban className="w-3 h-3 text-[#FF6B6B]" />
+              <span className="text-[10px] text-white/80 font-semibold">Blocked</span>
             </div>
           )}
         </div>
@@ -370,7 +393,7 @@ export function ProfileView() {
                   <img
                     src={isLocked ? allPhotos[visibleCount - 1]?.url : photo.url}
                     alt=""
-                    className={cn('w-full h-full object-cover', isLocked && 'blur-md scale-110')}
+                    className={cn('w-full h-full object-cover', isLocked ? 'blur-md scale-110' : blocked && 'blur-lg scale-110')}
                   />
                   {isLocked && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -384,8 +407,46 @@ export function ProfileView() {
         </div>
       )}
 
+      {/* DUAL PROFILE tab switcher — Dating | Game. The Game tab carries the
+          lifetime game stats + game posts; the Dating tab keeps the classic
+          profile content. */}
+      <div className="px-4 pt-3">
+        <div className="flex gap-1 p-1 bg-white/5 rounded-full border border-white/8" role="tablist" aria-label="Profile sections">
+          <button
+            role="tab"
+            aria-selected={profileTab === 'dating'}
+            onClick={() => setProfileTab('dating')}
+            className={cn(
+              'flex-1 rounded-full py-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5',
+              profileTab === 'dating'
+                ? 'bg-coral-gradient text-white shadow-lg'
+                : 'text-white/60 hover:text-white'
+            )}
+          >
+            <Heart className="w-3.5 h-3.5" fill={profileTab === 'dating' ? 'currentColor' : 'none'} />
+            Dating Profile
+          </button>
+          <button
+            role="tab"
+            aria-selected={profileTab === 'game'}
+            onClick={() => setProfileTab('game')}
+            className={cn(
+              'flex-1 rounded-full py-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5',
+              profileTab === 'game'
+                ? 'bg-coral-gradient text-white shadow-lg'
+                : 'text-white/60 hover:text-white'
+            )}
+          >
+            <Gamepad2 className="w-3.5 h-3.5" />
+            Game Profile
+          </button>
+        </div>
+      </div>
+
       {/* Profile details */}
       <div className="p-4 flex flex-col gap-3">
+        {profileTab === 'dating' && (
+          <>
         {profile.bio && <p className="text-sm text-white/80 text-pretty">{profile.bio}</p>}
 
         {(profile.heightCm || profile.education || profile.lifestyle) && (
@@ -448,6 +509,69 @@ export function ProfileView() {
                 {tier.current.name}
               </p>
             </div>
+          </div>
+        )}
+          </>
+        )}
+
+        {profileTab === 'game' && (
+          <div className="flex flex-col gap-3" data-testid="profile-game-tab">
+            {/* GAME PROFILE — lifetime stats + game-related data */}
+            <div className="flex items-center gap-2.5 px-1">
+              <span className="text-xl" aria-hidden>🎲</span>
+              <div>
+                <p className="text-sm font-bold">Game Profile</p>
+                <p className="text-[11px] text-white/50">Lifetime stats across every Quicky game</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { emoji: '❤️', label: 'Kiss Points', value: gs.kissPoints ?? 0 },
+                { emoji: '💋', label: 'Kisses Given', value: gs.kissesGiven ?? 0 },
+                { emoji: '🎮', label: 'Games Played', value: gs.gamesPlayed ?? 0 },
+                { emoji: '🏆', label: 'Ludo Wins', value: gs.ludoWins ?? 0 },
+                { emoji: '🏁', label: 'Tokens Finished', value: gs.ludoTokensFinished ?? 0 },
+                { emoji: '⚔️', label: 'Tokens Captured', value: gs.ludoCaptures ?? 0 },
+                { emoji: '🎁', label: 'Gifts Sent', value: gs.giftsSent ?? 0 },
+                { emoji: '💌', label: 'Gifts Received', value: gs.giftsReceived ?? 0 },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className="bg-white/5 border border-white/8 rounded-2xl px-3.5 py-3 flex items-center gap-3"
+                  data-testid={`game-stat-${s.label.toLowerCase().replace(/\s+/g, '-')}`}
+                >
+                  <span className="text-xl shrink-0" aria-hidden>{s.emoji}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold text-white/50 uppercase tracking-wide truncate">{s.label}</p>
+                    <p className="text-lg font-black tabular-nums leading-tight">{s.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {typeof gs.coinBalance === 'number' && (
+              <div className="bg-[var(--qk-gold)]/10 border border-[var(--qk-gold)]/25 rounded-2xl px-3.5 py-3 flex items-center gap-3">
+                <span className="text-xl shrink-0" aria-hidden>🪙</span>
+                <div>
+                  <p className="text-[10px] font-semibold text-white/50 uppercase tracking-wide">Coin Balance</p>
+                  <p className="text-lg font-black tabular-nums leading-tight">{gs.coinBalance}</p>
+                </div>
+              </div>
+            )}
+            {gs.gamesPlayed ? (
+              <div className="bg-white/5 rounded-2xl p-3 flex items-center gap-3">
+                <Sparkles className="w-6 h-6" style={{ color: tier.current.color }} />
+                <div className="flex-1">
+                  <p className="text-xs text-white/60">Quicky Score</p>
+                  <p className="font-bold text-lg">{profile.quickyScore}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-white/60">Tier</p>
+                  <p className="font-bold text-sm" style={{ color: tier.current.color }}>
+                    {tier.current.name}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
 

@@ -61,6 +61,14 @@ export type QuickyUser = {
   isAdmin?: boolean
   coinBalance?: number
   kissPoints?: number
+  // DUAL PROFILE (profile revision) — the GAME profile side: lifetime stats
+  gamesPlayed?: number
+  kissesGiven?: number
+  ludoWins?: number
+  ludoTokensFinished?: number
+  ludoCaptures?: number
+  giftsSentCount?: number
+  giftsReceivedCount?: number
   onboardedAt: string | null
   discoveryAgeMin?: number | null
   discoveryAgeMax?: number | null

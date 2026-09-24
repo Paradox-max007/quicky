@@ -10,7 +10,23 @@ import { db } from '@/lib/db'
 import { amIMember } from '@/lib/quicky/game-chat'
 import { emitGameChatPair } from '@/lib/quicky/game-chat-events'
 
-const ALLOWED = ['❤️', '😂', '😮', '😢', '👍', '🔥'] // §28 picker set
+// ── Reaction validation (revision): the emoji react drawer now offers the
+// FULL emoji catalog (WhatsApp-style), so any emoji sequence is accepted —
+// up to 16 chars, and it must actually BE an emoji run (Extended_Pictographic
+// / ZWJ / variation selectors / modifiers), never plain ASCII text that
+// would smuggle a fake message through the reaction field.
+const EMOJI_RUN = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200D|\uFE0F)+$/u
+
+function isEmojiRun(reaction: string): boolean {
+  if (!reaction || reaction.length > 16) return false
+  try {
+    return EMOJI_RUN.test(reaction)
+  } catch {
+    // Ancient engine without unicode property escapes — accept any short
+    // non-ASCII run instead of failing the reaction outright.
+    return reaction.length <= 16 && !/[a-zA-Z0-9]/.test(reaction)
+  }
+}
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
@@ -20,7 +36,7 @@ export async function POST(req: NextRequest) {
   const messageId = body?.messageId ? String(body.messageId) : null
   const reaction = body?.reaction == null ? null : String(body.reaction)
   if (!messageId) return NextResponse.json({ error: 'messageId required' }, { status: 400 })
-  if (reaction && !ALLOWED.includes(reaction)) {
+  if (reaction && !isEmojiRun(reaction)) {
     return NextResponse.json({ error: 'invalid_reaction' }, { status: 400 })
   }
 

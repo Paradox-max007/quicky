@@ -20,6 +20,7 @@ import { notifyGameInvite, watchGameInvites, GameInvitePayload } from '@/lib/qui
 import { requestMicPermission, requestCameraPermission } from '@/lib/quicky/media-permissions'
 import { compressImage } from '@/lib/quicky/image'
 import { StickerPicker } from '@/components/quicky/game-chat/StickerPicker'
+import { EmojiReactDrawer } from './EmojiReactDrawer'
 import { QuickyViewer } from './QuickyViewer'
 import { TruthOrDareGame } from './TruthOrDareGame'
 import { NeverHaveIEver } from './NeverHaveIEver'
@@ -67,6 +68,9 @@ export type ReplyRef = { id: string; senderId: string; type: string; snippet: st
 export type Msg = ChatMessage & {
   clientTmp?: boolean
   status?: 'sending' | 'failed'
+  // failed BECAUSE the pair is blocked (refactor PRD §55) — permanent
+  // caution state, no retry, never stored server-side.
+  blocked?: boolean
   deliveredAt?: string | null
   quickyConsumedAt?: string | null
   replyTo?: ReplyRef
@@ -76,7 +80,8 @@ export type Msg = ChatMessage & {
   uploadPct?: number
 }
 
-const REACTION_SET = ['❤️', '😂', '😮', '😢', '🔥', '👍']
+// Emoji react options now live in the shared EmojiReactDrawer (quick row +
+// the full catalog, anchored under the reacted message).
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)
@@ -607,8 +612,12 @@ export function ChatView({
       )
       channelRef.current?.sendMessage(res.message)
     } catch (e: any) {
-      updateMsg(tmpId, (m) => ({ ...m, status: 'failed', pendingText: body }))
-      toast.error('Failed to send — tap to retry')
+      // BLOCKED (refactor PRD §55): the server refused the send BEFORE
+      // storage — permanent caution state (no retry); after a re-login or
+      // refresh this message is simply gone.
+      const isBlocked = e?.status === 403 || e?.body?.error === 'blocked' || e?.message === 'blocked'
+      updateMsg(tmpId, (m) => ({ ...m, status: 'failed', pendingText: body, blocked: isBlocked }))
+      toast.error(isBlocked ? 'You can no longer message this user' : 'Failed to send — tap to retry')
     }
   }
 
@@ -658,10 +667,12 @@ export function ChatView({
       channelRef.current?.sendMessage(res.message)
     } catch (e: any) {
       const err = e?.body?.error
+      const isBlocked = e?.status === 403 || err === 'blocked' || e?.message === 'blocked'
       if (err === 'sticker_not_owned') toast.error('You no longer own this sticker set')
       else if (err === 'sticker_unavailable') toast.error('This sticker is no longer available')
+      else if (isBlocked) toast.error('You can no longer message this user')
       else toast.error('Failed to send sticker')
-      updateMsg(tmpId, (m) => ({ ...m, status: 'failed' }))
+      updateMsg(tmpId, (m) => ({ ...m, status: 'failed', blocked: isBlocked }))
     }
   }
 
@@ -772,9 +783,10 @@ export function ChatView({
       setMessages((prev) => dedupeById(prev.map((m) => (m.id === tmpId ? { ...res.message, status: undefined, clientTmp: false } : m))))
       channelRef.current?.sendMessage(res.message)
       URL.revokeObjectURL(url)
-    } catch {
-      updateMsg(tmpId, (m) => ({ ...m, status: 'failed' }))
-      toast.error('Failed to send voice message')
+    } catch (e: any) {
+      const isBlocked = e?.status === 403 || e?.body?.error === 'blocked' || e?.message === 'blocked'
+      updateMsg(tmpId, (m) => ({ ...m, status: 'failed', blocked: isBlocked }))
+      toast.error(isBlocked ? 'You can no longer message this user' : 'Failed to send voice message')
     }
   }
 
@@ -1013,10 +1025,17 @@ export function ChatView({
         </button>
         <button onClick={() => setShowProfile(true)} className="flex items-center gap-2 flex-1 min-w-0">
           <div className="relative shrink-0">
+            {/* BLOCKED (refactor PRD §55): the partner's photo renders as a
+                highly blurred image for BOTH sides of a blocked pair. */}
             {partner.photo ? (
-              <img src={partner.photo} alt={partner.name} className="w-9 h-9 rounded-full object-cover" />
+              <img
+                src={partner.photo}
+                alt={partner.name}
+                className={cn('w-9 h-9 rounded-full object-cover', (partner as any).blocked && 'blur-[7px] scale-110')}
+                data-testid={(partner as any).blocked ? 'dm-partner-avatar-blurred' : undefined}
+              />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center font-bold">
+              <div className={cn('w-9 h-9 rounded-full bg-white/10 flex items-center justify-center font-bold', (partner as any).blocked && 'blur-[6px]')}>
                 {partner.name?.[0] ?? '?'}
               </div>
             )}
@@ -1352,10 +1371,27 @@ export function ChatView({
         </div>
       )}
 
-      {/* Long-press context menu: reactions / reply / copy */}
+      {/* Long-press context menu: reply / copy. The REACTIONS moved into the
+          WhatsApp-style EmojiReactDrawer anchored JUST UNDER the message
+          being reacted (quick emojis + ⌄ expand → the full catalog). */}
       <AnimatePresence>
         {menuFor && (
           <>
+            {/* Emoji drawer under the reacted message — before the sheet so
+                the sheet's backdrop never swallows the drawer's taps (the
+                drawer is portaled to <body> at a higher z anyway). */}
+            <EmojiReactDrawer
+              key={`react-${menuFor.id}`}
+              anchorEl={
+                typeof document !== 'undefined' ? document.getElementById(`msg-${menuFor.id}`) : null
+              }
+              align={menuFor.senderId === (me?.id ?? '') ? 'right' : 'left'}
+              activeEmoji={
+                (menuFor.reactions ?? []).find((r) => r.userId === me?.id)?.emoji ?? null
+              }
+              onPick={(emoji) => reactToMessage(menuFor, emoji)}
+              onClose={() => setMenuFor(null)}
+            />
             <motion.div
               className="absolute inset-0 bg-black/60 z-[60]"
               onClick={() => setMenuFor(null)}
@@ -1370,27 +1406,6 @@ export function ChatView({
               transition={{ type: 'spring', stiffness: 420, damping: 32 }}
               className="absolute left-0 right-0 bottom-0 bg-[var(--qk-card)] border-t border-white/10 rounded-t-3xl p-4 z-[61] safe-area-bottom"
             >
-              <div className="flex justify-between gap-1.5 mb-4">
-                {REACTION_SET.map((emoji) => {
-                  const mine = (menuFor.reactions ?? []).find((r) => r.userId === me?.id)
-                  return (
-                    <motion.button
-                      key={emoji}
-                      whileHover={{ scale: 1.2 }}
-                      whileTap={{ scale: 1.4 }}
-                      transition={{ type: 'spring', stiffness: 600, damping: 18 }}
-                      onClick={() => reactToMessage(menuFor, emoji)}
-                      className={cn(
-                        'flex-1 aspect-square rounded-2xl flex items-center justify-center text-2xl transition-all',
-                        mine?.emoji === emoji ? 'bg-[var(--qk-accent)]/25 ring-2 ring-[var(--qk-accent)]' : 'bg-white/5 hover:bg-white/10'
-                      )}
-                      aria-label={`React ${emoji}`}
-                    >
-                      {emoji}
-                    </motion.button>
-                  )
-                })}
-              </div>
               <div className="flex flex-col gap-1">
                 <button
                   onClick={() => {
@@ -2119,6 +2134,7 @@ function MessageBubble({
 
   // text
   const failed = m.clientTmp && m.status === 'failed'
+  const failedBlocked = failed && !!m.blocked
   return wrap(
     <div
       className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}
@@ -2130,9 +2146,14 @@ function MessageBubble({
       <div
         onClick={() => {
           if (press.consumed()) return
-          if (failed) onRetry()
+          if (failed && !failedBlocked) onRetry()
         }}
-        className={cn(bubbleShell, failed && 'border border-[#FF3B30]/60 bg-[#FF3B30]/10 text-white', 'cursor-pointer')}
+        className={cn(
+          bubbleShell,
+          failed && 'border border-[#FF3B30]/60 bg-[#FF3B30]/10 text-white',
+          failedBlocked && 'cursor-not-allowed',
+          !failedBlocked && 'cursor-pointer'
+        )}
       >
         {/* Reply quote */}
         {m.replyTo && (
@@ -2156,7 +2177,19 @@ function MessageBubble({
       </div>
       <div className="flex items-center gap-1">
         <span className="text-[10px] text-white/30 mt-0.5 px-1">{timeLabel(m.createdAt)}</span>
-        {isMe && <StatusTicks m={m} />}
+        {/* FAILED-TO-SEND caution state (refactor PRD §55): the ⚠-style !
+            icon sits next to the bubble. A blocked send is permanent — no
+            retry, the row was never stored server-side. */}
+        {failed && (
+          <span
+            className={cn('flex items-center gap-1 text-[10px] mt-0.5 font-bold', failedBlocked ? 'text-rose-300' : 'text-rose-300')}
+            data-testid={failedBlocked ? 'dm-msg-blocked' : 'dm-msg-failed'}
+          >
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-label="Failed to send" />
+            {failedBlocked ? 'Blocked — not sent' : 'Failed to send'}
+          </span>
+        )}
+        {isMe && !failed && <StatusTicks m={m} />}
       </div>
     </div>
   )

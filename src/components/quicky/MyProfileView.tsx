@@ -5,7 +5,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
-import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Loader2, Pencil, Trash2, Ruler, GraduationCap, Wine } from 'lucide-react'
+import { BadgeCheck, Crown, Camera, X, Sparkles, Shield, Settings, Plus, Lock, LockOpen, GripVertical, ChevronLeft, ChevronRight, Loader2, Pencil, Trash2, Ruler, GraduationCap, Wine, Heart, Gamepad2 } from 'lucide-react'
 import { getScoreTier } from '@/lib/quicky/constants'
 import { ProfilePostsGrid } from './ProfilePostsGrid'
 import { cn } from '@/lib/utils'
@@ -133,6 +133,9 @@ export function MyProfileView() {
   const showPaywall = useQuickyStore((s) => s.showPaywall)
   const openCommunityPost = useQuickyStore((s) => s.openCommunityPost)
   const [profile, setProfile] = useState<any | null>(null)
+  // DUAL PROFILE (profile revision): my own page also has the Dating | Game
+  // tabs — the Game tab carries my lifetime game stats.
+  const [profileTab, setProfileTab] = useState<'dating' | 'game'>('dating')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [selectedIdx, setSelectedIdx] = useState(0)
   // Refactor PRD §8 — a deleted photo must instantly disappear from the
@@ -544,6 +547,87 @@ export function MyProfileView() {
         </button>
       </div>
 
+      {/* DUAL PROFILE tab switcher — Dating | Game */}
+      <div className="px-4 pb-3">
+        <div className="flex gap-1 p-1 bg-white/5 rounded-full border border-white/8" role="tablist" aria-label="Profile sections">
+          <button
+            role="tab"
+            aria-selected={profileTab === 'dating'}
+            onClick={() => setProfileTab('dating')}
+            className={cn(
+              'flex-1 rounded-full py-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5',
+              profileTab === 'dating'
+                ? 'bg-coral-gradient text-white shadow-lg'
+                : 'text-white/60 hover:text-white'
+            )}
+          >
+            <Heart className="w-3.5 h-3.5" fill={profileTab === 'dating' ? 'currentColor' : 'none'} />
+            Dating Profile
+          </button>
+          <button
+            role="tab"
+            aria-selected={profileTab === 'game'}
+            onClick={() => setProfileTab('game')}
+            className={cn(
+              'flex-1 rounded-full py-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5',
+              profileTab === 'game'
+                ? 'bg-coral-gradient text-white shadow-lg'
+                : 'text-white/60 hover:text-white'
+            )}
+          >
+            <Gamepad2 className="w-3.5 h-3.5" />
+            Game Profile
+          </button>
+        </div>
+      </div>
+
+      {profileTab === 'game' ? (
+        /* GAME PROFILE — my lifetime game stats + game-related data. */
+        <div className="px-4 pb-3 flex flex-col gap-3" data-testid="my-profile-game-tab">
+          <div className="flex items-center gap-2.5 px-1">
+            <span className="text-xl" aria-hidden>🎲</span>
+            <div>
+              <p className="text-sm font-bold">Game Profile</p>
+              <p className="text-[11px] text-white/50">Your lifetime stats across every Quicky game</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { emoji: '❤️', label: 'Kiss Points', value: profile.kissPoints ?? 0 },
+              { emoji: '💋', label: 'Kisses Given', value: profile.kissesGiven ?? 0 },
+              { emoji: '🎮', label: 'Games Played', value: profile.gamesPlayed ?? 0 },
+              { emoji: '🏆', label: 'Ludo Wins', value: profile.ludoWins ?? 0 },
+              { emoji: '🏁', label: 'Tokens Finished', value: profile.ludoTokensFinished ?? 0 },
+              { emoji: '⚔️', label: 'Tokens Captured', value: profile.ludoCaptures ?? 0 },
+              { emoji: '🎁', label: 'Gifts Sent', value: profile.giftsSentCount ?? 0 },
+              { emoji: '💌', label: 'Gifts Received', value: profile.giftsReceivedCount ?? 0 },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="bg-white/5 border border-white/8 rounded-2xl px-3.5 py-3 flex items-center gap-3"
+                data-testid={`my-game-stat-${s.label.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                <span className="text-xl shrink-0" aria-hidden>{s.emoji}</span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-white/50 uppercase tracking-wide truncate">{s.label}</p>
+                  <p className="text-lg font-black tabular-nums leading-tight">{s.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          {typeof profile.coinBalance === 'number' && (
+            <div className="bg-[var(--qk-gold)]/10 border border-[var(--qk-gold)]/25 rounded-2xl px-3.5 py-3 flex items-center gap-3">
+              <span className="text-xl shrink-0" aria-hidden>🪙</span>
+              <div>
+                <p className="text-[10px] font-semibold text-white/50 uppercase tracking-wide">Coin Balance</p>
+                <p className="text-lg font-black tabular-nums leading-tight">{profile.coinBalance}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
+
       {/* Bio */}
       {profile.bio && (
         <div className="px-4 pb-3">
@@ -602,6 +686,8 @@ export function MyProfileView() {
             ))}
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* Posts grid (own + mutual game posts) */}

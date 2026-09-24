@@ -263,7 +263,10 @@ export function GameDecisionDrawer() {
                   <p className="text-emerald-300 text-xs font-bold mt-1" data-testid="decision-locked">
                     {decision.selected === 'yes' ? '❤️ Kiss selected' : '💔 No Thanks selected'}
                   </p>
-                ) : (
+                ) : remaining > 2 ? (
+                  // CHOOSE WINDOW (timer revision): the round runs 10s but
+                  // the options only exist for the first 8s — then the drawer
+                  // waits for the server result like the table panel does.
                   <div className="flex items-center gap-2 mt-2">
                     <button
                       onClick={() => respond('yes')}
@@ -284,6 +287,10 @@ export function GameDecisionDrawer() {
                       💔 No Thanks
                     </button>
                   </div>
+                ) : (
+                  <p className="text-white/60 text-xs font-bold mt-2" data-testid="decision-waiting">
+                    Waiting for the result…
+                  </p>
                 )}
               </div>
             </div>

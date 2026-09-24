@@ -92,6 +92,35 @@ function openSeatLabel(seatIndex: number) {
   return seatIndex === 6 ? 'Invite' : 'Open Seat'
 }
 
+/* ── DuelProfileChip (choice-state revision) — a compact profile chip used
+   in the SPECTATOR view of the response panel: avatar + name + round role.
+   Non-participants see the two profiles and a waiting line instead of the
+   choice buttons. ────────────────────────────────────────────────────── */
+function DuelProfileChip({
+  player,
+  roleLabel,
+}: {
+  player: { userId: string; displayName: string; avatar: string | null } | undefined
+  roleLabel: string
+}) {
+  const name = player?.displayName ?? 'Someone'
+  return (
+    <div className="sbr-duel-prof" data-testid={`duel-profile-${roleLabel.toLowerCase()}`}>
+      {player?.avatar ? (
+        <img src={player.avatar} alt="" className="sbr-duel-prof-avatar" draggable={false} />
+      ) : (
+        <span className="sbr-duel-prof-avatar sbr-duel-prof-fallback" aria-hidden>
+          {name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <div className="sbr-duel-prof-copy">
+        <span className="sbr-duel-prof-name">{name}</span>
+        <span className="sbr-duel-prof-role">{roleLabel}</span>
+      </div>
+    </div>
+  )
+}
+
 /* ── Keyboard helpers moved to room-toolbox/useRoomKeyboardPop.ts (v5) —
    shared by both room shells. ──────────────────────────────────── */
 
@@ -519,6 +548,13 @@ export function SpinBottleRoom({
   const iAmSpinner = !!snapshot?.iAmSpinner
   const iAmTarget = !!snapshot?.iAmTarget
   const iCanRespond = status === 'awaiting' && (iAmSpinner || iAmTarget)
+  // CHOOSE WINDOW (timer revision): the round itself runs the full 10s
+  // server deadline, but the two participants only get 8s to press a
+  // button — with ≤2s left on the deadline the buttons vanish and the
+  // panel waits for the server result (the 10s watchdog resolves stragglers
+  // as timeouts). If both answers land early the server resolves the round
+  // the moment the second one arrives — no waiting for the 10th second.
+  const chooseOpen = iCanRespond && !expired && remaining > 2
   // Optimistic answer of THIS client (v2.1 §6: set the instant the finger
   // lifts — never gated on the network) — never rendered as a result.
   const optimisticChoice =
@@ -536,6 +572,10 @@ export function SpinBottleRoom({
           ? ((currentSpin?.targetResponse as 'yes' | 'no' | null) ?? optimisticChoice)
           : null
   const otherName = iAmSpinner ? targetName : spinnerName
+  // Spectator duel view (choice-state revision): the two round profiles,
+  // resolved from the authoritative snapshot players.
+  const spinnerProfile = snapshot?.players.find((p) => p.userId === spinnerId)
+  const targetProfile = snapshot?.players.find((p) => p.userId === targetId)
 
   // ─── Singleton-room countdown hint (lifecycle §5/§6/§10): while the room
   // has exactly one player, show a gentle "this table closes in mm:ss".
@@ -872,46 +912,72 @@ export function SpinBottleRoom({
                         exit={{ opacity: 0, y: -14, scale: 0.9 }}
                         transition={{ type: 'spring', stiffness: 320, damping: 24 }}
                       >
-                        <p className="sbr-duel-kicker">
-                          <span aria-hidden>🎯</span> The bottle chose {targetName}
-                        </p>
-                        <p className="sbr-duel-question">Choose your response</p>
-                        {/* §39: countdown while counting, a short "Time's up"
-                            beat at zero, then it disappears — never 0:00 forever,
-                            never negative (hook guarantees the stop). */}
-                        {iCanRespond && !expired && remaining > 0 && (
-                          <span className="sbr-duel-timer">0:{String(remaining).padStart(2, '0')}s</span>
-                        )}
-                        {iCanRespond && timeUp && (
-                          <span className="sbr-duel-timer sbr-timer-up">Time&#39;s up</span>
-                        )}
-                        <div className="sbr-duel-actions">
-                          <button
-                            className={`sbr-btn-yes${myChoice === 'yes' ? ' sbr-btn-chosen' : ''}`}
-                            disabled={!iCanRespond || !!myChoice}
-                            onClick={() => respond('yes')}
-                          >
-                            <Heart className="h-4 w-4" fill="currentColor" /> {myChoice === 'yes' ? 'Kiss ✓' : 'Kiss'}
-                          </button>
-                          <button
-                            className={`sbr-btn-no${myChoice === 'no' ? ' sbr-btn-chosen' : ''}`}
-                            disabled={!iCanRespond || !!myChoice}
-                            onClick={() => respond('no')}
-                          >
-                            <X className="h-4 w-4" strokeWidth={3} /> {myChoice === 'no' ? 'No Thanks ✓' : 'No Thanks'}
-                          </button>
-                        </div>
-                        {iCanRespond && myChoice ? (
-                          <p className="sbr-duel-locked">
-                            ✓ Waiting for {otherName}…
-                          </p>
-                        ) : iCanRespond ? (
-                          <p className="sbr-duel-waiting">Your response: Kiss or No Thanks</p>
+                        {iCanRespond ? (
+                          <>
+                            <p className="sbr-duel-kicker">
+                              <span aria-hidden>🎯</span> The bottle chose {targetName}
+                            </p>
+                            <p className="sbr-duel-question">Choose your response</p>
+                            {/* §39: countdown while counting, a short "Time's up"
+                                beat at zero, then it disappears — never 0:00 forever,
+                                never negative (hook guarantees the stop). Shown to
+                                the two participants only, as plain seconds. */}
+                            {!expired && remaining > 0 && (
+                              <span className="sbr-duel-timer">{remaining}s</span>
+                            )}
+                            {timeUp && (
+                              <span className="sbr-duel-timer sbr-timer-up">Time&#39;s up</span>
+                            )}
+                            {/* CHOOSE WINDOW: buttons exist for the first 8s of the
+                                10s round. After that (or once answered) they vanish
+                                and the panel waits for the server result — which
+                                lands early the second both answers are in. */}
+                            {chooseOpen && !myChoice && (
+                              <div className="sbr-duel-actions">
+                                <button
+                                  className="sbr-btn-yes"
+                                  onClick={() => respond('yes')}
+                                >
+                                  <Heart className="h-4 w-4" fill="currentColor" /> Kiss
+                                </button>
+                                <button
+                                  className="sbr-btn-no"
+                                  onClick={() => respond('no')}
+                                >
+                                  <X className="h-4 w-4" strokeWidth={3} /> No Thanks
+                                </button>
+                              </div>
+                            )}
+                            {myChoice ? (
+                              <p className="sbr-duel-locked">
+                                {myChoice === 'yes' ? '❤️ You chose Kiss' : '💔 You chose No Thanks'} — waiting for {otherName}…
+                              </p>
+                            ) : chooseOpen ? (
+                              <p className="sbr-duel-waiting">Your response: Kiss or No Thanks</p>
+                            ) : (
+                              <p className="sbr-duel-waiting">
+                                <span className="sbr-wait-dot" aria-hidden /> Waiting for the result…
+                              </p>
+                            )}
+                          </>
                         ) : (
-                          <p className="sbr-duel-waiting">
-                            Waiting for {spinnerName} &amp; {targetName}…
-                            {remaining > 0 ? ` 0:${String(remaining).padStart(2, '0')}` : timeUp ? " — time's up" : ''}
-                          </p>
+                          <>
+                            {/* SPECTATOR VIEW (choice-state revision): non-participants
+                                never see the choice buttons — they see the two round
+                                PROFILES and a "waiting to choose" line under them.
+                                The result panel (below) shows for everyone. */}
+                            <p className="sbr-duel-kicker">
+                              <span aria-hidden>🎯</span> The bottle chose {targetName}
+                            </p>
+                            <div className="sbr-duel-spectate">
+                              <DuelProfileChip player={spinnerProfile} roleLabel="Spinner" />
+                              <span className="sbr-duel-vs" aria-hidden>💛</span>
+                              <DuelProfileChip player={targetProfile} roleLabel="Target" />
+                            </div>
+                            <p className="sbr-duel-spectate-wait">
+                              <span className="sbr-wait-dot" aria-hidden /> Waiting for {spinnerName} &amp; {targetName} to choose…
+                            </p>
+                          </>
                         )}
                       </motion.div>
                     ) : (
