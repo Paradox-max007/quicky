@@ -16,7 +16,8 @@
 //
 // Used by: CommunityScreen (mobile sheet), CommunityDesktop (desktop panel)
 // and RollsViewer (mobile sheet). Rolls pass no action handlers → no ⋯ menus
-// there, but the (you) tag still applies.
+// there, but the (you) tag still applies. The desktop panel is portaled to
+// <body> and sized to the screen below the topbar (see the panel branch).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -262,13 +263,27 @@ export function CommentsSheet({
 
   // §24: on desktop the comments render as a side panel next to the feed —
   // same content, premium drawer treatment instead of a bottom sheet.
+  //
+  // The overlay is PORTALED to <body> and anchored BETWEEN THE TOP NAV and
+  // the bottom of the screen (top = --qk-nav-h, bottom = 0):
+  //   · the desktop page shells run a fill-mode entrance animation on the
+  //     page wrapper (.qk-page-enter); a transformed ancestor captures
+  //     position:fixed descendants, which made this panel size itself to the
+  //     whole feed document (viewport overflow). Body-level fixed is immune
+  //     to any ancestor transform/filter (same pattern as CommentMenu and
+  //     the CoinStoreModal).
+  //   · top+bottom anchoring (no h-full) pins the panel to EXACTLY the screen
+  //     height minus the 56px topbar at every window size — the topbar stays
+  //     visible and clickable while comments are open.
   if (variant === 'panel') {
-    return (
+    const overlay = (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-[2px]"
+        // starts BELOW the topbar — the nav remains the live primary nav
+        // (Web Premium §2/§3) while comments are open
+        className="fixed left-0 right-0 bottom-0 top-[var(--qk-nav-h,0px)] z-[120] bg-black/40 backdrop-blur-[2px]"
         onClick={onClose}
         data-testid="comments-panel-backdrop"
       >
@@ -277,7 +292,7 @@ export function CommentsSheet({
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', stiffness: 340, damping: 36 }}
-          className="absolute right-0 top-0 h-full w-[400px] max-w-[90%] bg-[var(--qk-bg)] border-l border-white/10 shadow-2xl flex flex-col"
+          className="fixed right-0 top-[var(--qk-nav-h,0px)] bottom-0 w-[400px] max-w-[90%] bg-[var(--qk-bg)] border-l border-white/10 shadow-2xl flex flex-col"
           onClick={(e) => e.stopPropagation()}
           data-testid="comments-panel"
         >
@@ -309,6 +324,7 @@ export function CommentsSheet({
         </motion.div>
       </motion.div>
     )
+    return typeof document === 'undefined' ? null : createPortal(overlay, document.body)
   }
 
   return (

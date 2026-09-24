@@ -47,8 +47,17 @@
     transform: translateY(0);
   }
 }
+/* ⚠ Entrance animations here use fill-mode BACKWARDS — never BOTH/FORWARDS.
+   fill:both keeps the final keyframe applied forever, and a persistent
+   computed transform (even an identity translateY(0)) makes the element a
+   containing block that CAPTURES position:fixed/absolute descendants. The
+   desktop comments panel overflowed the viewport through exactly this trap
+   (.qk-page-enter wrapping the page). With BACKWARDS the element returns to
+   its natural styles once the entrance finishes, releasing the containing
+   block — visually identical, because the "to" frame already equals the
+   resting state. */
 .qk-desk-fade {
-  animation: qk-desk-fade-up 0.35s ease both;
+  animation: qk-desk-fade-up 0.35s ease backwards;
 }
 
 /* Web Premium design tokens (§80): one source for shell chrome values */
@@ -71,12 +80,28 @@
   height: 2px;
   border-radius: 2px;
   background: var(--qk-accent);
-  animation: qk-desk-fade-up 0.2s ease both;
+  /* keyframes carry the -50% centering offset themselves — a plain
+     translateY keyframe would override the base translateX(-50%) while
+     filling and leave the underline off-center */
+  animation: qk-underline-in 0.2s ease backwards;
+}
+@keyframes qk-underline-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 /* ─── Page entrance (§49): opacity 0→1, translateY 8px→0, fast ────────── */
+/* fill BACKWARDS (see the ⚠ above): the page wrapper must NOT keep a
+   transform after the entrance — it would trap every fixed/absolute
+   overlay rendered by the page (comments panel, composer, rolls viewer). */
 .qk-page-enter {
-  animation: qk-page-in 0.22s ease both;
+  animation: qk-page-in 0.22s ease backwards;
 }
 @keyframes qk-page-in {
   from {
