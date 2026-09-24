@@ -857,11 +857,25 @@ export const api = {
         { method: 'POST' }
       ),
     comments: (postId: string) =>
-      jsonFetch<{ comments: any[] }>(`/api/quicky/community/posts/${postId}/comments`),
+      jsonFetch<{
+        comments: any[]
+        viewer?: { id: string; isOwner: boolean; isBanned: boolean; ownerName: string | null }
+      }>(`/api/quicky/community/posts/${postId}/comments`),
     comment: (postId: string, text: string) =>
       jsonFetch<{ ok: boolean; comment: any }>(`/api/quicky/community/posts/${postId}/comments`, {
         method: 'POST',
         body: JSON.stringify({ text }),
+      }),
+    /** Delete a comment — allowed for the comment author or the post owner. */
+    commentDelete: (postId: string, commentId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/community/posts/${postId}/comments/${commentId}`, {
+        method: 'DELETE',
+      }),
+    /** Post owner bans the comment's author from commenting on ALL of the
+     *  owner's posts (past and future; per-owner, not global). */
+    commentBan: (postId: string, commentId: string) =>
+      jsonFetch<{ ok: boolean }>(`/api/quicky/community/posts/${postId}/comments/${commentId}/ban`, {
+        method: 'POST',
       }),
   },
   rolls: {

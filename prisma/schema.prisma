@@ -83,6 +83,10 @@ model User {
   gamePosts        GamePost[]
   postLikes        PostLike[]      @relation("PostLikes")
   postComments     PostComment[]   @relation("PostComments")
+  // Community comment bans: bans I handed out / bans against me (per-owner,
+  //   not global — see PostCommentBan)
+  commentBansGiven    PostCommentBan[] @relation("CommentBanOwner")
+  commentBansReceived PostCommentBan[] @relation("CommentBanned")
   rolls            Roll[]
   rollLikes        RollLike[]      @relation("RollLikes")
   rollComments     RollComment[]   @relation("RollComments")
@@ -478,6 +482,24 @@ model PostComment {
   createdAt DateTime @default(now())
   post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
   user      User          @relation("PostComments", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Community comment ban — a post owner bans a commenter from commenting on
+// ANY of the owner's posts (past and future). Per-owner, NOT global: the
+// banned user can still comment on everyone else's posts. Enforced server-
+// side on comment POST; the banned viewer's composer is hidden in the UI.
+model PostCommentBan {
+  id        String   @id @default(cuid())
+  // The ban-giving user — every post they own is protected
+  ownerId   String
+  // The user who may no longer comment on the owner's posts
+  bannedId  String
+  createdAt DateTime @default(now())
+  owner     User @relation("CommentBanOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  banned    User @relation("CommentBanned", fields: [bannedId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, bannedId])
+  @@index([bannedId])
 }
 
 // Stories, called "Rolls" in Quicky — ephemeral 24h media.

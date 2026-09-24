@@ -27,7 +27,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { filterCss, timeAgo } from '@/lib/quicky/filters'
 import { useDoubleTap } from '@/lib/quicky/useDoubleTap'
-import { Avatar, CommentsSheet, CommentItem } from '../CommentsSheet'
+import { Avatar, CommentsSheet, CommentItem, CommentsLoadResult } from '../CommentsSheet'
 import { MediaComposer } from '../MediaComposer'
 import { RollsViewer, RollGroup } from '../RollsViewer'
 import { cn } from '@/lib/utils'
@@ -459,11 +459,33 @@ function PostComments({
   setPosts: (fn: (prev: Post[]) => Post[]) => void
   onClose: () => void
 }) {
-  const load = async (): Promise<CommentItem[]> => (await api.community.comments(postId)).comments
+  const meId = useQuickyStore((s) => s.user?.id) ?? null
+  // load() also returns the server-verified viewer context: isOwner (→ ⋯ menus
+  // offer Delete/Report/Ban) and isBanned (→ composer hidden, POST enforced).
+  const load = async (): Promise<CommentsLoadResult> => {
+    const res = await api.community.comments(postId)
+    return { comments: res.comments as CommentItem[], context: res.viewer }
+  }
   const send = async (text: string): Promise<CommentItem> => {
     const res = await api.community.comment(postId, text)
     setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p)))
     return res.comment
+  }
+  const del = async (commentId: string) => {
+    await api.community.commentDelete(postId, commentId)
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, commentCount: Math.max(0, p.commentCount - 1) } : p)))
+  }
+  const report = async (c: CommentItem) => {
+    // Reuses the complaints system (refactor PRD §57/§76 — no duplicate tables)
+    await api.complaints.create({
+      reportedUserId: c.author.id,
+      reason: 'other',
+      description: `Community post comment report — "${c.text.slice(0, 140)}"`,
+      messageId: c.id,
+    })
+  }
+  const ban = async (commentId: string) => {
+    await api.community.commentBan(postId, commentId)
   }
   const post = posts.find((p) => p.id === postId)
   // §24: desktop gets a premium side panel, not a browser-default modal
@@ -474,6 +496,10 @@ function PostComments({
       load={load}
       send={send}
       onClose={onClose}
+      meId={meId}
+      deleteComment={del}
+      reportComment={report}
+      banCommenter={ban}
     />
   )
 }

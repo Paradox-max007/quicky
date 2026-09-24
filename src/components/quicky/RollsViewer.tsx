@@ -352,6 +352,7 @@ export function RollsViewer({
           load={loadComments}
           send={sendComment}
           onClose={() => setCommentsOpen(false)}
+          meId={meId}
           lockedHint={
             group.canInteract
               ? null

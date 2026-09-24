@@ -109,6 +109,7 @@ export function AppRoot() {
   const hydrated = useQuickyStore((s) => s.hydrated)
   const user = useQuickyStore((s) => s.user)
   const setView = useQuickyStore((s) => s.setView)
+  const commentsSheetOpen = useQuickyStore((s) => s.commentsSheetOpen)
   const isDeskShell = useIsDesktopShell() === true
 
   // Desktop command center (Desktop UI concept §3/§30): at ≥1024px web the
@@ -518,9 +519,11 @@ export function AppRoot() {
           {view === 'chats' && !useDesk && <UnifiedChatsScreen />}
           </div>
         </div>
-        {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings.
-            Centered dock on desktop, full-width on mobile (unchanged). */}
-        {!useDesk && ['discovery', 'matches', 'chats', 'likes-you', 'community', 'profile-me'].includes(view) && (
+        {/* Bottom nav — hidden in chat & auth/onboarding/edit-profile/settings,
+            and while a mobile comment sheet is open (the sheet then owns the
+            full screen height — community: "use that space for the comment
+            section"). Centered dock on desktop, full-width on mobile. */}
+        {!useDesk && !commentsSheetOpen && ['discovery', 'matches', 'chats', 'likes-you', 'community', 'profile-me'].includes(view) && (
           <div className="shrink-0 w-full flex justify-center">
             <div className="w-full md:max-w-2xl">
               <BottomNav />

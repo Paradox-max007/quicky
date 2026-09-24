@@ -252,6 +252,12 @@ type State = {
 
   // navigation
   setView: (v: AppView) => void
+  /** True while a mobile comment sheet (community post/roll comments) is
+   *  open — AppRoot hides the bottom nav so the sheet owns the full screen
+   *  height (community PRD: "use that space for the comment section").
+   *  Transient UI state — never persisted. */
+  commentsSheetOpen: boolean
+  setCommentsSheetOpen: (open: boolean) => void
   /** Refactor PRD §11/12 — canonical web Edit Profile navigation. */
   openWebEditProfile: () => void
   setUser: (u: QuickyUser | null) => void
@@ -319,6 +325,7 @@ export const useQuickyStore = create<State>((set) => ({
   gameChatPeer: null,
   gameChatReturnView: 'spin-bottle',
   roomChatPanel: 'room',
+  commentsSheetOpen: false,
   gameChatPinnedPeer: null,
   gameChatContactsReturnView: 'spin-bottle-room',
   gameFriendsReturnView: 'games',
@@ -330,6 +337,7 @@ export const useQuickyStore = create<State>((set) => ({
   totalUnread: 0,
 
   setView: (v) => set({ view: v }),
+  setCommentsSheetOpen: (open) => set({ commentsSheetOpen: open }),
   /** Refactor PRD §11/§12 — ONE canonical web Edit Profile navigation:
    * every web "Edit Profile" button lands on Settings → Edit Profile. */
   openWebEditProfile: () =>
