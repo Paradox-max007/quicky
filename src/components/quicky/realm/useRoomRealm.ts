@@ -21,6 +21,7 @@ export function useRoomRealm() {
   const loaded = useRealmStore((s) => s.loaded)
   const refresh = useRealmStore((s) => s.refresh)
   const openDetails = useRealmStore((s) => s.openDetails)
+  const openLeaderboard = useRealmStore((s) => s.openLeaderboard)
 
   // §68 — the room mounts → authoritative snapshot (one fetch, shared state).
   useEffect(() => {
@@ -59,5 +60,5 @@ export function useRoomRealm() {
     return list
   }, [multiplier, snapshot])
 
-  return { hudRealm, bannerEvents, openDetails, loaded }
+  return { hudRealm, bannerEvents, openDetails, openLeaderboard, loaded }
 }

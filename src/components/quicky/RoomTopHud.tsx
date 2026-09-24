@@ -1,7 +1,8 @@
 'use client'
 
 // RoomTopHud — casual-game status bar (v3 PRD §19/§20/§31/§78 + realm PRD §71):
-//   ❤️ kisses · 🏆 games · 👑 REALM (tap → shared Realm view) · 🎁 gifts
+//   ❤️ kisses · 🏆 games (tap → realm LEADERBOARD, same surface as the
+//   Games hub trophy) · 👑 REALM (tap → shared Realm view) · 🎁 gifts
 //   received · 🪙 coins + · 🚪
 // The chip group is exported separately so the WEB top bar can render the
 // same economy chips inline (Club Royale header) while mobile keeps the
@@ -38,19 +39,37 @@ type ChipsProps = {
   /** Realm PRD §71 — live realm status; tap opens the shared Realm view. */
   realm?: RealmHudData | null
   onRealm?: () => void
+  /** 🏆 tap → the shared realm LEADERBOARD (the exact same surface the
+   *  Games hub trophy opens: full screen on mobile web/Capacitor, left
+   *  drawer on desktop web) — works on the game-room screen without
+   *  leaving the room. */
+  onTrophy?: () => void
 }
 
-export function RoomHudChips({ hearts, trophies, crowns, gifts, coins, onAddCoins, realm, onRealm }: ChipsProps) {
+export function RoomHudChips({ hearts, trophies, crowns, gifts, coins, onAddCoins, realm, onRealm, onTrophy }: ChipsProps) {
   return (
     <>
       <div className="sbr-tile sbr-tile-heart" title="Game Points">
         <span className="sbr-tile-icon">❤️</span>
         <span className="tabular-nums">{hearts}</span>
       </div>
-      <div className="sbr-tile sbr-tile-trophy hidden min-[380px]:flex" title="Games played">
-        <span className="sbr-tile-icon">🏆</span>
-        <span className="tabular-nums">{trophies}</span>
-      </div>
+      {onTrophy ? (
+        <button
+          className="sbr-tile sbr-tile-trophy hidden min-[380px]:flex"
+          onClick={onTrophy}
+          title="Games played — tap for the realm leaderboard"
+          aria-label={`Games played: ${trophies} — open realm leaderboard`}
+          data-testid="room-trophy-chip"
+        >
+          <span className="sbr-tile-icon">🏆</span>
+          <span className="tabular-nums">{trophies}</span>
+        </button>
+      ) : (
+        <div className="sbr-tile sbr-tile-trophy hidden min-[380px]:flex" title="Games played">
+          <span className="sbr-tile-icon">🏆</span>
+          <span className="tabular-nums">{trophies}</span>
+        </div>
+      )}
       {realm ? (
         <button
           className="sbr-tile sbr-tile-crown"
@@ -96,12 +115,12 @@ type Props = ChipsProps & {
   onRoomOptions: () => void
 }
 
-export function RoomTopHud({ hearts, trophies, crowns, gifts, coins, onRoomOptions, onAddCoins, realm, onRealm }: Props) {
+export function RoomTopHud({ hearts, trophies, crowns, gifts, coins, onRoomOptions, onAddCoins, realm, onRealm, onTrophy }: Props) {
   return (
     <div className="sbr-hud safe-area-top">
       {/* §78: no left-side back arrow — chips breathe, controls live on the right */}
       <div className="sbr-hud-chips">
-        <RoomHudChips hearts={hearts} trophies={trophies} crowns={crowns} gifts={gifts} coins={coins} onAddCoins={onAddCoins} realm={realm} onRealm={onRealm} />
+        <RoomHudChips hearts={hearts} trophies={trophies} crowns={crowns} gifts={gifts} coins={coins} onAddCoins={onAddCoins} realm={realm} onRealm={onRealm} onTrophy={onTrophy} />
       </div>
       <RoomExitControl onClick={onRoomOptions} />
     </div>

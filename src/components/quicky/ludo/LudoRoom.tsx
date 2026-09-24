@@ -72,7 +72,9 @@ export function LudoRoom({
   const mentionFlashId = useLudoRoomStore((s) => s.mentionFlashId)
   const setCoinBalance = useLudoRoomStore((s) => s.setCoinBalance)
   // Realm PRD §41/§71 — the shared realm HUD chip + event-banner queue.
-  const { hudRealm, bannerEvents, openDetails } = useRoomRealm()
+  // openLeaderboard: the 🏆 HUD chip opens the SAME realm leaderboard
+  // surface the Games hub trophy opens (full screen mobile / drawer web).
+  const { hudRealm, bannerEvents, openDetails, openLeaderboard } = useRoomRealm()
 
   const roomChatPanel = useQuickyStore((s) => s.roomChatPanel)
   const setRoomChatPanel = useQuickyStore((s) => s.setRoomChatPanel)
@@ -257,6 +259,7 @@ export function LudoRoom({
               onAddCoins={() => setShowCoinStore(true)}
               realm={hudRealm}
               onRealm={openDetails}
+              onTrophy={openLeaderboard}
             />
           </div>
           <RoomExitControl onClick={openExit} />
@@ -274,6 +277,7 @@ export function LudoRoom({
             onAddCoins={() => setShowCoinStore(true)}
             realm={hudRealm}
             onRealm={openDetails}
+            onTrophy={openLeaderboard}
           />
         </div>
 

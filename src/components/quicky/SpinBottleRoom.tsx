@@ -162,7 +162,9 @@ export function SpinBottleRoom({
   const [showExit, setShowExit] = useState(false)
   const [switching, setSwitching] = useState(false)
   // Realm PRD §41/§71 — the shared realm HUD chip + event-banner queue.
-  const { hudRealm, bannerEvents, openDetails } = useRoomRealm()
+  // openLeaderboard: the 🏆 HUD chip opens the SAME realm leaderboard
+  // surface the Games hub trophy opens (full screen mobile / drawer web).
+  const { hudRealm, bannerEvents, openDetails, openLeaderboard } = useRoomRealm()
   // Duel spotlight presentation state — `dismissedSpinId` is the spin whose
   // result panel has been shown & dismissed (cards slide back).
   const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
@@ -683,6 +685,7 @@ export function SpinBottleRoom({
               onAddCoins={() => setShowCoinStore(true)}
               realm={hudRealm}
               onRealm={openDetails}
+              onTrophy={openLeaderboard}
             />
           </div>
           {/* §31/§32: the room's only control — leave/change room, top-right */}
@@ -701,6 +704,7 @@ export function SpinBottleRoom({
             onAddCoins={() => setShowCoinStore(true)}
             realm={hudRealm}
             onRealm={openDetails}
+            onTrophy={openLeaderboard}
           />
         </div>
 

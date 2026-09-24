@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { applyThemeToDOM } from '@/lib/quicky/theme'
@@ -146,6 +146,19 @@ export function AppRoot() {
     let cancelled = false
     void import('@capacitor/app').then(({ App }) =>
       App.addListener('backButton', () => {
+        // Global realm overlays first: if the realm leaderboard (opened from
+        // the room 🏆 chip or the Games hub trophy) or the 👑 details sheet
+        // is on top, hardware back just closes it — the view underneath
+        // (e.g. a LIVE game room) must stay untouched, never be left.
+        const realm = useRealmStore.getState()
+        if (realm.leaderboardOpen) {
+          realm.closeLeaderboard()
+          return
+        }
+        if (realm.detailsOpen) {
+          realm.closeDetails()
+          return
+        }
         const { view: v, setView: sv } = useQuickyStore.getState()
         if (v === 'game-landing') sv('games')
         else if (v === 'chats') sv('community')
@@ -431,7 +444,17 @@ export function AppRoot() {
     <div
       className="w-full h-full relative bg-[var(--qk-bg)] text-white overflow-hidden"
       data-qk-root="true"
-      style={{ transform: 'translateZ(0)' }}
+      style={
+        {
+          transform: 'translateZ(0)',
+          // When the desktop topnav is NOT on screen (game rooms, chat,
+          // profile, auth — anything outside the DesktopHome shell), the
+          // realm-leaderboard DRAWER must span the full app height: the
+          // 56px --qk-nav-h topnav offset is neutralized here so the
+          // drawer's top-[var(--qk-nav-h,0px)] resolves to 0px.
+          ...(useDesk ? undefined : { '--qk-nav-h': '0px' }),
+        } as CSSProperties
+      }
     >
       {/* Main view — centered, bigger column on desktop web */}
       <div className="w-full h-full flex flex-col">
