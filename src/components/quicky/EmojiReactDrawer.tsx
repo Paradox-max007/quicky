@@ -23,8 +23,10 @@ import { ChevronDown } from 'lucide-react'
 /** The compact row — the most-used reactions, always one tap away. */
 export const REACT_QUICK = ['❤️', '😂', '😮', '😢', '👍', '🔥', '🎉', '👏'] as const
 
-/** The FULL emoji catalog, grouped for the expanded drawer. */
-export const REACT_ALL: { label: string; emojis: string[] }[] = [
+/** The FULL emoji catalog, grouped for the expanded drawer.
+ *  (REACT_ALL below dedupes each category — React keys must stay unique;
+ *  a stray duplicate crashed React with "two children with the same key".) */
+const REACT_ALL_RAW: { label: string; emojis: string[] }[] = [
   {
     label: 'Smileys & People',
     emojis: [
@@ -95,10 +97,15 @@ export const REACT_ALL: { label: string; emojis: string[] }[] = [
       '⚙️', '🧰', '🧲', '🔒', '🔓', '🔑', '🗝️', '🗺️', '🧭', '⌛', '⏳', '⏰', '⏱️', '🕐', '✅', '❌',
       '❗', '❓', '💯', '🆗', '🆙', '🆒', '🆕', '🆓', '🚫', '⚠️', '♻️', '🔱', '⚜️', '🔰', '⭕', '🛑',
       '❎', '✳️', '❇️', '💠', '™️', '©️', '®️', '〰️', '➰', '➿', '🔚', '🔙', '🔛', '🔝', '🔜', '✔️',
-      '➕', '➖', '➗', '✖️', '💲', '💱', '♠️', '♥️', '♦️', '♣️', '🃏', '🀄', '🕐', '🔯', '⛎', '♈',
+      '➕', '➖', '➗', '✖️', '💲', '💱', '♠️', '♥️', '♦️', '♣️', '🃏', '🀄', '🔯', '⛎', '♈',
     ],
   },
 ]
+
+/** Deduped per category — insertion order preserved, duplicates dropped. */
+export const REACT_ALL: { label: string; emojis: string[] }[] = REACT_ALL_RAW.map(
+  (cat) => ({ label: cat.label, emojis: Array.from(new Set(cat.emojis)) })
+)
 
 const PILL_H = 46
 const GRID_H = 300
@@ -127,6 +134,9 @@ export function EmojiReactDrawer({
 }) {
   const [expanded, setExpanded] = useState(false)
   const drawerRef = useRef<HTMLDivElement | null>(null)
+  // Latest imperative placement — kept in a ref so the scroll listener (bound
+  // once per mount) always repositions with the CURRENT expanded height.
+  const placeRef = useRef<() => void>(() => {})
 
   // Position: under the anchor (flip above when there is no room below),
   // clamped inside the viewport on both axes. A forced side never flips —
@@ -135,41 +145,76 @@ export function EmojiReactDrawer({
   // state round-trip) so the drawer never visibly jumps and never detaches.
   useLayoutEffect(() => {
     if (!anchorEl || typeof window === 'undefined') return
-    const drawer = drawerRef.current
-    const r = anchorEl.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const dw = Math.min(drawer?.offsetWidth || 340, vw - 2 * M)
-    const h = expanded ? GRID_H : PILL_H
-    let top: number
-    const fitsBelow = vh - r.bottom - M > h + 4
-    const fitsAbove = r.top - M > h + 4
-    if (side === 'below' || (side === 'auto' && fitsBelow)) {
-      top = fitsBelow ? r.bottom + 6 : Math.max(M, Math.min(r.bottom + 6, vh - h - M))
-    } else if (side === 'above' || (side === 'auto' && fitsAbove)) {
-      top = fitsAbove ? r.top - h - 6 : Math.max(M, Math.min(r.top - h - 6, vh - h - M))
-    } else {
-      top = Math.max(M, Math.min(r.bottom + 6, vh - h - M))
-    }
-    let left = align === 'right' ? r.right - dw : r.left
-    left = Math.max(M, Math.min(left, vw - dw - M))
-    if (drawer) {
+    const place = () => {
+      const drawer = drawerRef.current
+      if (!drawer) return
+      const r = anchorEl.getBoundingClientRect()
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const dw = Math.min(drawer.offsetWidth || 340, vw - 2 * M)
+      const h = expanded ? GRID_H : PILL_H
+      let top: number
+      const fitsBelow = vh - r.bottom - M > h + 4
+      const fitsAbove = r.top - M > h + 4
+      if (side === 'below' || (side === 'auto' && fitsBelow)) {
+        top = fitsBelow ? r.bottom + 6 : Math.max(M, Math.min(r.bottom + 6, vh - h - M))
+      } else if (side === 'above' || (side === 'auto' && fitsAbove)) {
+        top = fitsAbove ? r.top - h - 6 : Math.max(M, Math.min(r.top - h - 6, vh - h - M))
+      } else {
+        top = Math.max(M, Math.min(r.bottom + 6, vh - h - M))
+      }
+      let left = align === 'right' ? r.right - dw : r.left
+      left = Math.max(M, Math.min(left, vw - dw - M))
       drawer.style.top = `${Math.round(top)}px`
       drawer.style.left = `${Math.round(left)}px`
       drawer.style.visibility = 'visible'
     }
+    placeRef.current = place
+    place()
   }, [anchorEl, align, side, expanded])
 
-  // The anchor scrolls away / resizes → close (a fixed popover must never
-  // detach from its message).
+  // DISMISSAL RULES — the drawer closes ONLY when:
+  //   · the user taps an emoji (onPick → onClose in the buttons), or
+  //   · the user taps outside (the full-screen overlay behind it), or
+  //   · the anchor message itself scrolled fully out of the viewport /
+  //     was removed from the DOM.
+  // Scrolling INSIDE the drawer (the expanded emoji grid) is NOT a dismiss —
+  // that was the old bug: a capture-phase window scroll listener closed the
+  // drawer the moment the grid itself scrolled. Any OTHER scroll (the chat
+  // behind, scroll chaining) just RE-POSITIONS the drawer under its anchor
+  // (WhatsApp-style follow) instead of dismissing it.
   useEffect(() => {
-    window.addEventListener('scroll', onClose, true)
-    window.addEventListener('resize', onClose)
-    return () => {
-      window.removeEventListener('scroll', onClose, true)
-      window.removeEventListener('resize', onClose)
+    if (!anchorEl) return
+    const onScroll = (ev: Event) => {
+      const t = ev.target
+      // Scrolling inside the drawer itself (the emoji grid) — ignore.
+      if (drawerRef.current && t instanceof Node && drawerRef.current.contains(t)) return
+      // The chat behind scrolled: follow the anchor while it is visible.
+      if (!anchorEl.isConnected) {
+        onClose()
+        return
+      }
+      const r = anchorEl.getBoundingClientRect()
+      if (r.bottom < -32 || r.top > window.innerHeight + 32) {
+        onClose()
+        return
+      }
+      placeRef.current()
     }
-  }, [onClose])
+    const onResize = () => {
+      if (!anchorEl.isConnected) {
+        onClose()
+        return
+      }
+      placeRef.current()
+    }
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [anchorEl, onClose])
 
   if (typeof document === 'undefined' || !anchorEl) return null
 

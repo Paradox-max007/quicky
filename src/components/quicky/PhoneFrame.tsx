@@ -15,11 +15,19 @@ import { isNative, initStatusBar, hideSplashScreen } from '@/lib/capacitor'
  * - Capacitor native (Android/iOS): full viewport, safe-area aware,
  *   initialises StatusBar + SplashScreen. Layout identical to the mobile
  *   browser so profile cards keep the exact same spacing/arrangement.
+ *
+ * MOBILE VIEWPORT FIT (the "overflow on every page" fix): the shell is
+ * EXACTLY one viewport tall — `h-screen` (100vh, legacy fallback) upgraded
+ * to `100dvh` where supported. The previous `min-h-screen` (100vh = LARGE
+ * viewport) on the outer div made the DOCUMENT taller than the visible
+ * viewport whenever a mobile browser showed its URL bar (100vh > 100dvh),
+ * so every page could be panned/offset sideways or vertically and had to be
+ * scrolled back into place. An exact-height shell + the document overflow
+ * lock (see `.qk-app-viewport` in globals.css, toggled below) means the
+ * document NEVER scrolls — inner areas do.
  */
 export function PhoneFrame({ children }: { children: ReactNode }) {
   const [native, setNative] = useState(false)
-  // null = pre-hydration (SSR-safe default), then true/false per viewport
-  const [isDesktop, setIsDesktop] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (!isNative()) return
@@ -32,12 +40,15 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     return () => clearTimeout(t)
   }, [])
 
+  // Lock the DOCUMENT (html/body) while the app shell is mounted: the user
+  // app is a fixed-viewport experience, so the page itself never pans
+  // (rubber-banding, scroll-chaining, stray horizontal overflow are all
+  // killed). Removed on unmount so /admin (its own document-scrolling shell)
+  // is unaffected.
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)')
-    const update = () => setIsDesktop(mq.matches)
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
+    const root = document.documentElement
+    root.classList.add('qk-app-viewport')
+    return () => root.classList.remove('qk-app-viewport')
   }, [])
 
   // ─── Capacitor native: pure full-screen, safe-area aware ────────────────
@@ -60,25 +71,19 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   }
 
   // ─── Web: single-mount shell ─────────────────────────────────────────────
-  // One keyed app container: crossing the md breakpoint (or hydrating) only
-  // swaps classes — the app is never remounted, so no duplicated API calls.
+  // One app container: the shell is EXACTLY the viewport height on every
+  // platform (dvh where supported — URL-bar aware on mobile, == vh on
+  // desktop), so the document is never taller/wider than the visible area
+  // and can never be panned out of place. Children fill it with h-full
+  // chains; everything scrollable lives INSIDE.
   return (
-    <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+    <div className="h-screen supports-[height:100dvh]:h-[100dvh] w-full bg-black text-white relative overflow-hidden">
       {/* Ambient background gradient blobs (visible on desktop widths) */}
       <div className="hidden md:block pointer-events-none absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[var(--qk-accent)]/15 blur-[100px]" />
       <div className="hidden md:block pointer-events-none absolute -bottom-40 -right-32 w-96 h-96 rounded-full bg-[var(--qk-purple)]/10 blur-[100px]" />
       <div className="hidden md:block pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[40%] rounded-full bg-[var(--qk-accent)]/5 blur-[120px]" />
 
-      {/* Desktop (≥768px): full-window app — bigger screens.
-          Mobile browser: definite 100dvh height so h-full chains resolve
-          (min-h-screen alone collapses percentage-height children). */}
-      <div
-        key="qk-app"
-        className={
-          'w-full relative z-10 flex flex-col ' +
-          (isDesktop ? 'h-screen' : 'h-[100dvh]')
-        }
-      >
+      <div className="w-full h-full relative z-10 flex flex-col">
         {children}
       </div>
     </div>

@@ -254,6 +254,11 @@ html[data-theme='gold'] {
     /* Prevent overscroll bounce on mobile */
     overscroll-behavior: none;
   }
+  html {
+    /* Never let mobile Safari inflate text sizes on rotation/zoom */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     /* Ambient gradient tinted by the active theme */
     background:
@@ -261,6 +266,52 @@ html[data-theme='gold'] {
       radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--qk-purple, #B8A4FF) 5%, transparent) 0%, transparent 40%),
       var(--qk-bg);
     background-attachment: fixed;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   DOCUMENT VIEWPORT LOCK — applied to <html> by PhoneFrame while the
+   user app is mounted (removed on unmount, so /admin and other
+   document-scrolling shells are unaffected).
+
+   The app shell is EXACTLY one viewport tall (100dvh) and every list,
+   chat and feed scrolls INSIDE it. The document itself must therefore
+   never pan — this kills the mobile-web "page is offset / can be
+   scrolled sideways out of the viewport" behavior on every page.
+
+   `overflow: clip` (not `hidden`) because iOS Safari treats
+   overflow:hidden documents as touch-pannable; `clip` really locks
+   them. The `hidden` line stays as a fallback for pre-clip browsers.
+   ══════════════════════════════════════════════════════════════════ */
+html.qk-app-viewport,
+html.qk-app-viewport body {
+  overflow: hidden;
+  overflow: clip;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   iOS KEYBOARD AUTO-ZOOM FIX — mobile Safari (and the Capacitor
+   WKWebView) zoom the whole page when an input with font-size < 16px
+   receives focus, which made the app "zoom in" every time the user
+   typed a chat message. On touch devices every text-entry control is
+   floored to 16px so focusing never zooms. Desktop (mouse) keeps the
+   designed sizes. The mention mirror (.sbr-mention-mirror) mirrors
+   .sbr-input glyph-for-glyph, so it must floor in lock-step or the
+   mention tokens drift out of alignment.
+   ══════════════════════════════════════════════════════════════════ */
+@media (hover: none) and (pointer: coarse) {
+  input[type='text'],
+  input[type='search'],
+  input[type='email'],
+  input[type='password'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='number'],
+  input:not([type]),
+  textarea,
+  select,
+  .sbr-mention-mirror {
+    font-size: 16px !important;
   }
 }
 
@@ -619,8 +670,11 @@ html[data-theme='gold'] {
    arrow) → enlarges into the full categorised emoji grid.
    ══════════════════════════════════════════════════════════════════ */
 .qk-emoji-drawer {
-  background: var(--qk-card, #1c1a26);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  /* The drawer wears the SELECTED THEME COLOR, darkened — the accent hue
+     mixed with a blackish shade (≈55% accent) so it clearly reads as the
+     theme while staying deep enough for white/emoji glyphs. */
+  background: color-mix(in srgb, var(--qk-accent, #FF2D55) 55%, #05050A);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 16px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
   overflow: hidden;
@@ -656,16 +710,19 @@ html[data-theme='gold'] {
 .qk-emoji-quick:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.18); }
 .qk-emoji-quick:active { transform: scale(0.9); }
 .qk-emoji-cell-on {
-  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 22%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--qk-accent, #ff2d55) 65%, transparent);
+  /* White highlight — reads clearly on the darkened theme-accent surface. */
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.65);
 }
 .qk-emoji-expand {
-  color: var(--qk-accent, #ff2d55);
-  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 12%, transparent);
+  /* White on the darkened accent surface (the old accent-on-card styling
+     vanished against the new theme-tinted background). */
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
   margin-left: 2px;
 }
 .qk-emoji-expand:hover {
-  background: color-mix(in srgb, var(--qk-accent, #ff2d55) 24%, transparent);
+  background: rgba(255, 255, 255, 0.24);
 }
 .qk-emoji-grid {
   height: 100%;
@@ -680,7 +737,9 @@ html[data-theme='gold'] {
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--qk-text-muted, rgba(255, 255, 255, 0.45));
+  /* white-alpha (not a theme text token): the drawer surface is always the
+     darkened accent, even in the light theme */
+  color: rgba(255, 255, 255, 0.6);
   margin: 4px 2px 5px;
 }
 .qk-emoji-cat-row {
