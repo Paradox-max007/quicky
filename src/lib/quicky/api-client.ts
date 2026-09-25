@@ -1062,5 +1062,17 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ crateId, levels }),
       }),
+    // Claim ONE level's prize (tap → modal → CLAIM). track: 'FREE' | 'CRATE'.
+    claim: (crateId: string, level: number, track: 'FREE' | 'CRATE') =>
+      jsonFetch<{
+        ok: true
+        track: 'FREE' | 'CRATE'
+        level: number
+        prize: { type: string; name: string; emoji: string; quantity: number }
+        coinBalance: number | null
+      }>('/api/quicky/crates/claim', {
+        method: 'POST',
+        body: JSON.stringify({ crateId, level, track }),
+      }),
   },
 }

@@ -152,8 +152,13 @@ export function AppRoot() {
         // the room 🏆 chip or the Games hub trophy) or the 👑 details sheet
         // is on top, hardware back just closes it — the view underneath
         // (e.g. a LIVE game room) must stay untouched, never be left.
-        // Same for the Realm Pass screens (crown → crate store → details).
+        // Same for the Realm Pass stack (crown → crate store → details →
+        // claim modal): back unwinds one layer at a time, innermost first.
         const pass = usePassStore.getState()
+        if (pass.claimTarget) {
+          pass.closeClaim()
+          return
+        }
         if (pass.crateId) {
           pass.backToStore()
           return

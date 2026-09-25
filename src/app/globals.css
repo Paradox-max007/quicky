@@ -760,3 +760,9 @@ html.qk-app-viewport body {
 }
 .qk-emoji-cell:hover { background: rgba(255, 255, 255, 0.09); transform: scale(1.22); }
 .qk-emoji-cell:active { transform: scale(0.9); }
+
+/* ── Crates banner shine sweep (transient — no fill-mode) ───────────────── */
+@keyframes qk-shine {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(450%); }
+}

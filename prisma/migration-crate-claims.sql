@@ -1,0 +1,26 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- crate-claims update — MANUAL prize claiming + level-1 start + crates banner
+-- NO SCHEMA CHANGE — this is a LOGIC-ONLY update, no `prisma db push` needed.
+--
+-- What changed (on top of migration-crate-tracks.sql):
+--   · Prizes are no longer auto-granted on level-up / unlock / purchase.
+--     The user taps an unlocked prize tile → the CLAIM MODAL (animated from
+--     the tile) → CLAIM → POST /api/quicky/crates/claim grants it exactly
+--     once (CrateLevelGrant unique key userId+crateId+level+track, source
+--     "CLAIM"). Locked prizes stay visible with a lock overlay.
+--   · THE PASS ALWAYS STARTS AT LEVEL 1: level 1's threshold is treated as 0
+--     at runtime no matter what is stored — the first FREE prize is
+--     claimable the moment a user logs in. New seeds use (N−1)×step.
+--   · Crate room layout: ONE COLUMN of big square prizes per track; the
+--     crate-points progress bar is the SEPARATOR at the middle of the
+--     screen; the MAIN prizes (levels 10/25/50/100) show directly BELOW it.
+--   · Crates banner button on the Games hub + every game's primary screen
+--     (mobile → sliding crate screen; desktop → the crates modal).
+--   · Capacitor native-bridge "{}" console noise filtered at app start.
+--
+-- OPTIONAL data heal (only if you want level 1's STORED threshold to match
+-- the runtime rule — the app already clamps it, so this is cosmetic):
+--   UPDATE "CrateLevel" SET "thresholdPoints" = 0 WHERE "level" = 1;
+--   UPDATE "CrateLevel" SET "thresholdPoints" = ("level" - 1) * 20
+--     WHERE "level" > 1 AND "thresholdPoints" = "level" * 20;
+-- ─────────────────────────────────────────────────────────────────────────────

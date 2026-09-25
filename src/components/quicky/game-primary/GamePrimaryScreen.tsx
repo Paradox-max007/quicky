@@ -70,6 +70,7 @@ import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore } from '@/store/game-chat'
 import { isNative } from '@/lib/capacitor'
 import { GameInteractionPanel } from './GameInteractionPanel'
+import { CratesBanner } from '../pass/CratesBanner'
 import { formatCoinCount, type GamePrimaryConfig } from './game-configs'
 
 const TAGLINE_VISIBLE_MS = 3200 // refactor PRD §20 cadence — slow, subtle
@@ -262,6 +263,10 @@ export function GamePrimaryScreen({
                         Profile Image → You/Level → Statistics → Play Now →
                         Group/Meet someone new → Your Progress → How It Works ═══ */}
                 <div className="min-w-0 flex flex-col gap-5" data-testid="game-primary-main-column">
+                  {/* Crates banner — the battle pass is one tap away from the
+                      main game screen (screen on mobile, modal on desktop). */}
+                  <CratesBanner compact />
+
                   {/* PROFILE — image, You/Level, statistics, coins (§8/§6/§7) */}
                   <div
                     className="bg-[var(--qk-card)] border border-white/10 rounded-3xl p-5"

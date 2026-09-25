@@ -17,6 +17,7 @@ import { GameCard } from '../game-hub/GameCard'
 import { artworkGradient } from '../game-hub/types'
 import { GamesFilterBar } from '../game-hub/GamesFilterBar'
 import { PointsBadges } from '../realm/PointsBadges'
+import { CratesBanner } from '../pass/CratesBanner'
 
 export function GamesDesktop() {
   const setView = useQuickyStore((s) => s.setView)
@@ -73,6 +74,11 @@ export function GamesDesktop() {
           )}
         </div>
       </header>
+
+      {/* Crates banner — one tap into the battle-pass modal (desktop) */}
+      <div className="w-full">
+        <CratesBanner />
+      </div>
 
       {/* ── Featured game (§41) — DB-driven, honest live numbers ─────────── */}
       <section data-testid="games-featured">

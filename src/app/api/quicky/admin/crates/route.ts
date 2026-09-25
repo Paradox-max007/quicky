@@ -150,8 +150,9 @@ export async function POST(req: NextRequest) {
   const levelPrice = Math.min(MAX_PRICE, Math.max(0, Math.floor(Number(body?.levelPriceCoins ?? 100)) || 0))
   const prizeName = typeof body?.prizeName === 'string' && body.prizeName ? (body.prizeName as string) : levelPrizeType === 'COINS' ? 'Coin Drop' : null
   const prizeEmoji = typeof body?.prizeEmoji === 'string' && body.prizeEmoji ? (body.prizeEmoji as string) : levelPrizeType === 'COINS' ? '🪙' : null
-  // FREE-track defaults (the collectible-by-winning track) + threshold step
-  // (level N's cumulative threshold = N × step).
+  // FREE-track defaults (the claimable-by-winning track) + threshold step
+  // (level N's cumulative threshold = (N−1) × step — level 1 = 0: the pass
+  // starts unlocked at login).
   const freePrizeType = body?.freePrizeType === 'GIFT' ? 'GIFT' : 'COINS'
   const freeItemId = freePrizeType === 'GIFT' && typeof body?.freeItemId === 'string' ? (body.freeItemId as string) : null
   const freeQuantity = Math.min(MAX_QTY, Math.max(1, Math.floor(Number(body?.freeQuantity ?? 10)) || 1))
@@ -163,7 +164,7 @@ export async function POST(req: NextRequest) {
     data: Array.from({ length: levelCount }, (_, i) => ({
       crateId: crate.id,
       level: i + 1,
-      thresholdPoints: (i + 1) * thresholdStep,
+      thresholdPoints: i * thresholdStep,
       freePrizeType,
       freeItemId,
       freePrizeName,
@@ -205,13 +206,14 @@ export async function PATCH(req: NextRequest) {
       await db.crateLevel.updateMany({ where: { crateId: id }, data: fields as never })
     }
     // thresholdStep: re-derive every level's cumulative threshold as
-    // level × step (the quick way to lay out a whole 100-level track).
+    // (level−1) × step (the quick way to lay out a whole 100-level track;
+    // level 1 = 0 — the pass always starts unlocked at login).
     if (hasStep) {
       const rows = await db.crateLevel.findMany({ where: { crateId: id }, select: { id: true, level: true } })
       await Promise.all(
         rows.map((row) =>
           db.crateLevel
-            .update({ where: { id: row.id }, data: { thresholdPoints: row.level * thresholdStep } })
+            .update({ where: { id: row.id }, data: { thresholdPoints: Math.max(0, (row.level - 1) * thresholdStep) } })
             .catch(() => {}),
         ),
       )
@@ -247,7 +249,7 @@ export async function PATCH(req: NextRequest) {
           freePrizeName: fields.freePrizeName ?? null,
           freePrizeEmoji: fields.freePrizeEmoji ?? null,
           freeQuantity: fields.freeQuantity ?? 1,
-          thresholdPoints: fields.thresholdPoints ?? level * CRATE_THRESHOLD_STEP_DEFAULT,
+          thresholdPoints: fields.thresholdPoints ?? (level - 1) * CRATE_THRESHOLD_STEP_DEFAULT,
         },
       })
     }

@@ -270,9 +270,10 @@ export function AdminCratesScreen() {
         }
       >
         <p className="text-xs text-white/55 leading-relaxed mb-3">
-          A crate is the {`100-level`} battle pass (opened from the 👑 room chip). Each level has a <b>FREE prize</b> (won by realm placements
-          alone) and a <b>CRATE prize</b> (needs the pack bought). Players climb levels with <b>crate points</b> (per-realm placement points vs
-          each level&apos;s <b>threshold</b>) or <b>buy levels</b> (coins). Each prize grants exactly once.
+          A crate is the {`100-level`} battle pass (opened from the 👑 room chip / the Crates banner). Each level has a <b>FREE prize</b> (claimed with
+          realm placements alone) and a <b>CRATE prize</b> (needs the pack bought). Players climb levels with <b>crate points</b> (per-realm placement
+          points vs each level&apos;s <b>threshold</b>) or <b>buy levels</b> (coins). Prizes are claimed by TAPPING them on the track — each exactly once
+          (level 1 is unlocked at login, threshold 0).
         </p>
         <div className="flex flex-col gap-2">
           {crates.map((row) => (
@@ -474,8 +475,9 @@ function CreateCrateModal({ itemOptions, onClose, onSaved }: { itemOptions: Item
         <div className="grid grid-cols-3 gap-3">
           <label className="text-[11px] font-bold text-white/50">Pack price 🪙<input className={inputCls} value={priceCoins} onChange={(e) => setPriceCoins(e.target.value)} /></label>
           <label className="text-[11px] font-bold text-white/50">Levels (1-100)<input className={inputCls} value={levelCount} onChange={(e) => setLevelCount(e.target.value)} /></label>
-          <label className="text-[11px] font-bold text-white/50">Threshold step<input className={inputCls} value={thresholdStep} onChange={(e) => setThresholdStep(e.target.value)} title="Level N's cumulative crate-point threshold = N × step" /></label>
+          <label className="text-[11px] font-bold text-white/50">Threshold step<input className={inputCls} value={thresholdStep} onChange={(e) => setThresholdStep(e.target.value)} title="Level N's cumulative crate-point threshold = (N−1) × step — level 1 = 0" /></label>
         </div>
+        <p className="text-[10px] text-white/40 leading-relaxed">Level 1 is always unlocked at 0 points — every player starts the pass (and can claim its free prize) the moment they log in.</p>
         <p className="text-[11px] font-black uppercase tracking-wide text-[#30D158]/80 mt-1 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" aria-hidden /> Free-track default prize (won by realm wins)</p>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-[11px] font-bold text-white/50">

@@ -394,8 +394,9 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
 
       // Crate-tracks PRD — placement crate points for EVERY ranked player
       // (1st=most … 8th=least; per-realm admin table, global default
-      // fallback). Levels (and the FREE track prizes) pop instantly; the
-      // CRATE track pops for players who own the pack.
+      // fallback). Levels climb instantly; reached prizes then wait on the
+      // track until the player taps + CLAIMS them (FREE always, CRATE once
+      // the pack is owned).
       const placeCratePoints = cratePointsForPlace(cratePlacePoints, rank, realmCratePoints)
       if (placeCratePoints > 0) {
         await awardCratePoints(member.userId, placeCratePoints)

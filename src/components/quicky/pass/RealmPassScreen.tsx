@@ -265,7 +265,7 @@ function CrateStoreCard({ crate, selected, onSelect }: { crate: CrateCatalogRowC
           </div>
         ) : (
           <p className="mt-1 text-[10.5px] font-bold text-white/50">
-            {crate.cratePoints > 0 ? `${formatCompact(crate.cratePoints)} points waiting — free prizes already popping` : `${formatCompact(crate.levelCount)} levels · free + crate prizes`}
+            {crate.cratePoints > 0 ? `${formatCompact(crate.cratePoints)} points waiting — claim free prizes on the track` : `${formatCompact(crate.levelCount)} levels · free + crate prizes`}
           </p>
         )}
       </div>

@@ -49,6 +49,20 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        {/*
+          Capacitor native-bridge noise filter — runs BEFORE any app module.
+          The WebView-injected bridge (native-bridge.js) forwards native plugin
+          debug output to the web console via logFromNative(); unwired plugins
+          (e.g. native Firebase) log a single EMPTY OBJECT, which surfaces as
+          the "{}" Console Error inside the Capacitor shell. The filter only
+          drops calls that originate from logFromNative — every real app log
+          passes through untouched.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var ms=['error','log','warn','debug','info'];ms.forEach(function(m){var o=console[m];if(typeof o!=='function')return;console[m]=function(){var a=arguments;if(a.length===1&&a[0]!==null&&typeof a[0]==='object'){try{if(Object.keys(a[0]).length===0&&(new Error().stack||'').indexOf('logFromNative')!==-1)return;}catch(e){}}return o.apply(console,a);};});}catch(e){}})();`,
+          }}
+        />
         {children}
       </body>
     </html>
