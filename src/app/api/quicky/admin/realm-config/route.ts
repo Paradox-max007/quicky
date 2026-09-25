@@ -11,6 +11,7 @@ import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 import { ensureRealmBootstrap } from '@/lib/quicky/realm/realm-config'
 import { validateRewardsConfig } from '@/lib/quicky/realm/realm-rewards'
 import { DEFAULT_CRATE_PLACE_POINTS } from '@/lib/quicky/crates'
+import { isPrismaSchemaDrift, SCHEMA_SYNC_HINT } from '@/lib/quicky/prisma-sync'
 
 export async function GET(_req: NextRequest) {
   const gate = await requireAdmin()
@@ -37,7 +38,16 @@ export async function PATCH(req: NextRequest) {
   const existing = await db.realmDefinition.findUnique({ where: { level } })
   if (!existing) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
-  const data: Record<string, unknown> = {}
+  // Typed (NOT `as never`) so the compiler itself catches any future
+  // field drift between this route and schema.prisma.
+  const data: {
+    promotionThreshold?: number
+    cycleDurationDays?: number
+    cratePoints?: number
+    cratePointsByPlace?: string
+    isActive?: boolean
+    rewards?: string
+  } = {}
   if (body?.promotionThreshold !== undefined) {
     const t = Number(body.promotionThreshold)
     if (!Number.isInteger(t) || t < 0 || t > 1_000_000) {
@@ -92,7 +102,17 @@ export async function PATCH(req: NextRequest) {
 
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
 
-  const updated = await db.realmDefinition.update({ where: { level }, data: data as never })
+  let updated
+  try {
+    updated = await db.realmDefinition.update({ where: { level }, data })
+  } catch (err) {
+    // Stale generated client / un-pushed DB columns — say so instead of a
+    // cryptic 500 (this is exactly the "realm config not saving" bug).
+    if (isPrismaSchemaDrift(err)) {
+      return NextResponse.json({ error: 'schema_out_of_sync', message: SCHEMA_SYNC_HINT }, { status: 500 })
+    }
+    throw err
+  }
   await logAdminAction(gate.me.id, 'realm_config_update', 'RealmDefinition', updated.id, { level, ...data })
   return NextResponse.json({ ok: true, realm: updated })
 }

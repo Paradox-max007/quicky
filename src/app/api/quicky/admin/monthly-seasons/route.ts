@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 import { getOrCreateActiveSeason } from '@/lib/quicky/season'
+import { isPrismaSchemaDrift, SCHEMA_SYNC_HINT } from '@/lib/quicky/prisma-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, season })
 }
 
-export async function PATCH(req: NextRequest) {
+async function patchImpl(req: NextRequest) {
   const gate = await requireAdmin()
   if (gate.error) return gate.error
 
@@ -173,7 +174,13 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── Plain season field update ─────────────────────────────────────────────
-  const data: Record<string, unknown> = {}
+  const data: {
+    name?: string
+    imageUrl?: string | null
+    startsAt?: Date
+    endsAt?: Date
+    isActive?: boolean
+  } = {}
   if (body?.name !== undefined) {
     const name = String(body.name).trim().slice(0, 60)
     if (!name) return NextResponse.json({ error: 'name_required' }, { status: 400 })
@@ -195,9 +202,28 @@ export async function PATCH(req: NextRequest) {
   if (body?.isActive !== undefined) data.isActive = Boolean(body.isActive)
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
 
-  const updated = await db.season.update({ where: { id }, data: data as never })
+  let updated
+  try {
+    updated = await db.season.update({ where: { id }, data })
+  } catch (err) {
+    if (isPrismaSchemaDrift(err)) {
+      return NextResponse.json({ error: 'schema_out_of_sync', message: SCHEMA_SYNC_HINT }, { status: 500 })
+    }
+    throw err
+  }
   await logAdminAction(gate.me.id, 'monthly_season_update', 'Season', id, data)
   return NextResponse.json({ ok: true, season: updated })
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    return await patchImpl(req)
+  } catch (err) {
+    if (isPrismaSchemaDrift(err)) {
+      return NextResponse.json({ error: 'schema_out_of_sync', message: SCHEMA_SYNC_HINT }, { status: 500 })
+    }
+    throw err
+  }
 }
 
 export async function DELETE(req: NextRequest) {

@@ -82,31 +82,45 @@ let bootstrapCheckedAt = 0
 const BOOTSTRAP_TTL_MS = 60_000
 
 /**
- * Idempotently ensure at least one ACTIVE crate exists (seed: 100 levels,
- * free + crate coin prizes with milestone bumps, N×20 thresholds, default
- * prices). Admins own everything afterwards through the console.
+ * Idempotently ensure at least one ACTIVE crate exists AND that it has its
+ * level rows (seed: 100 levels, free + crate coin prizes with milestone
+ * bumps, N×20 thresholds, default prices). Admins own everything afterwards
+ * through the console.
+ *
+ * SELF-HEAL: if the Prisma client/DB was mid-sync when the seed crate was
+ * created (e.g. an older generated client rejected `thresholdPoints`), the
+ * crate row can exist with ZERO level rows — an empty, broken pass. The
+ * backfill below re-creates the missing levels (skipDuplicates) so the very
+ * next load heals it.
  */
 export async function ensureCrateBootstrap(): Promise<void> {
   const now = Date.now()
   if (now - bootstrapCheckedAt < BOOTSTRAP_TTL_MS) return
   bootstrapCheckedAt = now
 
-  const count = await db.crate.count({ where: { isActive: true } }).catch(() => 0)
-  if (count > 0) return
-
-  const crate = await db.crate
-    .create({
-      data: {
-        name: 'Realm Crate',
-        description: 'The battle pass — win realms to climb 100 levels of free + crate prizes.',
-        priceCoins: CRATE_UNLOCK_PRICE_DEFAULT,
-        levelCount: CRATE_LEVELS_DEFAULT,
-        isActive: true,
-        sortOrder: 0,
-      },
-    })
+  let crate = await db.crate
+    .findFirst({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } })
     .catch(() => null)
+  if (!crate) {
+    crate = await db.crate
+      .create({
+        data: {
+          name: 'Realm Crate',
+          description: 'The battle pass — win realms to climb 100 levels of free + crate prizes.',
+          priceCoins: CRATE_UNLOCK_PRICE_DEFAULT,
+          levelCount: CRATE_LEVELS_DEFAULT,
+          isActive: true,
+          sortOrder: 0,
+        },
+      })
+      .catch(() => null)
+  }
   if (!crate) return
+
+  // Half-seeded guard: only backfill when the crate has no level rows at all
+  // (a failed count read also skips — same no-op behavior as before).
+  const existingLevels = await db.crateLevel.count({ where: { crateId: crate.id } }).catch(() => 1)
+  if (existingLevels > 0) return
 
   await db.crateLevel
     .createMany({

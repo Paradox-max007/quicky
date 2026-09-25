@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 import { CRATE_LEVELS_DEFAULT, CRATE_THRESHOLD_STEP_DEFAULT, ensureCrateBootstrap } from '@/lib/quicky/crates'
+import { isPrismaSchemaDrift, SCHEMA_SYNC_HINT } from '@/lib/quicky/prisma-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +28,9 @@ const MAX_LEVELS = 100
 const MAX_QTY = 100_000
 const MAX_PRICE = 1_000_000
 
-function cleanLevelFields(body: Record<string, unknown>): {
+/** Cleaned level fields — typed (NOT `as never`) so the compiler catches any
+ *  drift between this route and schema.prisma (the stale-client bug class). */
+type LevelWriteFields = {
   prizeType?: string
   itemId?: string | null
   prizeName?: string | null
@@ -40,7 +43,9 @@ function cleanLevelFields(body: Record<string, unknown>): {
   freePrizeEmoji?: string | null
   freeQuantity?: number
   thresholdPoints?: number
-} {
+}
+
+function cleanLevelFields(body: Record<string, unknown>): LevelWriteFields {
   const out: Record<string, unknown> = {}
   if (body.prizeType !== undefined) {
     const t = String(body.prizeType)
@@ -75,10 +80,13 @@ function cleanLevelFields(body: Record<string, unknown>): {
     const t = Math.floor(Number(body.thresholdPoints))
     out.thresholdPoints = Number.isInteger(t) && t >= 0 && t <= 1_000_000 ? t : undefined
   }
-  return out as {
-    prizeType?: string; itemId?: string | null; prizeName?: string | null; prizeEmoji?: string | null; quantity?: number; priceCoins?: number;
-    freePrizeType?: string; freeItemId?: string | null; freePrizeName?: string | null; freePrizeEmoji?: string | null; freeQuantity?: number; thresholdPoints?: number
-  }
+  return out
+}
+
+/** Stale-client / un-pushed-columns → actionable 500 instead of a cryptic
+ *  PrismaClientValidationError (same remedy as realm-config). */
+function driftGuardError(): NextResponse {
+  return NextResponse.json({ error: 'schema_out_of_sync', message: SCHEMA_SYNC_HINT }, { status: 500 })
 }
 
 export async function GET() {
@@ -122,6 +130,7 @@ export async function POST(req: NextRequest) {
   const gate = await requireAdmin()
   if (gate.error) return gate.error
 
+  try {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
   const name = String(body?.name ?? '').trim().slice(0, 60)
   if (!name) return NextResponse.json({ error: 'name_required' }, { status: 400 })
@@ -182,9 +191,13 @@ export async function POST(req: NextRequest) {
 
   await logAdminAction(gate.me.id, 'crate_create', 'Crate', crate.id, { name, levelCount, priceCoins })
   return NextResponse.json({ ok: true, crate })
+  } catch (err) {
+    if (isPrismaSchemaDrift(err)) return driftGuardError()
+    throw err
+  }
 }
 
-export async function PATCH(req: NextRequest) {
+async function patchImpl(req: NextRequest) {
   const gate = await requireAdmin()
   if (gate.error) return gate.error
 
@@ -203,7 +216,7 @@ export async function PATCH(req: NextRequest) {
     const hasStep = Number.isInteger(thresholdStep) && thresholdStep >= 1 && thresholdStep <= 1_000_000
     if (Object.keys(fields).length === 0 && !hasStep) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
     if (Object.keys(fields).length > 0) {
-      await db.crateLevel.updateMany({ where: { crateId: id }, data: fields as never })
+      await db.crateLevel.updateMany({ where: { crateId: id }, data: fields })
     }
     // thresholdStep: re-derive every level's cumulative threshold as
     // (level−1) × step (the quick way to lay out a whole 100-level track;
@@ -232,7 +245,7 @@ export async function PATCH(req: NextRequest) {
     // upsert keeps level rows that were skipped at creation manageable too
     const existing = await db.crateLevel.findUnique({ where: { crateId_level: { crateId: id, level } } })
     if (existing) {
-      await db.crateLevel.update({ where: { crateId_level: { crateId: id, level } }, data: fields as never })
+      await db.crateLevel.update({ where: { crateId_level: { crateId: id, level } }, data: fields })
     } else {
       await db.crateLevel.create({
         data: {
@@ -258,7 +271,15 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── Crate field update ────────────────────────────────────────────────────
-  const data: Record<string, unknown> = {}
+  const data: {
+    name?: string
+    description?: string | null
+    imageUrl?: string | null
+    priceCoins?: number
+    levelCount?: number
+    isActive?: boolean
+    sortOrder?: number
+  } = {}
   if (body?.name !== undefined) {
     const name = String(body.name).trim().slice(0, 60)
     if (!name) return NextResponse.json({ error: 'name_required' }, { status: 400 })
@@ -280,9 +301,18 @@ export async function PATCH(req: NextRequest) {
   if (body?.sortOrder !== undefined) data.sortOrder = Math.max(0, Math.floor(Number(body.sortOrder)) || 0)
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
 
-  const updated = await db.crate.update({ where: { id }, data: data as never })
+  const updated = await db.crate.update({ where: { id }, data })
   await logAdminAction(gate.me.id, 'crate_update', 'Crate', id, data)
   return NextResponse.json({ ok: true, crate: updated })
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    return await patchImpl(req)
+  } catch (err) {
+    if (isPrismaSchemaDrift(err)) return driftGuardError()
+    throw err
+  }
 }
 
 export async function DELETE(req: NextRequest) {
