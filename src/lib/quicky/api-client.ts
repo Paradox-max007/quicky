@@ -769,11 +769,19 @@ export const api = {
     },
     realmRewards: {
       list: () =>
-        jsonFetch<{ rules: any[]; rewards: any[]; placeLimits: Record<string, number> }>('/api/quicky/admin/realm-rewards'),
-      set: (realmLevel: number, rules: { position: number; rewardId: string; level: number; quantity: number }[]) =>
+        jsonFetch<{ rules: any[]; rewards: any[]; stickerBundles: { id: string; name: string }[]; placeLimits: Record<string, number> }>(
+          '/api/quicky/admin/realm-rewards'
+        ),
+      /** ONE set of rewards per won place — kinds: coins / crate points /
+       *  sticker sets (auto-managed rows) + frames / hats / name icons
+       *  (catalog references, cosmetics take a level). */
+      set: (
+        realmLevel: number,
+        entries: { position: number; kind: 'COINS' | 'CRATE_POINTS' | 'STICKER_SET' | 'REWARD'; amount?: number; bundleId?: string; rewardId?: string; level?: number }[]
+      ) =>
         jsonFetch<{ ok: boolean; realmLevel: number; count: number }>('/api/quicky/admin/realm-rewards', {
           method: 'PUT',
-          body: JSON.stringify({ realmLevel, rules }),
+          body: JSON.stringify({ realmLevel, entries }),
         }),
     },
     testAccount: {
@@ -1032,7 +1040,7 @@ export const api = {
     pending: () =>
       jsonFetch<{ grants: any[]; cosmetics: any[] }>('/api/quicky/rewards/pending'),
     claim: () =>
-      jsonFetch<{ ok: boolean; claimed: any[]; coinBalance: number; cosmetics: any[] }>('/api/quicky/rewards/claim', {
+      jsonFetch<{ ok: boolean; claimed: any[]; coinBalance: number; cratePointsAwarded?: number; cosmetics: any[] }>('/api/quicky/rewards/claim', {
         method: 'POST',
       }),
     equip: (rewardId: string, level: number, equip: boolean) =>

@@ -5,8 +5,9 @@
 // Quicky user application:
 //   · dark SaaS shell: fixed left sidebar, top command bar, content area
 //   · sections (admin-console PRD §4 IA): Dashboard / Games / How It Works /
-//     Gifts / Events / Seasons & Realms / Rewards & Cosmetics / Sticker Sets /
-//     Live Tables / Complaints / Users & Test Accounts / Audit Log / Settings
+//     Gifts / Events / Seasons & Realms / Crates / Frames / Hats / Name
+//     Icons / Chat Bubbles / Sticker Sets / Live Tables / Complaints /
+//     Users & Test Accounts / Audit Log / Settings
 //   · header actions: "Open Web App" (configurable URL, new tab, admin stays
 //     logged in) + optional "Open as Test User" (server-authorized swap)
 // Access was already verified SERVER-side by /admin/page.tsx (§105).
@@ -27,10 +28,13 @@ import {
   Zap,
   Crown,
   Settings,
-  Sparkles,
   TestTube2,
   CalendarRange,
   Package,
+  Frame,
+  HardHat,
+  Badge,
+  MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/quicky/api-client'
@@ -45,7 +49,7 @@ import { AdminUsers } from './AdminUsers'
 import { AdminAudit } from './AdminAudit'
 import { AdminMultiplierEventsScreen } from './AdminMultiplierEventsScreen'
 import { AdminRealmsScreen } from './AdminRealmsScreen'
-import { AdminRewardsScreen } from './AdminRewardsScreen'
+import { AdminCosmeticCatalogScreen } from './AdminCosmeticCatalogScreen'
 import { AdminSeasonsScreen } from './AdminSeasonsScreen'
 import { AdminSettingsScreen } from './AdminSettingsScreen'
 import { AdminCratesScreen } from './AdminCratesScreen'
@@ -59,7 +63,10 @@ type Section =
   | 'realms'
   | 'seasons'
   | 'crates'
-  | 'rewards'
+  | 'frames'
+  | 'hats'
+  | 'name-icons'
+  | 'chat-bubbles'
   | 'stickers'
   | 'rules'
   | 'live'
@@ -77,7 +84,10 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard; group: s
   { key: 'realms', label: 'Realms', icon: Crown, group: 'Content' },
   { key: 'seasons', label: 'Seasons', icon: CalendarRange, group: 'Content' },
   { key: 'crates', label: 'Crates / Pass', icon: Package, group: 'Content' },
-  { key: 'rewards', label: 'Rewards & Cosmetics', icon: Sparkles, group: 'Content' },
+  { key: 'frames', label: 'Frames', icon: Frame, group: 'Content' },
+  { key: 'hats', label: 'Hats', icon: HardHat, group: 'Content' },
+  { key: 'name-icons', label: 'Name Icons', icon: Badge, group: 'Content' },
+  { key: 'chat-bubbles', label: 'Chat Bubbles', icon: MessageSquare, group: 'Content' },
   { key: 'stickers', label: 'Sticker Sets', icon: Sticker, group: 'Content' },
   { key: 'live', label: 'Live Tables', icon: Radio, group: 'Operations' },
   { key: 'complaints', label: 'Complaints', icon: Flag, group: 'Operations' },
@@ -243,7 +253,10 @@ export function AdminConsole({ adminName }: { adminName: string }) {
             </div>
           )}
           {section === 'crates' && <AdminCratesScreen />}
-          {section === 'rewards' && <AdminRewardsScreen />}
+          {section === 'frames' && <AdminCosmeticCatalogScreen kind="PROFILE_FRAME" />}
+          {section === 'hats' && <AdminCosmeticCatalogScreen kind="HAT" />}
+          {section === 'name-icons' && <AdminCosmeticCatalogScreen kind="NAME_DECORATOR" />}
+          {section === 'chat-bubbles' && <AdminCosmeticCatalogScreen kind="CHAT_BUBBLE" />}
           {section === 'stickers' && <AdminStickersScreen onBack={() => setSection('overview')} />}
           {section === 'rules' && <AdminRulesScreen onBack={() => setSection('overview')} />}
           {section === 'live' && <AdminLiveTables />}

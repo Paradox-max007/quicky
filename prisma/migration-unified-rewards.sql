@@ -1,0 +1,41 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- unified-rewards update — admin console cosmetic catalogs + ONE realm
+-- reward system.
+-- NO SCHEMA CHANGE — this is a LOGIC-ONLY update, no `prisma db push` needed.
+--
+-- What changed:
+--   · ADMIN SIDE PANEL: the "Rewards & Cosmetics" section is REMOVED and
+--     replaced by four dedicated catalog pages — Frames / Hats / Name Icons /
+--     Chat Bubbles — each with full CRUD (name, description, rarity, level
+--     assets L1/L2 static + L3 animated via upload, name-icon left/right
+--     decorations, chat-bubble colors + live previews).
+--   · ONE REALM REWARD SYSTEM: the "Cycle rewards (top 3)" legacy
+--     gift-item editor and the "Catalog rewards" editor are unified into a
+--     single "Win rewards — one set per place" editor. One realm win grants
+--     exactly ONE set (the catalog grants). The legacy
+--     parseRewardsConfig/grantRewardItems path is deleted from settlement.
+--   · Realm reward kinds: coins (amount) · crate points (amount) · sticker
+--     sets (bundle) · frames + hats (with level) · name icons. Coins, crate
+--     points and sticker sets are auto-managed Reward rows with
+--     deterministic ids (below) so re-saves upsert in place.
+--   · NEW reward type CRATE_POINTS: claimed through the reward popup →
+--     points land on the user's crate pass (awardCratePoints after the
+--     claim transaction flips PENDING → CLAIMED; idempotent).
+--   · Claim rows now embed reward name/icon at settlement (the realm result
+--     screen renders them without a catalog join).
+--   · The realm definition's rewards JSON keeps ONLY the consolationCoins
+--     block (places 4-8); saving a realm clears any legacy first/second/
+--     third item lists.
+--
+-- Auto-managed reward row ids (created/updated by
+-- PUT /api/quicky/admin/realm-rewards):
+--   rmw-<realmLevel>-p<position>-coins
+--   rmw-<realmLevel>-p<position>-cratepts
+--   rmw-<realmLevel>-p<position>-stickers
+--
+-- OPTIONAL data cleanup (cosmetic — legacy first/second/third blocks are
+-- inert; realms get cleaned the first time an admin saves them):
+--   UPDATE "RealmDefinition" SET "rewards" = jsonb_build_object(
+--     'consolationCoins', COALESCE(rewards::jsonb->'consolationCoins', '{}'::jsonb)
+--   )::text WHERE rewards LIKE '%first%' OR rewards LIKE '%second%';
+-- ─────────────────────────────────────────────────────────────────────────────

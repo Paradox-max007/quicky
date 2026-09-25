@@ -1,13 +1,15 @@
 // Quicky — REWARD CATALOG SERVICE (admin-console PRD §8/§10/§12)
 //
-// The reusable reward catalog, separate from realm configuration (§10):
-//   · Reward rows are created FIRST, saved, then assigned to realm positions
-//     via RealmRewardRule.
+// The ONE reward system. Rewards are created in their console pages (Frames /
+// Hats / Name Icons / Chat Bubbles, plus auto-managed coins / crate-points /
+// sticker-set rewards from the Realms screen), then assigned to realm winner
+// positions via RealmRewardRule — ONE set of rewards per won place.
 //   · Settlement snapshots every granted reward into UserRewardGrant rows
 //     (PENDING) — the popup collects them (§12).
 //   · Claim is a single idempotent transaction: COINS credit the wallet,
-//     STICKER_SET/GIFT flow into the EXISTING inventory tables, cosmetics
-//     land in UserCosmetic (one equipped per type).
+//     CRATE_POINTS land on the user's crate pass, STICKER_SET/GIFT flow into
+//     the EXISTING inventory tables, cosmetics land in UserCosmetic (one
+//     equipped per type).
 //
 // Cosmetic levels (§9): 1 + 2 static assets, 3 animated — an actual animated
 // image (GIF / animated WebP / APNG URL) or a frame sequence with fps/loop.
@@ -15,21 +17,23 @@
 
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { awardCratePoints } from '@/lib/quicky/crates'
 
 // ─── Types + constants ──────────────────────────────────────────────────────
 
-export const REWARD_TYPES = ['COINS', 'STICKER_SET', 'GIFT', 'HAT', 'PROFILE_FRAME', 'NAME_DECORATOR', 'CHAT_BUBBLE'] as const
+export const REWARD_TYPES = ['COINS', 'CRATE_POINTS', 'STICKER_SET', 'GIFT', 'HAT', 'PROFILE_FRAME', 'NAME_DECORATOR', 'CHAT_BUBBLE'] as const
 export type RewardType = (typeof REWARD_TYPES)[number]
 
 export const COSMETIC_TYPES: RewardType[] = ['HAT', 'PROFILE_FRAME', 'NAME_DECORATOR', 'CHAT_BUBBLE']
 
 export const REWARD_TYPE_LABELS: Record<RewardType, string> = {
   COINS: 'In-game Coins',
+  CRATE_POINTS: 'Crate Points',
   STICKER_SET: 'Sticker Set',
   GIFT: 'Gift Item',
   HAT: 'Profile Hat',
   PROFILE_FRAME: 'Profile Frame',
-  NAME_DECORATOR: 'Name Decorator',
+  NAME_DECORATOR: 'Name Icon',
   CHAT_BUBBLE: 'Chat Bubble',
 }
 
@@ -46,6 +50,7 @@ export type LevelAsset = { kind: 'image'; url: string } | { kind: 'emoji'; glyph
 
 export type RewardMetadata = {
   coinAmount?: number
+  cratePoints?: number
   itemId?: string
   bundleId?: string
   levels?: Partial<Record<1 | 2 | 3, LevelAsset | CosmeticAnimation>>
@@ -92,6 +97,10 @@ export function validateRewardInput(input: {
       const amt = Number(meta.coinAmount)
       if (!Number.isInteger(amt) || amt < 1 || amt > 1_000_000) return { ok: false, message: 'Coin rewards need a coin amount between 1 and 1,000,000.' }
     }
+    if (rewardType === 'CRATE_POINTS') {
+      const pts = Number(meta.cratePoints)
+      if (!Number.isInteger(pts) || pts < 1 || pts > 100_000) return { ok: false, message: 'Crate-point rewards need an amount between 1 and 100,000.' }
+    }
     if (rewardType === 'GIFT' && !meta.itemId) return { ok: false, message: 'Gift rewards need a catalog item.' }
     if (rewardType === 'STICKER_SET' && !meta.bundleId) return { ok: false, message: 'Sticker-set rewards need a sticker bundle.' }
   }
@@ -130,6 +139,7 @@ export function serializeReward(r: RewardRow) {
 /** Resolve the display icon for a reward at a level (snapshot-friendly). */
 export function rewardIcon(meta: RewardMetadata, rewardType: string, level = 1): string {
   if (rewardType === 'COINS') return '🪙'
+  if (rewardType === 'CRATE_POINTS') return '⭐'
   const lv = meta.levels?.[level as 1 | 2 | 3]
   if (lv) {
     if ('kind' in lv && lv.kind === 'image') return lv.url
@@ -146,8 +156,6 @@ export function rewardIcon(meta: RewardMetadata, rewardType: string, level = 1):
   return '🎁'
 }
 
-// ─── Settlement → PENDING grants (§12.1 steps 1-6) ─────────────────────────
-
 export type GrantSpec = { rewardId: string; level: number; quantity: number }
 
 /** Snapshot JSON stored on the grant row (§21.4 — stable definition). */
@@ -163,6 +171,7 @@ export function buildRewardSnapshot(reward: { id: string; rewardType: string; na
     icon: rewardIcon(meta, reward.rewardType, level),
     description: reward.description,
     coinAmount: reward.rewardType === 'COINS' ? (meta.coinAmount ?? 0) : undefined,
+    cratePoints: reward.rewardType === 'CRATE_POINTS' ? (meta.cratePoints ?? 0) : undefined,
     itemId: reward.rewardType === 'GIFT' ? (meta.itemId ?? undefined) : undefined,
     bundleId: reward.rewardType === 'STICKER_SET' ? (meta.bundleId ?? undefined) : undefined,
     decorator: reward.rewardType === 'NAME_DECORATOR' ? (meta.decorator ?? undefined) : undefined,
@@ -206,6 +215,8 @@ export type ClaimOutcome = {
   claimed: { id: string; name: string; rewardType: string; icon: string; quantity: number; level: number }[]
   alreadyClaimed: number
   coinBalance: number
+  /** Crate points banked by this claim (CRATE_POINTS grants land on the pass). */
+  cratePointsAwarded: number
 }
 
 /**
@@ -218,10 +229,15 @@ export async function claimPendingRewards(userId: string): Promise<ClaimOutcome>
   const pending = await db.userRewardGrant.findMany({ where: { userId, status: 'PENDING' }, orderBy: { grantedAt: 'asc' } })
   if (pending.length === 0) {
     const me = await db.user.findUnique({ where: { id: userId }, select: { coinBalance: true } })
-    return { claimed: [], alreadyClaimed: 0, coinBalance: me?.coinBalance ?? 0 }
+    return { claimed: [], alreadyClaimed: 0, coinBalance: me?.coinBalance ?? 0, cratePointsAwarded: 0 }
   }
 
   const claimed: ClaimOutcome['claimed'] = []
+  // CRATE_POINTS grants: the PENDING→CLAIMED flip stays INSIDE the
+  // transaction (idempotency), but the pass points land right AFTER it —
+  // awardCratePoints owns its own bootstrap/level logic and must run on the
+  // root client, never inside the interactive-tx callback.
+  let cratePointsAwarded = 0
 
   await db
     .$transaction(async (tx) => {
@@ -234,12 +250,16 @@ export async function claimPendingRewards(userId: string): Promise<ClaimOutcome>
         })
         if (flip.count === 0) continue
 
-        await applyGrantEffect(tx, userId, grant.rewardSnapshot, grant.quantity, grant.level, grant.rewardId)
         let snapshot: Record<string, unknown> = {}
         try {
           snapshot = JSON.parse(grant.rewardSnapshot) as Record<string, unknown>
         } catch {
           snapshot = {}
+        }
+        if (String(snapshot.rewardType ?? '') === 'CRATE_POINTS') {
+          cratePointsAwarded += Math.max(0, Math.floor(Number(snapshot.cratePoints ?? 0))) * Math.max(1, grant.quantity)
+        } else {
+          await applyGrantEffect(tx, userId, grant.rewardSnapshot, grant.quantity, grant.level, grant.rewardId)
         }
         claimed.push({
           id: grant.id,
@@ -254,10 +274,19 @@ export async function claimPendingRewards(userId: string): Promise<ClaimOutcome>
     .catch(() => {
       // Transaction failed (e.g. a concurrent claim won the race) — report
       // only what this call actually claimed.
+      cratePointsAwarded = 0
+      claimed.length = 0
     })
 
+  // Bank the claimed crate points onto the user's pass (AFTER the tx).
+  // Safe on its own: awardCratePoints never throws and the status flip
+  // above already guards double-crediting.
+  if (cratePointsAwarded > 0) {
+    await awardCratePoints(userId, cratePointsAwarded)
+  }
+
   const me = await db.user.findUnique({ where: { id: userId }, select: { coinBalance: true } })
-  return { claimed, alreadyClaimed: 0, coinBalance: me?.coinBalance ?? 0 }
+  return { claimed, alreadyClaimed: 0, coinBalance: me?.coinBalance ?? 0, cratePointsAwarded }
 }
 
 /**
@@ -334,6 +363,7 @@ export type PendingGrantView = {
   quantity: number
   level: number
   coinAmount: number | null
+  cratePoints: number | null
   grantedAt: string
   realmLevel: number
   levelAsset: LevelAsset | CosmeticAnimation | null
@@ -360,6 +390,7 @@ export async function getPendingGrants(userId: string): Promise<PendingGrantView
       quantity: r.quantity,
       level: r.level,
       coinAmount: s.coinAmount != null ? Number(s.coinAmount) : null,
+      cratePoints: s.cratePoints != null ? Number(s.cratePoints) : null,
       grantedAt: r.grantedAt.toISOString(),
       realmLevel: r.realmLevel,
       levelAsset: (s.levelAsset as LevelAsset | CosmeticAnimation | undefined) ?? null,

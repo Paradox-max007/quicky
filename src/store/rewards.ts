@@ -30,6 +30,7 @@ export type PendingGrant = {
   quantity: number
   level: number
   coinAmount: number | null
+  cratePoints: number | null
   grantedAt: string
   realmLevel: number
   levelAsset: LevelAsset | CosmeticAnimation | null
@@ -54,6 +55,8 @@ export type CosmeticItem = {
 type ClaimResult = {
   claimed: { id: string; name: string; rewardType: string; icon: string; quantity: number; level: number }[]
   coinBalance: number
+  /** Crate points banked onto the battle pass by this claim. */
+  cratePointsAwarded: number
 }
 
 type RewardsState = {
@@ -110,6 +113,7 @@ export const useRewardsStore = create<RewardsState>((set, get) => ({
       const result: ClaimResult = {
         claimed: (res?.claimed ?? []) as ClaimResult['claimed'],
         coinBalance: Number(res?.coinBalance ?? 0),
+        cratePointsAwarded: Number(res?.cratePointsAwarded ?? 0),
       }
       const cosmetics = (res?.cosmetics ?? []) as CosmeticItem[]
       set({ lastClaim: result, grants: [], cosmetics, popupOpen: true })

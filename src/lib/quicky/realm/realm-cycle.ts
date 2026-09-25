@@ -18,10 +18,10 @@ import { db } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { ensureRealmBootstrap } from './realm-config'
 import { eligibleForPromotion } from './realm-promotion'
-import { parseRewardsConfig, grantRewardItems, parseConsolationCoins } from './realm-rewards'
+import { parseConsolationCoins } from './realm-rewards'
 import { nextAfterPromotion } from './realm-seasons'
 import { awardCratePoints, cratePointsForPlace, parseCratePointsByPlace } from '@/lib/quicky/crates'
-import { createPendingGrants, type GrantSpec } from '@/lib/quicky/rewards/catalog'
+import { createPendingGrants, type GrantSpec, rewardIcon, parseRewardMetadata } from '@/lib/quicky/rewards/catalog'
 import { getClient } from '@/lib/quicky/realtime'
 
 /** PRD §27/§29 — target cohort size. 8 seats: places 1-3 promote, places
@@ -280,7 +280,6 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
   }
 
   const cohorts = await db.realmCohort.findMany({ where: { cycleId }, select: { id: true } })
-  const rewardSnapshot = parseRewardsConfig(cycle.rewardSnapshot)
   // Consolation coins for places 4-8: cycle SNAPSHOT first (§26/§39 — admin
   // edits never rewrite a running cycle), the live realm definition as the
   // fallback for cycles created before the consolation system existed.
@@ -291,13 +290,29 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
   const cratePlacePoints = parseCratePointsByPlace(defRow?.cratePointsByPlace)
   const realmCratePoints = Math.max(0, defRow?.cratePoints ?? cycle.realmLevel)
   const consolation = parseConsolationCoins(cycle.rewardSnapshot) ?? parseConsolationCoins(defRow?.rewards ?? null)
-  // Admin-console PRD §10 — catalog-based rewards assigned per position,
-  // SNAPSHOTTED into the cycle at creation ("catalog" block in the JSON):
-  //   { "catalog": { "first": [{rewardId, level, quantity}], ... } }
+  // Admin-console PRD §10 — the ONE reward system: catalog rules assigned per
+  // winner position, SNAPSHOTTED into the cycle at creation ("catalog" block
+  // in the JSON): { "catalog": { "first": [{rewardId, level, quantity}], ... } }
+  // One realm win → ONE set of rewards (this list). The legacy top-3 gift-item
+  // block is no longer granted — it was a duplicate of the same idea.
   const catalogRules = parseCatalogSnapshot(cycle.rewardSnapshot)
   const rewardsByLevel = await db.realmRewardRule.findMany({
     where: { realmLevel: cycle.realmLevel, isActive: true },
   }).catch(() => [])
+
+  // Display enrichment: the claim rows' rewards JSON is read straight by the
+  // realm result screen (no catalog join at read time) — embed name/icon.
+  const displayIds = new Set<string>()
+  for (const list of [catalogRules.first, catalogRules.second, catalogRules.third]) {
+    for (const spec of list) displayIds.add(spec.rewardId)
+  }
+  for (const rule of rewardsByLevel) displayIds.add(rule.rewardId)
+  const displayRows = displayIds.size
+    ? await db.reward
+        .findMany({ where: { id: { in: [...displayIds] } }, select: { id: true, name: true, rewardType: true, metadata: true } })
+        .catch(() => [] as { id: string; name: string; rewardType: string; metadata: string | null }[])
+    : []
+  const displayById = new Map(displayRows.map((r) => [r.id, r]))
 
   for (const cohort of cohorts) {
     const members = await db.realmCohortMember.findMany({ where: { cohortId: cohort.id } })
@@ -331,11 +346,10 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
       // §58 — a result row for EVERY member (rank always; rewards only for
       // top-3). Unique [userId, cycleId] → settlement can't double-grant.
       const place = rank === 1 ? 'first' : rank === 2 ? 'second' : rank === 3 ? 'third' : null
-      const items = place ? rewardSnapshot[place] : []
-      // Admin-console PRD §10/§12 — catalog rewards for this place: resolved
-      // from the cycle snapshot first (§26/§39 — later admin edits never
-      // rewrite a running cycle), with the live rules as the source when the
-      // cycle predates the catalog system.
+      // The ONE reward set for this place: resolved from the cycle snapshot
+      // first (§26/§39 — later admin edits never rewrite a running cycle),
+      // with the live rules as the source when the cycle predates the
+      // catalog system.
       const catalogSpecs: GrantSpec[] = place
         ? catalogRules[place]?.length
           ? catalogRules[place]
@@ -344,10 +358,19 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
               .map((r) => ({ rewardId: r.rewardId, level: r.level, quantity: r.quantity }))
         : []
       if (rank <= 3 || promoted) {
-        const rewardsJson = JSON.stringify([
-          ...(items ?? []).map((it) => ({ itemId: it.itemId, quantity: it.quantity })),
-          ...catalogSpecs.map((spec) => ({ ...spec, rewardCatalog: true })),
-        ])
+        // Enriched entries (name + icon from the live catalog rows) — the
+        // result screen renders them without another lookup.
+        const rewardsJson = JSON.stringify(
+          catalogSpecs.map((spec) => {
+            const row = displayById.get(spec.rewardId)
+            return {
+              ...spec,
+              rewardCatalog: true,
+              name: row?.name ?? 'Reward',
+              icon: row ? rewardIcon(parseRewardMetadata(row.metadata), row.rewardType, spec.level) : '🎁',
+            }
+          })
+        )
         await db.realmRewardClaim
           .upsert({
             where: { userId_cycleId: { userId: member.userId, cycleId } },
@@ -355,13 +378,8 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
             update: {},
           })
           .catch(() => {})
-        // §59/§82 — LEGACY item rewards keep flowing into the EXISTING
-        // inventory (UserItem) directly (back-compat for live cycles).
-        if (items && items.length > 0) {
-          await grantRewardItems(member.userId, items)
-        }
-        // Admin-console PRD §12 — catalog rewards become PENDING grants
-        // collected through the reward popup (online + offline users alike).
+        // §12 — the reward set becomes PENDING grants collected through the
+        // reward popup (online + offline users alike). ONE set per win.
         if (catalogSpecs.length > 0) {
           const created = await createPendingGrants(member.userId, cycleId, cycle.realmLevel, catalogSpecs)
           if (created > 0) notifyRewardsPending(member.userId)

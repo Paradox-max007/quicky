@@ -66,6 +66,7 @@ const RARITY_TINT: Record<string, string> = {
 
 function subtitle(grant: PendingGrant): string {
   if (grant.rewardType === 'COINS') return `${(grant.coinAmount ?? 0).toLocaleString()} coins`
+  if (grant.rewardType === 'CRATE_POINTS') return `+${(grant.cratePoints ?? 0).toLocaleString()} crate points`
   if (grant.quantity > 1) return `Quantity ×${grant.quantity}`
   if (grant.level >= 2) return `Level ${grant.level}${grant.level === 3 ? ' · Animated' : ''}`
   return 'Ready'
@@ -184,6 +185,11 @@ export function RewardCollectPopup() {
                 {lastClaim.coinBalance > 0 && (
                   <p className="text-center text-xs text-white/50">
                     Coin balance: <b className="text-[var(--qk-gold)]">{lastClaim.coinBalance.toLocaleString()}</b>
+                  </p>
+                )}
+                {lastClaim.cratePointsAwarded > 0 && (
+                  <p className="text-center text-xs text-white/50">
+                    <b className="text-[var(--qk-accent)]">+{lastClaim.cratePointsAwarded.toLocaleString()}</b> crate points banked on your battle pass
                   </p>
                 )}
                 <button

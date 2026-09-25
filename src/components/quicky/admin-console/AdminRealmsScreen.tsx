@@ -4,13 +4,16 @@
 // Realms console, three sections:
 //   · Realm configuration — the 15 tiers: threshold / cycle duration /
 //     active toggles (edits apply to FUTURE cycles — snapshots keep history)
-//   · Rewards — per place (1st ≤ 5 items, 2nd ≤ 3, 3rd ≤ 1) picked from the
-//     EXISTING gift catalog, granted into the existing inventory
+//   · Win rewards — ONE set per won place (1st ≤ 5, 2nd ≤ 3, 3rd ≤ 1):
+//     coins / crate points (amount), sticker sets (bundle) + frames / hats
+//     (with level) / name icons from their console catalog pages. ONE
+//     system — the old cycle gift-item rewards and the catalog rewards
+//     editors are unified into this one.
 //   · Active cycles — per-level cycle window + players + cohort count, with
 //     a cohort drill-down (live standings) and a manual settlement trigger
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Crown, RefreshCw, ChevronDown, ChevronLeft, Play, Sparkles } from 'lucide-react'
+import { Crown, RefreshCw, ChevronDown, ChevronLeft, Play } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -29,10 +32,22 @@ type RealmDef = {
   cratePointsByPlace: string | null
 }
 
-type ItemOption = { id: string; name: string; emoji: string; iconType: string; iconValue: string | null }
-
 type CatalogRule = { id?: string; realmLevel?: number; position: number; rewardId: string; level: number; quantity: number }
-type CatalogReward = { id: string; rewardType: string; name: string; rarity: string; metadata: { coinAmount?: number; itemId?: string; bundleId?: string; levels?: Record<string, unknown> } }
+type CatalogReward = { id: string; rewardType: string; name: string; rarity: string; metadata: { coinAmount?: number; cratePoints?: number; itemId?: string; bundleId?: string; levels?: Record<string, unknown> } }
+
+/** ONE reward-set entry per won place (the unified editor's draft shape). */
+type RewardEntry = {
+  position: number
+  kind: 'COINS' | 'CRATE_POINTS' | 'STICKER_SET' | 'REWARD'
+  /** COINS / CRATE_POINTS amount (drafted as a string for the input). */
+  amount?: string
+  /** STICKER_SET → bundle id. */
+  bundleId?: string
+  /** REWARD → frames / hats / name icons catalog id. */
+  rewardId?: string
+  /** REWARD → cosmetic level (frames / hats). */
+  level?: number
+}
 
 type CycleRow = {
   level: number
@@ -60,9 +75,6 @@ type CohortDetail = {
   endAt: string | null
   members: { rank: number; userId: string; name: string; avatar: string | null; cyclePoints: number; finalRank: number | null; promoted: boolean }[]
 }
-
-type RewardItem = { itemId: string; quantity: number }
-type RewardsConfig = { first: RewardItem[]; second: RewardItem[]; third: RewardItem[] }
 
 /** Consolation coin gifts for places 4-8 — { '4': 50, '5': 30, '6': 20, '7': 10, '8': 5 }. */
 type ConsolationCoins = Record<'4' | '5' | '6' | '7' | '8', number>
@@ -99,12 +111,13 @@ function parseConsolation(json: string | null | undefined): ConsolationCoins {
   return out
 }
 
-function parseRewards(json: string | null | undefined): RewardsConfig {
+/** Legacy top-3 gift-item rewards still stored on a realm (migration hint). */
+function legacyRewardCount(r: RealmDef): number {
   try {
-    const raw = JSON.parse(json ?? '{}') as Partial<RewardsConfig>
-    return { first: raw.first ?? [], second: raw.second ?? [], third: raw.third ?? [] }
+    const raw = JSON.parse(r.rewards ?? '{}') as Partial<Record<'first' | 'second' | 'third', unknown[]>>
+    return (raw.first?.length ?? 0) + (raw.second?.length ?? 0) + (raw.third?.length ?? 0)
   } catch {
-    return { first: [], second: [], third: [] }
+    return 0
   }
 }
 
@@ -114,14 +127,26 @@ const PLACE_LIMITS: { key: 'first' | 'second' | 'third'; label: string; limit: n
   { key: 'third', label: '3rd place (max 1 item)', limit: 1 },
 ]
 
-const COSMETIC_TYPES = ['HAT', 'PROFILE_FRAME', 'NAME_DECORATOR', 'CHAT_BUBBLE']
+/** Cosmetic kinds pickable in the realm reward set (with a level for frames/hats). */
+const PICKABLE_REWARD_TYPES = ['PROFILE_FRAME', 'HAT', 'NAME_DECORATOR'] as const
+
+function typeEmoji(rewardType: string): string {
+  if (rewardType === 'PROFILE_FRAME') return '🖼️'
+  if (rewardType === 'HAT') return '🎩'
+  if (rewardType === 'NAME_DECORATOR') return '👑'
+  if (rewardType === 'STICKER_SET') return '✨'
+  if (rewardType === 'CRATE_POINTS') return '⭐'
+  if (rewardType === 'COINS') return '🪙'
+  return '🎁'
+}
 
 export function AdminRealmsScreen() {
   const [realms, setRealms] = useState<RealmDef[]>([])
-  const [itemOptions, setItemOptions] = useState<ItemOption[]>([])
   const [catalogRewards, setCatalogRewards] = useState<CatalogReward[]>([])
   const [catalogRules, setCatalogRules] = useState<CatalogRule[]>([])
-  const [catalogDraft, setCatalogDraft] = useState<CatalogRule[]>([])
+  const [stickerBundles, setStickerBundles] = useState<{ id: string; name: string }[]>([])
+  /** Draft of the unified reward set while the editor is open on a realm. */
+  const [rewardDraft, setRewardDraft] = useState<RewardEntry[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [totals, setTotals] = useState<{ activeCycles: number; cohorts: number; players: number } | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -136,7 +161,6 @@ export function AdminRealmsScreen() {
   const [durationDraft, setDurationDraft] = useState('')
   const [cratePlaceDraft, setCratePlaceDraft] = useState<Record<string, string>>({})
   const [activeDraft, setActiveDraft] = useState(true)
-  const [rewardsDraft, setRewardsDraft] = useState<RewardsConfig>({ first: [], second: [], third: [] })
   const [consolationDraft, setConsolationDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
@@ -149,11 +173,11 @@ export function AdminRealmsScreen() {
         api.admin.realmRewards.list().catch(() => null),
       ])
       setRealms((configRes?.realms ?? []) as RealmDef[])
-      setItemOptions((configRes?.itemOptions ?? []) as ItemOption[])
       setCycles((cyclesRes?.realms ?? []) as CycleRow[])
       setTotals(cyclesRes?.totals ?? null)
       setCatalogRewards((rulesRes?.rewards ?? []) as CatalogReward[])
       setCatalogRules((rulesRes?.rules ?? []) as CatalogRule[])
+      setStickerBundles(((rulesRes?.stickerBundles ?? []) as { id: string; name: string }[]).map((b) => ({ id: b.id, name: b.name })))
     } catch {
       setFailed(true)
     } finally {
@@ -167,18 +191,46 @@ export function AdminRealmsScreen() {
 
   const cycleByLevel = useMemo(() => new Map(cycles.map((c) => [c.level, c])), [cycles])
 
+  /** Read-only chips for a place's saved reward set (resolved from the live
+   *  rules + catalog — coins / crate points / sticker sets / cosmetics). */
+  const resolvedChips = (realmLevel: number, position: number): { icon: string; label: string }[] =>
+    catalogRules
+      .filter((rule) => rule.realmLevel === realmLevel && rule.position === position)
+      .map((rule) => {
+        const reward = catalogRewards.find((c) => c.id === rule.rewardId)
+        if (!reward) return { icon: '❓', label: 'Removed reward' }
+        if (reward.rewardType === 'COINS') return { icon: '🪙', label: `${(reward.metadata.coinAmount ?? 0).toLocaleString()} coins` }
+        if (reward.rewardType === 'CRATE_POINTS') return { icon: '⭐', label: `${(reward.metadata.cratePoints ?? 0).toLocaleString()} crate pts` }
+        if (reward.rewardType === 'STICKER_SET') return { icon: '✨', label: `${stickerBundles.find((b) => b.id === reward.metadata.bundleId)?.name ?? 'Sticker set'} (set)` }
+        const leveled = reward.rewardType === 'HAT' || reward.rewardType === 'PROFILE_FRAME'
+        return { icon: typeEmoji(reward.rewardType), label: `${reward.name}${leveled ? ` · L${rule.level}` : ''}` }
+      })
+
   const startEdit = (r: RealmDef) => {
     setEditing(editing === r.level ? null : r.level)
     setThresholdDraft(String(r.promotionThreshold))
     setDurationDraft(String(r.cycleDurationDays))
     setCratePlaceDraft(Object.fromEntries(CRATE_PLACES.map((p) => [p, String(placePointsFor(r, p))])))
     setActiveDraft(r.isActive)
-    setRewardsDraft(parseRewards(r.rewards))
     setConsolationDraft(Object.fromEntries(CONSOLATION_PLACES.map((p) => [p, String(parseConsolation(r.rewards)[p])])))
-    setCatalogDraft(
+    // Seed the unified reward-set draft from the live rules: coins / crate
+    // points / sticker sets resolve to their managed kinds, cosmetic rules
+    // keep their catalog reference (+ level for frames / hats). Unsupported
+    // legacy rules (GIFT items etc.) are dropped — saving replaces the
+    // realm's rules wholesale (ONE system).
+    setRewardDraft(
       catalogRules
         .filter((rule) => rule.realmLevel === r.level)
-        .map((rule) => ({ position: rule.position, rewardId: rule.rewardId, level: rule.level, quantity: rule.quantity }))
+        .flatMap((rule): RewardEntry[] => {
+          const reward = catalogRewards.find((c) => c.id === rule.rewardId)
+          if (reward?.rewardType === 'COINS') return [{ position: rule.position, kind: 'COINS' as const, amount: String(reward.metadata.coinAmount ?? 0) }]
+          if (reward?.rewardType === 'CRATE_POINTS') return [{ position: rule.position, kind: 'CRATE_POINTS' as const, amount: String(reward.metadata.cratePoints ?? 0) }]
+          if (reward?.rewardType === 'STICKER_SET') return [{ position: rule.position, kind: 'STICKER_SET' as const, bundleId: String(reward.metadata.bundleId ?? '') }]
+          if (reward && (PICKABLE_REWARD_TYPES as readonly string[]).includes(reward.rewardType)) {
+            return [{ position: rule.position, kind: 'REWARD' as const, rewardId: rule.rewardId, level: rule.level }]
+          }
+          return []
+        })
     )
   }
 
@@ -196,8 +248,18 @@ export function AdminRealmsScreen() {
       cratePlaces[p] = v
     }
     for (const place of PLACE_LIMITS) {
-      if (rewardsDraft[place.key].length > place.limit) {
-        return toast.error(`${place.label.split(' (')[0]} allows at most ${place.limit} item${place.limit > 1 ? 's' : ''}.`)
+      const position = place.key === 'first' ? 1 : place.key === 'second' ? 2 : 3
+      const entries = rewardDraft.filter((e) => e.position === position)
+      if (entries.length > place.limit) {
+        return toast.error(`${place.label.split(' (')[0]} allows at most ${place.limit} reward${place.limit > 1 ? 's' : ''}.`)
+      }
+      for (const entry of entries) {
+        if (entry.kind === 'COINS' || entry.kind === 'CRATE_POINTS') {
+          const amount = Math.floor(Number(entry.amount))
+          if (!Number.isInteger(amount) || amount < 1) return toast.error('Reward amounts must be whole numbers ≥ 1.')
+        }
+        if (entry.kind === 'STICKER_SET' && !entry.bundleId) return toast.error('Pick a sticker bundle for every sticker-set entry.')
+        if (entry.kind === 'REWARD' && !entry.rewardId) return toast.error('Pick a frame, hat or name icon for every cosmetic entry.')
       }
     }
     const consolation: Record<string, number> = {}
@@ -210,11 +272,20 @@ export function AdminRealmsScreen() {
     }
     setSaving(true)
     try {
-      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, cratePointsByPlace: cratePlaces, rewards: { ...rewardsDraft, consolationCoins: consolation } })
+      // Only the consolation block lives on the realm definition now — the
+      // win-reward set lives in RealmRewardRule (ONE system, ONE set).
+      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, cratePointsByPlace: cratePlaces, rewards: { consolationCoins: consolation } })
       if (rewardFor === level) {
         await api.admin.realmRewards.set(
           level,
-          catalogDraft.map((rule) => ({ position: rule.position, rewardId: rule.rewardId, level: rule.level, quantity: rule.quantity }))
+          rewardDraft.map((e) => ({
+            position: e.position,
+            kind: e.kind,
+            amount: e.kind === 'COINS' || e.kind === 'CRATE_POINTS' ? Math.max(1, Math.floor(Number(e.amount) || 0)) : undefined,
+            bundleId: e.kind === 'STICKER_SET' ? e.bundleId : undefined,
+            rewardId: e.kind === 'REWARD' ? e.rewardId : undefined,
+            level: e.kind === 'REWARD' ? e.level : undefined,
+          }))
         )
       }
       toast.success(`${realms.find((r) => r.level === level)?.name ?? 'Realm'} saved — applies to future cycles`)
@@ -365,81 +436,142 @@ export function AdminRealmsScreen() {
                       Realm active (players at this level keep earning + competing)
                     </label>
 
-                    {/* §53 — rewards editor */}
+                    {/* §53 — ONE reward set per won place (the unified editor) */}
                     <div className="rounded-xl bg-[#0B0E14] border border-white/8 p-3 flex flex-col gap-2.5">
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Cycle rewards (top 3)</p>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Win rewards — one set per place</p>
                         <button onClick={() => setRewardFor(rewardFor === r.level ? null : r.level)} className="text-[10px] font-bold text-[var(--qk-accent)]">
                           {rewardFor === r.level ? 'Hide editor' : 'Edit rewards'}
                         </button>
                       </div>
-                      {PLACE_LIMITS.map((place) => (
-                        <div key={place.key}>
-                          <p className="text-[10px] font-bold text-white/50 mb-1">{place.label}</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(rewardFor === r.level ? rewardsDraft[place.key] : parseRewards(r.rewards)[place.key]).map((it, i) => {
-                              const item = itemOptions.find((o) => o.id === it.itemId)
-                              return (
-                                <span key={`${it.itemId}-${i}`} className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[10.5px] font-bold">
-                                  <span aria-hidden>{item?.emoji ?? '🎁'}</span>
-                                  {item?.name ?? 'Item'}
-                                  <span style={{ color: 'var(--qk-gold)' }}>×{it.quantity}</span>
-                                  {rewardFor === r.level && (
-                                    <button
-                                      onClick={() => setRewardsDraft({ ...rewardsDraft, [place.key]: rewardsDraft[place.key].filter((_, idx) => idx !== i) })}
-                                      className="text-white/40 hover:text-rose-300"
-                                      aria-label="Remove reward"
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </span>
-                              )
-                            })}
-                            {(rewardFor === r.level ? rewardsDraft[place.key].length === 0 : parseRewards(r.rewards)[place.key].length === 0) && (
-                              <span className="text-[10px] text-white/30 font-semibold">No reward configured</span>
-                            )}
-                            {rewardFor === r.level && rewardsDraft[place.key].length < place.limit && (
-                              <select
-                                value=""
-                                onChange={(e) => {
-                                  const itemId = e.target.value
-                                  if (!itemId) return
-                                  setRewardsDraft({ ...rewardsDraft, [place.key]: [...rewardsDraft[place.key], { itemId, quantity: 1 }] })
-                                }}
-                                className="rounded-full bg-[#101623] border border-dashed border-white/20 px-2.5 py-1 text-[10.5px] font-bold text-white/60 outline-none"
-                              >
-                                <option value="">+ Add reward…</option>
-                                {itemOptions.map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.emoji} {o.name}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                          {rewardFor === r.level && rewardsDraft[place.key].length > 0 && (
-                            <div className="mt-1.5 flex flex-wrap gap-2">
-                              {rewardsDraft[place.key].map((it, i) => (
-                                <input
-                                  key={`${it.itemId}-qty-${i}`}
-                                  value={it.quantity}
+                      {legacyRewardCount(r) > 0 && (
+                        <p className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-300/90">
+                          ⚠ {legacyRewardCount(r)} legacy gift-item reward(s) are still stored on this realm — they no longer grant at settlement. Save the realm once to clear them and configure the set below instead.
+                        </p>
+                      )}
+                      {PLACE_LIMITS.map((place) => {
+                        const position = place.key === 'first' ? 1 : place.key === 'second' ? 2 : 3
+                        const editingRewards = rewardFor === r.level
+                        const entries = editingRewards ? rewardDraft.filter((e) => e.position === position) : []
+                        const chips = editingRewards ? [] : resolvedChips(r.level, position)
+                        const pickable = catalogRewards.filter((c) => (PICKABLE_REWARD_TYPES as readonly string[]).includes(c.rewardType))
+                        return (
+                          <div key={`set-${place.key}`}>
+                            <p className="text-[10px] font-bold text-white/50 mb-1">{place.label}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {editingRewards
+                                ? entries.map((entry, i) => {
+                                    const reward = entry.kind === 'REWARD' ? catalogRewards.find((c) => c.id === entry.rewardId) : null
+                                    const leveled = reward?.rewardType === 'PROFILE_FRAME' || reward?.rewardType === 'HAT'
+                                    return (
+                                      <span key={`${entry.kind}-${entry.rewardId ?? entry.bundleId ?? i}-${i}`} className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[10.5px] font-bold">
+                                        <span aria-hidden>{entry.kind === 'COINS' ? '🪙' : entry.kind === 'CRATE_POINTS' ? '⭐' : entry.kind === 'STICKER_SET' ? '✨' : typeEmoji(reward?.rewardType ?? '')}</span>
+                                        {(entry.kind === 'COINS' || entry.kind === 'CRATE_POINTS') && (
+                                          <>
+                                            <input
+                                              value={entry.amount ?? ''}
+                                              onChange={(e) => {
+                                                const v = e.target.value.replace(/[^0-9]/g, '').slice(0, 7)
+                                                const next = [...rewardDraft]
+                                                const at = rewardDraft.indexOf(entry)
+                                                next[at] = { ...entry, amount: v }
+                                                setRewardDraft(next)
+                                              }}
+                                              inputMode="numeric"
+                                              className="w-16 rounded bg-black/40 border border-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white outline-none focus:border-[var(--qk-accent)]/50"
+                                              aria-label={entry.kind === 'COINS' ? 'Coin amount' : 'Crate points amount'}
+                                            />
+                                            <span className="text-white/40">{entry.kind === 'COINS' ? 'coins' : 'crate pts'}</span>
+                                          </>
+                                        )}
+                                        {entry.kind === 'STICKER_SET' && (
+                                          <select
+                                            value={entry.bundleId ?? ''}
+                                            onChange={(e) => {
+                                              const next = [...rewardDraft]
+                                              const at = rewardDraft.indexOf(entry)
+                                              next[at] = { ...entry, bundleId: e.target.value }
+                                              setRewardDraft(next)
+                                            }}
+                                            className="rounded bg-black/40 border border-white/10 text-[10px] text-white/70 px-1 py-0 outline-none max-w-[130px]"
+                                            aria-label="Sticker bundle"
+                                          >
+                                            <option value="">— pick a bundle —</option>
+                                            {stickerBundles.map((b) => (
+                                              <option key={b.id} value={b.id}>{b.name}</option>
+                                            ))}
+                                          </select>
+                                        )}
+                                        {entry.kind === 'REWARD' && (
+                                          <>
+                                            {reward?.name ?? 'Reward'}
+                                            {leveled && (
+                                              <select
+                                                value={entry.level ?? 1}
+                                                onChange={(e) => {
+                                                  const next = [...rewardDraft]
+                                                  const at = rewardDraft.indexOf(entry)
+                                                  next[at] = { ...entry, level: Math.min(3, Math.max(1, Number(e.target.value) || 1)) }
+                                                  setRewardDraft(next)
+                                                }}
+                                                className="rounded bg-black/40 border border-white/10 text-[9px] text-white/70 px-1 py-0 outline-none"
+                                                aria-label="Reward level"
+                                              >
+                                                <option value={1}>L1</option>
+                                                <option value={2}>L2</option>
+                                                <option value={3}>L3</option>
+                                              </select>
+                                            )}
+                                          </>
+                                        )}
+                                        <button
+                                          onClick={() => setRewardDraft(rewardDraft.filter((e) => e !== entry))}
+                                          className="text-white/40 hover:text-rose-300"
+                                          aria-label="Remove reward"
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    )
+                                  })
+                                : chips.map((chip, i) => (
+                                    <span key={`${chip.label}-${i}`} className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[10.5px] font-bold">
+                                      <span aria-hidden>{chip.icon}</span>
+                                      {chip.label}
+                                    </span>
+                                  ))}
+                              {editingRewards && entries.length === 0 && <span className="text-[10px] text-white/30 font-semibold">Nothing in this set yet</span>}
+                              {!editingRewards && chips.length === 0 && <span className="text-[10px] text-white/30 font-semibold">No reward configured</span>}
+                              {editingRewards && entries.length < place.limit && (
+                                <select
+                                  value=""
                                   onChange={(e) => {
-                                    const qty = e.target.value.replace(/[^0-9]/g, '')
-                                    const next = [...rewardsDraft[place.key]]
-                                    next[i] = { ...it, quantity: Math.max(1, Math.floor(Number(qty) || 1)) }
-                                    setRewardsDraft({ ...rewardsDraft, [place.key]: next })
+                                    const v = e.target.value
+                                    if (!v) return
+                                    if (v === 'KIND:COINS') setRewardDraft([...rewardDraft, { position, kind: 'COINS', amount: '100' }])
+                                    else if (v === 'KIND:CRATE_POINTS') setRewardDraft([...rewardDraft, { position, kind: 'CRATE_POINTS', amount: '20' }])
+                                    else if (v === 'KIND:STICKER_SET') setRewardDraft([...rewardDraft, { position, kind: 'STICKER_SET', bundleId: stickerBundles[0]?.id ?? '' }])
+                                    else if (v.startsWith('REWARD:')) setRewardDraft([...rewardDraft, { position, kind: 'REWARD', rewardId: v.slice(7), level: 1 }])
                                   }}
-                                  inputMode="numeric"
-                                  className="w-16 rounded-lg bg-[#0B0E14] border border-white/10 px-2 py-1 text-[11px] font-bold tabular-nums outline-none focus:border-[var(--qk-accent)]/50"
-                                  aria-label={`Quantity for ${itemOptions.find((o) => o.id === it.itemId)?.name ?? 'reward'}`}
-                                />
-                              ))}
+                                  className="rounded-full bg-[#101623] border border-dashed border-white/20 px-2.5 py-1 text-[10.5px] font-bold text-white/60 outline-none"
+                                  aria-label={`Add reward to ${place.label}`}
+                                >
+                                  <option value="">+ Add reward…</option>
+                                  {!entries.some((e) => e.kind === 'COINS') && <option value="KIND:COINS">🪙 Coins</option>}
+                                  {!entries.some((e) => e.kind === 'CRATE_POINTS') && <option value="KIND:CRATE_POINTS">⭐ Crate points</option>}
+                                  {!entries.some((e) => e.kind === 'STICKER_SET') && <option value="KIND:STICKER_SET">✨ Sticker set</option>}
+                                  {pickable.map((rw) => (
+                                    <option key={rw.id} value={`REWARD:${rw.id}`} disabled={entries.some((e) => e.kind === 'REWARD' && e.rewardId === rw.id)}>
+                                      {typeEmoji(rw.rewardType)} {rw.rewardType === 'PROFILE_FRAME' ? 'Frame' : rw.rewardType === 'HAT' ? 'Hat' : 'Name icon'} · {rw.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      ))}
-                      <p className="text-[10px] text-white/30">Legacy gift-item rewards are granted into the existing player inventory at settlement. Cycle-start snapshots keep history stable.</p>
+                          </div>
+                        )
+                      })}
+                      <p className="text-[10px] text-white/30">One realm win grants the whole set for the won place as PENDING rewards — players collect them through the reward popup (online instantly, offline next session). Cycle-start snapshots keep history stable.</p>
 
                       {/* Consolation coins — places 4th-8th ("try hard next time") */}
                       <div className="mt-1 rounded-xl border border-[var(--qk-gold)]/20 bg-[var(--qk-gold)]/[0.04] p-3">
@@ -474,95 +606,6 @@ export function AdminRealmsScreen() {
                         <p className="text-[10px] text-white/30 mt-2 leading-relaxed">
                           Credited to the players finishing 4th-8th at settlement (the “try hard next time” card). Snapshotted at cycle start — edits apply to future cycles.
                         </p>
-                      </div>
-
-                      {/* Admin-console PRD §10 — catalog rewards (claimable via the reward popup) */}
-                      <div className="mt-2.5 rounded-xl border border-[var(--qk-accent)]/20 bg-[var(--qk-accent)]/[0.04] p-3 flex flex-col gap-2.5">
-                        <div className="flex items-center justify-between">
-                          <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--qk-accent)]">
-                            <Sparkles className="w-3 h-3" aria-hidden /> Catalog rewards — reward popup collection
-                          </p>
-                          <span className="text-[9px] text-white/30">from the Rewards &amp; Cosmetics catalog</span>
-                        </div>
-                        {PLACE_LIMITS.map((place) => {
-                          const idx = place.key === 'first' ? 1 : place.key === 'second' ? 2 : 3
-                          const draft = catalogDraft.filter((c) => c.position === idx)
-                          return (
-                            <div key={`cat-${place.key}`}>
-                              <p className="text-[10px] font-bold text-white/50 mb-1">{place.label}</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {draft.map((rule, i) => {
-                                  const reward = catalogRewards.find((r) => r.id === rule.rewardId)
-                                  const isCosmetic = COSMETIC_TYPES.includes(reward?.rewardType ?? '')
-                                  return (
-                                    <span key={`${rule.rewardId}-${rule.level}-${i}`} className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[10.5px] font-bold">
-                                      {reward?.name ?? 'Reward'}
-                                      {isCosmetic && <span className="text-[9px] text-[var(--qk-accent)]">L{rule.level}</span>}
-                                      <span style={{ color: 'var(--qk-gold)' }}>×{rule.quantity}</span>
-                                      {isCosmetic && (
-                                        <select
-                                          value={rule.level}
-                                          onChange={(e) => {
-                                            const next = [...catalogDraft]
-                                            const at = catalogDraft.indexOf(rule)
-                                            next[at] = { ...rule, level: Math.min(3, Math.max(1, Number(e.target.value) || 1)) }
-                                            setCatalogDraft(next)
-                                          }}
-                                          className="rounded bg-black/40 border border-white/10 text-[9px] text-white/70 px-1 py-0 outline-none"
-                                          aria-label="Reward level"
-                                        >
-                                          <option value={1}>L1</option>
-                                          <option value={2}>L2</option>
-                                          <option value={3}>L3</option>
-                                        </select>
-                                      )}
-                                      <input
-                                        value={rule.quantity}
-                                        onChange={(e) => {
-                                          const qty = Math.max(1, Math.floor(Number(e.target.value.replace(/[^0-9]/g, '')) || 1))
-                                          const next = [...catalogDraft]
-                                          const at = catalogDraft.indexOf(rule)
-                                          next[at] = { ...rule, quantity: qty }
-                                          setCatalogDraft(next)
-                                        }}
-                                        inputMode="numeric"
-                                        className="w-12 rounded bg-black/40 border border-white/10 px-1 py-0.5 text-[10px] font-bold tabular-nums text-white outline-none"
-                                        aria-label={`Quantity for ${reward?.name ?? 'reward'}`}
-                                      />
-                                      <button
-                                        onClick={() => setCatalogDraft(catalogDraft.filter((c) => c !== rule))}
-                                        className="text-white/40 hover:text-rose-300"
-                                        aria-label="Remove catalog reward"
-                                      >
-                                        ×
-                                      </button>
-                                    </span>
-                                  )
-                                })}
-                                {draft.length === 0 && <span className="text-[10px] text-white/30 font-semibold">No catalog reward</span>}
-                                {draft.length < place.limit && (
-                                  <select
-                                    value=""
-                                    onChange={(e) => {
-                                      const rewardId = e.target.value
-                                      if (!rewardId) return
-                                      setCatalogDraft([...catalogDraft, { position: idx, rewardId, level: 1, quantity: 1 }])
-                                    }}
-                                    className="rounded-full bg-[#101623] border border-dashed border-white/20 px-2.5 py-1 text-[10.5px] font-bold text-white/60 outline-none"
-                                  >
-                                    <option value="">+ Add catalog reward…</option>
-                                    {catalogRewards.map((r) => (
-                                      <option key={r.id} value={r.id}>
-                                        {r.rewardType.replace('_', ' ')} · {r.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                        <p className="text-[10px] text-white/30">Catalog rewards become PENDING grants at settlement — players collect them through the reward popup (online instantly, offline on next session).</p>
                       </div>
                     </div>
 
