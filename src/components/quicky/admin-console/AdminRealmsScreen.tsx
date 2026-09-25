@@ -26,6 +26,7 @@ type RealmDef = {
   isActive: boolean
   rewards: string | null
   cratePoints: number
+  cratePointsByPlace: string | null
 }
 
 type ItemOption = { id: string; name: string; emoji: string; iconType: string; iconValue: string | null }
@@ -66,6 +67,23 @@ type RewardsConfig = { first: RewardItem[]; second: RewardItem[]; third: RewardI
 /** Consolation coin gifts for places 4-8 — { '4': 50, '5': 30, '6': 20, '7': 10, '8': 5 }. */
 type ConsolationCoins = Record<'4' | '5' | '6' | '7' | '8', number>
 const CONSOLATION_PLACES = ['4', '5', '6', '7', '8'] as const
+
+/** Crate-track placement points (1st-8th) — every ranked player earns their place's points. */
+const CRATE_PLACES = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+const CRATE_PLACE_DEFAULTS: Record<string, number> = { '1': 100, '2': 80, '3': 60, '4': 40, '5': 25, '6': 15, '7': 10, '8': 5 }
+
+function placePointsFor(r: RealmDef, place: string): number {
+  if (r.cratePointsByPlace) {
+    try {
+      const parsed = JSON.parse(r.cratePointsByPlace) as Record<string, unknown>
+      const v = Number(parsed[place])
+      if (Number.isInteger(v) && v >= 0) return v
+    } catch {
+      /* fall through to the default */
+    }
+  }
+  return CRATE_PLACE_DEFAULTS[place] ?? r.cratePoints
+}
 
 function parseConsolation(json: string | null | undefined): ConsolationCoins {
   const out = { 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 } as ConsolationCoins
@@ -116,7 +134,7 @@ export function AdminRealmsScreen() {
   // Editable fields for the open realm row.
   const [thresholdDraft, setThresholdDraft] = useState('')
   const [durationDraft, setDurationDraft] = useState('')
-  const [cratePointsDraft, setCratePointsDraft] = useState('')
+  const [cratePlaceDraft, setCratePlaceDraft] = useState<Record<string, string>>({})
   const [activeDraft, setActiveDraft] = useState(true)
   const [rewardsDraft, setRewardsDraft] = useState<RewardsConfig>({ first: [], second: [], third: [] })
   const [consolationDraft, setConsolationDraft] = useState<Record<string, string>>({})
@@ -153,7 +171,7 @@ export function AdminRealmsScreen() {
     setEditing(editing === r.level ? null : r.level)
     setThresholdDraft(String(r.promotionThreshold))
     setDurationDraft(String(r.cycleDurationDays))
-    setCratePointsDraft(String(r.cratePoints ?? r.level))
+    setCratePlaceDraft(Object.fromEntries(CRATE_PLACES.map((p) => [p, String(placePointsFor(r, p))])))
     setActiveDraft(r.isActive)
     setRewardsDraft(parseRewards(r.rewards))
     setConsolationDraft(Object.fromEntries(CONSOLATION_PLACES.map((p) => [p, String(parseConsolation(r.rewards)[p])])))
@@ -167,10 +185,16 @@ export function AdminRealmsScreen() {
   const save = async (level: number) => {
     const t = Math.floor(Number(thresholdDraft))
     const d = Math.floor(Number(durationDraft))
-    const cp = Math.floor(Number(cratePointsDraft))
     if (!Number.isInteger(t) || t < 0) return toast.error('Threshold must be a whole number ≥ 0.')
     if (!Number.isInteger(d) || d < 1 || d > 30) return toast.error('Cycle duration must be 1-30 days.')
-    if (!Number.isInteger(cp) || cp < 0 || cp > 10_000) return toast.error('Crate points must be a whole number between 0 and 10,000.')
+    const cratePlaces: Record<string, number> = {}
+    for (const p of CRATE_PLACES) {
+      const v = Math.floor(Number(cratePlaceDraft[p] ?? '0'))
+      if (!Number.isInteger(v) || v < 0 || v > 100_000) {
+        return toast.error('Placement crate points must be whole numbers between 0 and 100,000.')
+      }
+      cratePlaces[p] = v
+    }
     for (const place of PLACE_LIMITS) {
       if (rewardsDraft[place.key].length > place.limit) {
         return toast.error(`${place.label.split(' (')[0]} allows at most ${place.limit} item${place.limit > 1 ? 's' : ''}.`)
@@ -186,7 +210,7 @@ export function AdminRealmsScreen() {
     }
     setSaving(true)
     try {
-      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, cratePoints: cp, rewards: { ...rewardsDraft, consolationCoins: consolation } })
+      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, cratePointsByPlace: cratePlaces, rewards: { ...rewardsDraft, consolationCoins: consolation } })
       if (rewardFor === level) {
         await api.admin.realmRewards.set(
           level,
@@ -315,16 +339,25 @@ export function AdminRealmsScreen() {
                           className="rounded-xl bg-[#0B0E14] border border-white/10 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-[var(--qk-accent)]/50"
                         />
                       </label>
-                      <label className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Crate points on win 🎁</span>
-                        <input
-                          value={cratePointsDraft}
-                          onChange={(e) => setCratePointsDraft(e.target.value.replace(/[^0-9]/g, ''))}
-                          inputMode="numeric"
-                          title="Crate points granted to players who WIN this realm (promotion at settlement) — advances their crate's levels 1-for-1"
-                          className="rounded-xl bg-[#0B0E14] border border-white/10 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-[var(--qk-accent)]/50"
-                        />
-                      </label>
+                      <div className="sm:col-span-2 rounded-xl bg-[#0B0E14] border border-white/8 p-3 flex flex-col gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-white/40" title="Crate points granted by PLACEMENT at settlement — every ranked player earns their place's points (advances the battle-pass levels)">
+                          Crate points per place 🎁 (battle-pass progress)
+                        </p>
+                        <div className="grid grid-cols-8 gap-1.5">
+                          {CRATE_PLACES.map((p) => (
+                            <label key={p} className="flex flex-col gap-1">
+                              <span className="text-center text-[9px] font-black text-white/35">{p === '1' ? '1st' : p === '2' ? '2nd' : p === '3' ? '3rd' : `${p}th`}</span>
+                              <input
+                                value={cratePlaceDraft[p] ?? ''}
+                                onChange={(e) => setCratePlaceDraft((d) => ({ ...d, [p]: e.target.value.replace(/[^0-9]/g, '') }))}
+                                inputMode="numeric"
+                                className="rounded-lg bg-[#0B0E14] border border-white/10 px-1 py-1.5 text-[12px] font-semibold tabular-nums text-center outline-none focus:border-[var(--qk-accent)]/50"
+                                aria-label={`Crate points for place ${p}`}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     <label className="flex items-center gap-2.5 text-xs font-semibold text-white/70">

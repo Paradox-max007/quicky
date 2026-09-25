@@ -123,7 +123,7 @@ function PassContent() {
             <Crown className="w-5 h-5 text-[var(--qk-gold)]" aria-hidden />
             Realm Pass
           </h1>
-          <p className="text-[11px] text-white/40">Crates · 100 levels · win realms to climb</p>
+          <p className="text-[11px] text-white/40">Battle pass · free + crate prizes · win realms to climb</p>
         </div>
       </div>
 
@@ -179,7 +179,7 @@ function PassContent() {
 
         {/* Crate store */}
         <div className="min-h-0 flex-1 flex flex-col">
-          <p className="shrink-0 text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-2">Crates — the realm pass store</p>
+          <p className="shrink-0 text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-2">Crates — the battle pass store</p>
           <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar flex flex-col gap-2">
             {!cratesLoaded && list.length === 0 && (
               <div className="flex justify-center py-6">
@@ -213,7 +213,7 @@ function PassContent() {
             aria-label={selectedCrate.unlocked ? `Open ${selectedCrate.name}` : `Get ${selectedCrate.name} — ${selectedCrate.priceCoins} coins`}
             data-testid="pass-get-crate"
           >
-            {selectedCrate.unlocked ? 'Open Crate' : `Get Crate · ${selectedCrate.priceCoins.toLocaleString()} 🪙`}
+            {selectedCrate.unlocked ? 'Open Crate' : `Get Crate Pack · ${selectedCrate.priceCoins.toLocaleString()} 🪙`}
             <ChevronRight className="w-4.5 h-4.5" aria-hidden />
           </button>
         )}
@@ -253,7 +253,7 @@ function CrateStoreCard({ crate, selected, onSelect }: { crate: CrateCatalogRowC
             </span>
           )}
         </div>
-        <p className="text-[11px] text-white/45 truncate">{crate.description ?? 'The 100-level realm pass.'}</p>
+        <p className="text-[11px] text-white/45 truncate">{crate.description ?? 'The 100-level battle pass.'}</p>
         {crate.unlocked ? (
           <div className="mt-1.5 flex items-center gap-2">
             <div className="flex-1 h-1.5 rounded-full bg-white/8 overflow-hidden">
@@ -265,7 +265,7 @@ function CrateStoreCard({ crate, selected, onSelect }: { crate: CrateCatalogRowC
           </div>
         ) : (
           <p className="mt-1 text-[10.5px] font-bold text-white/50">
-            {crate.cratePoints > 0 ? `${formatCompact(crate.cratePoints)} points waiting — unlock to claim levels` : `${formatCompact(crate.levelCount)} levels · prize every level`}
+            {crate.cratePoints > 0 ? `${formatCompact(crate.cratePoints)} points waiting — free prizes already popping` : `${formatCompact(crate.levelCount)} levels · free + crate prizes`}
           </p>
         )}
       </div>

@@ -10,6 +10,7 @@ import { db } from '@/lib/db'
 import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 import { ensureRealmBootstrap } from '@/lib/quicky/realm/realm-config'
 import { validateRewardsConfig } from '@/lib/quicky/realm/realm-rewards'
+import { DEFAULT_CRATE_PLACE_POINTS } from '@/lib/quicky/crates'
 
 export async function GET(_req: NextRequest) {
   const gate = await requireAdmin()
@@ -51,14 +52,36 @@ export async function PATCH(req: NextRequest) {
     }
     data.cycleDurationDays = d
   }
-  // Crate-pass PRD — crate points granted when this realm is WON (promotion
-  // at settlement). Applies to FUTURE settlements (history is settled).
+  // Crate-tracks PRD — legacy flat crate points (superseded by the
+  // per-placement table below; kept editable for back-compat).
   if (body?.cratePoints !== undefined) {
     const cp = Number(body.cratePoints)
     if (!Number.isInteger(cp) || cp < 0 || cp > 10_000) {
       return NextResponse.json({ error: 'invalid_crate_points', message: 'Crate points must be a whole number between 0 and 10,000.' }, { status: 400 })
     }
     data.cratePoints = cp
+  }
+  // Crate-tracks PRD — per-PLACEMENT crate points (1st-8th) granted when
+  // this realm's cycle settles. Accepts a place→points object.
+  if (body?.cratePointsByPlace !== undefined) {
+    let raw: unknown = body.cratePointsByPlace
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw)
+      } catch {
+        raw = null
+      }
+    }
+    const table = (raw ?? {}) as Record<string, unknown>
+    const out: Record<string, number> = {}
+    for (const key of Object.keys(DEFAULT_CRATE_PLACE_POINTS)) {
+      const v = Number(table?.[key])
+      if (!Number.isInteger(v) || v < 0 || v > 100_000) {
+        return NextResponse.json({ error: 'invalid_crate_place_points', message: `Place ${key} crate points must be a whole number between 0 and 100,000.` }, { status: 400 })
+      }
+      out[key] = v
+    }
+    data.cratePointsByPlace = JSON.stringify(out)
   }
   if (body?.isActive !== undefined) data.isActive = Boolean(body.isActive)
   if (body?.rewards !== undefined) {

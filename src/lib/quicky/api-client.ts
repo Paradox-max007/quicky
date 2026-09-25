@@ -627,7 +627,7 @@ export const api = {
     realmConfig: {
       list: () =>
         jsonFetch<{ realms: any[]; itemOptions: any[] }>('/api/quicky/admin/realm-config'),
-      update: (level: number, data: { promotionThreshold?: number; cycleDurationDays?: number; isActive?: boolean; rewards?: unknown; cratePoints?: number }) =>
+      update: (level: number, data: { promotionThreshold?: number; cycleDurationDays?: number; isActive?: boolean; rewards?: unknown; cratePoints?: number; cratePointsByPlace?: Record<string, number> }) =>
         jsonFetch<{ ok: boolean; realm: any }>('/api/quicky/admin/realm-config', {
           method: 'PATCH',
           body: JSON.stringify({ level, ...data }),

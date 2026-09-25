@@ -1,20 +1,25 @@
-// Quicky — ADMIN CRATES (crate-pass PRD)
+// Quicky — ADMIN CRATES (crate-tracks PRD)
 // GET    /api/quicky/admin/crates
-//          — crates (with level stats) + gift catalog options + realm cratePoints
+//          — crates (with level stats) + gift catalog options + realm
+//            cratePoints + cratePointsByPlace (per-place 1st-8th points)
 // POST   /api/quicky/admin/crates              — create a crate (seeds levels)
 // PATCH  /api/quicky/admin/crates
 //          { id, name?, description?, imageUrl?, priceCoins?, levelCount?, isActive?, sortOrder? }
-//          { id, action: 'levels_bulk', prizeType?, itemId?, prizeName?, prizeEmoji?, quantity?, priceCoins? }
-//          { id, action: 'level_update', level, prizeType?, itemId?, prizeName?, prizeEmoji?, quantity?, priceCoins? }
+//          { id, action: 'levels_bulk', prizeType?, itemId?, prizeName?, prizeEmoji?, quantity?, priceCoins?,
+//            freePrizeType?, freeItemId?, freePrizeName?, freePrizeEmoji?, freeQuantity?,
+//            thresholdPoints?, thresholdStep? }
+//          { id, action: 'level_update', level, …same level fields… }
 // DELETE /api/quicky/admin/crates?id=
 //
-// Everything about a crate is admin-owned: the unlock price, the per-level
-// PRIZE (a gift item or coins) and the per-level coin PRICE. Realm crate-point
-// grants are configured per realm on /admin/realm-config (cratePoints field).
+// Everything about a crate is admin-owned: the unlock price, each level's
+// TWO prizes (free track + crate track), the per-level cumulative THRESHOLD
+// (crate points needed to reach the level) and the per-level coin PRICE.
+// Realm per-placement crate points are configured per realm on
+// /admin/realm-config (cratePointsByPlace JSON).
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
-import { CRATE_LEVELS_DEFAULT, ensureCrateBootstrap } from '@/lib/quicky/crates'
+import { CRATE_LEVELS_DEFAULT, CRATE_THRESHOLD_STEP_DEFAULT, ensureCrateBootstrap } from '@/lib/quicky/crates'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +34,12 @@ function cleanLevelFields(body: Record<string, unknown>): {
   prizeEmoji?: string | null
   quantity?: number
   priceCoins?: number
+  freePrizeType?: string
+  freeItemId?: string | null
+  freePrizeName?: string | null
+  freePrizeEmoji?: string | null
+  freeQuantity?: number
+  thresholdPoints?: number
 } {
   const out: Record<string, unknown> = {}
   if (body.prizeType !== undefined) {
@@ -47,7 +58,27 @@ function cleanLevelFields(body: Record<string, unknown>): {
     const p = Math.floor(Number(body.priceCoins))
     out.priceCoins = Number.isInteger(p) && p >= 0 && p <= MAX_PRICE ? p : undefined
   }
-  return out as { prizeType?: string; itemId?: string | null; prizeName?: string | null; prizeEmoji?: string | null; quantity?: number; priceCoins?: number }
+  // ── FREE track ──
+  if (body.freePrizeType !== undefined) {
+    const t = String(body.freePrizeType)
+    out.freePrizeType = t === 'COINS' ? 'COINS' : 'GIFT'
+    if (t !== 'COINS') out.freeItemId = String(body.freeItemId ?? '') || null
+  }
+  if (body.freeItemId !== undefined) out.freeItemId = String(body.freeItemId ?? '') || null
+  if (body.freePrizeName !== undefined) out.freePrizeName = String(body.freePrizeName ?? '').trim().slice(0, 60) || null
+  if (body.freePrizeEmoji !== undefined) out.freePrizeEmoji = String(body.freePrizeEmoji ?? '').trim().slice(0, 8) || null
+  if (body.freeQuantity !== undefined) {
+    const q = Math.floor(Number(body.freeQuantity))
+    out.freeQuantity = Number.isInteger(q) && q >= 1 && q <= MAX_QTY ? q : undefined
+  }
+  if (body.thresholdPoints !== undefined) {
+    const t = Math.floor(Number(body.thresholdPoints))
+    out.thresholdPoints = Number.isInteger(t) && t >= 0 && t <= 1_000_000 ? t : undefined
+  }
+  return out as {
+    prizeType?: string; itemId?: string | null; prizeName?: string | null; prizeEmoji?: string | null; quantity?: number; priceCoins?: number;
+    freePrizeType?: string; freeItemId?: string | null; freePrizeName?: string | null; freePrizeEmoji?: string | null; freeQuantity?: number; thresholdPoints?: number
+  }
 }
 
 export async function GET() {
@@ -64,7 +95,7 @@ export async function GET() {
       select: { id: true, name: true, emoji: true, iconType: true, iconValue: true },
       orderBy: { sortOrder: 'asc' },
     }),
-    db.realmDefinition.findMany({ orderBy: { level: 'asc' }, select: { level: true, name: true, cratePoints: true } }),
+    db.realmDefinition.findMany({ orderBy: { level: 'asc' }, select: { level: true, name: true, cratePoints: true, cratePointsByPlace: true } }),
   ])
   const levelBy = new Map(levelStats.map((l) => [l.crateId, l._count._all]))
   const userBy = new Map(userStats.map((u) => [u.crateId, u._count._all]))
@@ -109,7 +140,7 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Seed the levels with the admin's default prize/price (editable per level
+  // Seed the levels with the admin's defaults (editable per level
   // afterwards, or in bulk through the levels_bulk action). NOTE: the crate's
   // unlock price key is `priceCoins`; the seeded LEVEL price key is
   // `levelPriceCoins` (they must not collide in one payload).
@@ -119,11 +150,25 @@ export async function POST(req: NextRequest) {
   const levelPrice = Math.min(MAX_PRICE, Math.max(0, Math.floor(Number(body?.levelPriceCoins ?? 100)) || 0))
   const prizeName = typeof body?.prizeName === 'string' && body.prizeName ? (body.prizeName as string) : levelPrizeType === 'COINS' ? 'Coin Drop' : null
   const prizeEmoji = typeof body?.prizeEmoji === 'string' && body.prizeEmoji ? (body.prizeEmoji as string) : levelPrizeType === 'COINS' ? '🪙' : null
+  // FREE-track defaults (the collectible-by-winning track) + threshold step
+  // (level N's cumulative threshold = N × step).
+  const freePrizeType = body?.freePrizeType === 'GIFT' ? 'GIFT' : 'COINS'
+  const freeItemId = freePrizeType === 'GIFT' && typeof body?.freeItemId === 'string' ? (body.freeItemId as string) : null
+  const freeQuantity = Math.min(MAX_QTY, Math.max(1, Math.floor(Number(body?.freeQuantity ?? 10)) || 1))
+  const freePrizeName = typeof body?.freePrizeName === 'string' && body.freePrizeName ? (body.freePrizeName as string) : freePrizeType === 'COINS' ? 'Free Coins' : null
+  const freePrizeEmoji = typeof body?.freePrizeEmoji === 'string' && body.freePrizeEmoji ? (body.freePrizeEmoji as string) : freePrizeType === 'COINS' ? '🪙' : null
+  const thresholdStep = Math.min(1_000_000, Math.max(1, Math.floor(Number(body?.thresholdStep ?? CRATE_THRESHOLD_STEP_DEFAULT)) || CRATE_THRESHOLD_STEP_DEFAULT))
 
   await db.crateLevel.createMany({
     data: Array.from({ length: levelCount }, (_, i) => ({
       crateId: crate.id,
       level: i + 1,
+      thresholdPoints: (i + 1) * thresholdStep,
+      freePrizeType,
+      freeItemId,
+      freePrizeName,
+      freePrizeEmoji,
+      freeQuantity,
       prizeType: levelPrizeType,
       itemId: levelItemId,
       prizeName,
@@ -153,9 +198,25 @@ export async function PATCH(req: NextRequest) {
   // ── Level management ──────────────────────────────────────────────────────
   if (action === 'levels_bulk') {
     const fields = cleanLevelFields((body ?? {}) as Record<string, unknown>)
-    if (Object.keys(fields).length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
-    await db.crateLevel.updateMany({ where: { crateId: id }, data: fields as never })
-    await logAdminAction(gate.me.id, 'crate_levels_bulk', 'Crate', id, fields)
+    const thresholdStep = Math.floor(Number(body?.thresholdStep))
+    const hasStep = Number.isInteger(thresholdStep) && thresholdStep >= 1 && thresholdStep <= 1_000_000
+    if (Object.keys(fields).length === 0 && !hasStep) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
+    if (Object.keys(fields).length > 0) {
+      await db.crateLevel.updateMany({ where: { crateId: id }, data: fields as never })
+    }
+    // thresholdStep: re-derive every level's cumulative threshold as
+    // level × step (the quick way to lay out a whole 100-level track).
+    if (hasStep) {
+      const rows = await db.crateLevel.findMany({ where: { crateId: id }, select: { id: true, level: true } })
+      await Promise.all(
+        rows.map((row) =>
+          db.crateLevel
+            .update({ where: { id: row.id }, data: { thresholdPoints: row.level * thresholdStep } })
+            .catch(() => {}),
+        ),
+      )
+    }
+    await logAdminAction(gate.me.id, 'crate_levels_bulk', 'Crate', id, { ...fields, ...(hasStep ? { thresholdStep } : {}) })
     return NextResponse.json({ ok: true })
   }
 
@@ -172,7 +233,22 @@ export async function PATCH(req: NextRequest) {
       await db.crateLevel.update({ where: { crateId_level: { crateId: id, level } }, data: fields as never })
     } else {
       await db.crateLevel.create({
-        data: { crateId: id, level, prizeType: fields.prizeType ?? 'COINS', itemId: fields.itemId ?? null, prizeName: fields.prizeName ?? null, prizeEmoji: fields.prizeEmoji ?? null, quantity: fields.quantity ?? 1, priceCoins: fields.priceCoins ?? 100 },
+        data: {
+          crateId: id,
+          level,
+          prizeType: fields.prizeType ?? 'COINS',
+          itemId: fields.itemId ?? null,
+          prizeName: fields.prizeName ?? null,
+          prizeEmoji: fields.prizeEmoji ?? null,
+          quantity: fields.quantity ?? 1,
+          priceCoins: fields.priceCoins ?? 100,
+          freePrizeType: fields.freePrizeType ?? 'COINS',
+          freeItemId: fields.freeItemId ?? null,
+          freePrizeName: fields.freePrizeName ?? null,
+          freePrizeEmoji: fields.freePrizeEmoji ?? null,
+          freeQuantity: fields.freeQuantity ?? 1,
+          thresholdPoints: fields.thresholdPoints ?? level * CRATE_THRESHOLD_STEP_DEFAULT,
+        },
       })
     }
     await logAdminAction(gate.me.id, 'crate_level_update', 'CrateLevel', `${id}#${level}`, fields)

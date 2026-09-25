@@ -1239,9 +1239,12 @@ model RealmDefinition {
   // JSON reward config: { "first": [{itemId, quantity}], "second": [...], "third": [...] }
   // Limits (PRD §53): first ≤ 5 items, second ≤ 3, third ≤ 1.
   rewards           String?
-  // CRATE points granted when this realm is WON (promotion at settlement).
-  // Defaults to the level number (successive incrementation); admin-editable
-  // per realm from the console (crate pass PRD).
+  // CRATE points granted per PLACEMENT when this realm's cycle settles
+  // (JSON: { "1": 100, "2": 80, … "8": 5 } — everyone ranked 1st-8th earns
+  // their place's points; admin-editable per realm from the console).
+  cratePointsByPlace String?
+  // Legacy flat fallback (pre-placement rows) — superseded by
+  // cratePointsByPlace for new settlements.
   cratePoints       Int      @default(1)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -1602,10 +1605,13 @@ model UserSeason {
 // ─────────────────────────────────────────────────────────────────────────────
 // CRATES — the "realm pass"
 // A purchasable 100-level prize track (the crown 👑 room chip opens the pass
-// store). Levels advance by CRATE POINTS (earned by winning realms — each
-// realm grants its admin-configured cratePoints) or by buying levels with
-// coins (per-level price admin-configured). Every reached level unlocks its
-// configured prize exactly once (CrateLevelGrant is the idempotency key).
+// store). Each level carries TWO prizes: the FREE prize (every player earns
+// it by winning realms — crate points climb the levels) and the CRATE prize
+// (only once the crate pack is bought). Levels advance by CRATE POINTS
+// (earned by realm placement 1st-8th, per-realm admin-configured) against
+// each level's admin-set cumulative thresholdPoints, or by buying levels
+// with coins. Each track's prize is granted exactly once (CrateLevelGrant
+// keyed by userId+crateId+level+track).
 // ─────────────────────────────────────────────────────────────────────────────
 model Crate {
   id          String   @id @default(cuid())
@@ -1626,12 +1632,23 @@ model Crate {
   @@index([isActive, sortOrder])
 }
 
-// Per-level configuration (admin-owned): the PRIZE unlocked at this level and
-// the COIN price to buy the level outright.
+// Per-level configuration (admin-owned): the two aligned prizes and the
+// coin price to buy the level outright.
 model CrateLevel {
   id         String  @id @default(cuid())
   crateId    String
   level      Int
+  // CUMULATIVE crate points required to REACH this level (admin-set; the
+  // pass progress bar fills between thresholds).
+  thresholdPoints Int     @default(20)
+  // ── FREE track prize (collectible by realm wins alone, crate not needed).
+  // "GIFT" (GameItem by freeItemId) | "COINS"
+  freePrizeType  String  @default("COINS")
+  freeItemId     String?
+  freePrizeName  String?
+  freePrizeEmoji String?
+  freeQuantity   Int     @default(1)
+  // ── CRATE track prize (unlocks only after the crate pack is bought).
   // "GIFT" (GameItem by itemId) | "COINS"
   prizeType  String  @default("GIFT")
   itemId     String?
@@ -1646,9 +1663,11 @@ model CrateLevel {
   @@unique([crateId, level])
 }
 
-// Per-user crate state. currentLevel = min(levelCount, cratePoints +
-// boughtLevels) — recomputed on every award/purchase; prizes are granted for
-// each NEWLY reached level (idempotent through CrateLevelGrant).
+// Per-user crate state. currentLevel is the MONOTONIC reached level: the
+// highest level whose cumulative thresholdPoints ≤ cratePoints (or the level
+// reached by buying levels — buys advance the marker directly). The FREE
+// track grants prizes for every reached level even while the crate is LOCKED;
+// CRATE-track prizes for reached levels pop the moment the pack is bought.
 model UserCrate {
   id           String    @id @default(cuid())
   userId       String
@@ -1667,18 +1686,21 @@ model UserCrate {
   @@unique([userId, crateId])
 }
 
-// Prize-grant ledger — one row per level REACHED (idempotency key
-// userId+crateId+level). source: "WON" (crate points) | "BOUGHT" (coins).
+// Prize-grant ledger — one row per level REACHED, per track (idempotency key
+// userId+crateId+level+track). track: "FREE" (realm wins alone) | "CRATE"
+// (requires the purchased pack). source: "WON" (crate points) | "BOUGHT"
+// (coins) | "UNLOCK" (the pop when the pack is bought).
 model CrateLevelGrant {
   id        String   @id @default(cuid())
   userId    String
   crateId   String
   level     Int
+  track     String   @default("FREE")
   source    String   @default("WON")
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, crateId, level])
+  @@unique([userId, crateId, level, track])
   @@index([userId, createdAt])
 }
 

@@ -35,18 +35,29 @@ export type CrateCatalogRowClient = {
 
 export type CrateLevelRowClient = {
   level: number
+  /** Cumulative crate points needed to reach this level. */
+  thresholdPoints: number
   prizeType: string
   prizeName: string | null
   prizeEmoji: string | null
   quantity: number
   priceCoins: number
   reached: boolean
+  freeCollected: boolean
+  crateCollected: boolean
+  freePrizeType: string
+  freePrizeName: string | null
+  freePrizeEmoji: string | null
+  freeQuantity: number
 }
 
 export type CratePackRowClient = { levels: number; priceCoins: number; label: string; affordable: boolean }
 
 export type CrateDetailClient = {
-  crate: CrateCatalogRowClient
+  crate: CrateCatalogRowClient & {
+    nextThreshold: number | null
+    pointsToNext: number | null
+  }
   levels: CrateLevelRowClient[]
   packs: CratePackRowClient[]
 }
