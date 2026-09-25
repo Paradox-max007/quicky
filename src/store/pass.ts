@@ -43,6 +43,9 @@ export type CrateLevelRowClient = {
   quantity: number
   priceCoins: number
   reached: boolean
+  /** Points-derived reach — the FREE track unlocks only through crossed
+   *  crate-points thresholds (coin-bought levels never open free prizes). */
+  pointsReached: boolean
   /** Claimed by the user (the tap → modal → CLAIM flow). */
   freeCollected: boolean
   crateCollected: boolean

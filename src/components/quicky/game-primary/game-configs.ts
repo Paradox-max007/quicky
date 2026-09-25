@@ -300,7 +300,11 @@ export function commonGameStats(spin: SpinLandingStats | null, ludo: LudoLanding
   return combinedOverallStats(spin, ludo)
 }
 export function combinedOverallStats(spin: SpinLandingStats | null, ludo: LudoLandingStats | null): GameStat[] {
-  const totalGames = (spin?.gamesPlayed ?? 0) + (ludo?.ludoGames ?? 0)
+  // Gifts hub chip: TOTAL GIFTS (sent + received lifetime counters) — the
+  // entry point to the Gifts & Cosmetics modal (send DB-catalog gifts to
+  // friends, browse frames/hats/name icons). Replaces the old Total Games
+  // tile.
+  const totalGifts = (spin?.giftsSent ?? 0) + (spin?.giftsReceived ?? 0)
   const totalWins = ludo?.ludoWins ?? 0
   const totalCoins = spin?.coins ?? ludo?.coins ?? 0
   const totalInteractions =
@@ -311,7 +315,7 @@ export function combinedOverallStats(spin: SpinLandingStats | null, ludo: LudoLa
     (ludo?.captures ?? 0)
 
   return [
-    { key: 'total-games', label: 'Total Games', icon: '🎮', value: totalGames, tint: 'var(--qk-purple)' },
+    { key: 'total-gifts', label: 'Total Gifts', icon: '🎁', value: totalGifts, tint: 'var(--qk-purple)' },
     { key: 'total-wins', label: 'Total Wins', icon: '🏆', value: totalWins, tint: 'var(--qk-gold)' },
     { key: 'total-coins', label: 'Total Coins', icon: '🪙', value: totalCoins, tint: 'var(--qk-accent)' },
     { key: 'total-interactions', label: 'Interactions', icon: '💬', value: totalInteractions, tint: '#38bdf8' },

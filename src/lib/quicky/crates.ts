@@ -117,34 +117,79 @@ export async function ensureCrateBootstrap(): Promise<void> {
   }
   if (!crate) return
 
-  // Half-seeded guard: only backfill when the crate has no level rows at all
-  // (a failed count read also skips — same no-op behavior as before).
-  const existingLevels = await db.crateLevel.count({ where: { crateId: crate.id } }).catch(() => 1)
-  if (existingLevels > 0) return
-
-  await db.crateLevel
-    .createMany({
-      data: Array.from({ length: CRATE_LEVELS_DEFAULT }, (_, i) => {
-        const level = i + 1
-        const milestone = CRATE_MILESTONES.includes(level as (typeof CRATE_MILESTONES)[number])
-        return {
-          crateId: crate.id,
-          level,
-          thresholdPoints: (level - 1) * CRATE_THRESHOLD_STEP_DEFAULT,
-          freePrizeType: 'COINS',
-          freePrizeName: milestone ? 'Milestone Free Coins' : 'Free Coins',
-          freePrizeEmoji: '🪙',
-          freeQuantity: milestone ? 60 : 10,
-          prizeType: 'COINS',
-          prizeName: milestone ? `Milestone ${level} Coin Drop` : 'Coin Drop',
-          prizeEmoji: '🪙',
-          quantity: milestone ? 250 : 20,
-          priceCoins: CRATE_LEVEL_PRICE_DEFAULT,
-        }
-      }),
-      skipDuplicates: true,
+  const levels = await db.crateLevel
+    .findMany({
+      where: { crateId: crate.id },
+      select: { id: true, level: true, thresholdPoints: true, freePrizeName: true, freePrizeEmoji: true, freeQuantity: true },
+      orderBy: { level: 'asc' },
     })
-    .catch(() => {})
+    .catch(() => [] as { id: string; level: number; thresholdPoints: number; freePrizeName: string | null; freePrizeEmoji: string | null; freeQuantity: number }[])
+
+  if (levels.length === 0) {
+    await db.crateLevel
+      .createMany({
+        data: Array.from({ length: CRATE_LEVELS_DEFAULT }, (_, i) => {
+          const level = i + 1
+          const milestone = CRATE_MILESTONES.includes(level as (typeof CRATE_MILESTONES)[number])
+          return {
+            crateId: crate.id,
+            level,
+            thresholdPoints: (level - 1) * CRATE_THRESHOLD_STEP_DEFAULT,
+            freePrizeType: 'COINS',
+            freePrizeName: milestone ? 'Milestone Free Coins' : 'Free Coins',
+            freePrizeEmoji: '🪙',
+            freeQuantity: milestone ? 60 : 10,
+            prizeType: 'COINS',
+            prizeName: milestone ? `Milestone ${level} Coin Drop` : 'Coin Drop',
+            prizeEmoji: '🪙',
+            quantity: milestone ? 250 : 20,
+            priceCoins: CRATE_LEVEL_PRICE_DEFAULT,
+          }
+        }),
+        skipDuplicates: true,
+      })
+      .catch(() => {})
+    return
+  }
+
+  // ── HEAL (db-push residue) ─────────────────────────────────────────────
+  // `prisma db push` adds the crate-tracks columns with their RAW DEFAULTS
+  // to PRE-EXISTING level rows (threshold 20 everywhere, freeQuantity 1,
+  // no free names). All-equal thresholds make every level reachable at 20
+  // points — the pass breaks. Detect that raw-default state and re-derive
+  // the seeded layout ((level − 1) × step + milestone free coin drops).
+  // Admin-customized rows never match (at least one value differs).
+  const rawThresholds =
+    levels.length >= 3 && levels.every((r) => r.thresholdPoints === 20) // the column default
+  if (rawThresholds) {
+    await Promise.all(
+      levels.map((r) =>
+        db.crateLevel
+          .update({ where: { id: r.id }, data: { thresholdPoints: Math.max(0, (r.level - 1) * CRATE_THRESHOLD_STEP_DEFAULT) } })
+          .catch(() => {}),
+      ),
+    )
+  }
+  const rawFree =
+    levels.length > 0 &&
+    levels.every((r) => r.freeQuantity === 1 && r.freePrizeName === null && r.freePrizeEmoji === null) // column defaults
+  if (rawFree) {
+    await Promise.all(
+      levels.map((r) => {
+        const milestone = CRATE_MILESTONES.includes(r.level as (typeof CRATE_MILESTONES)[number])
+        return db.crateLevel
+          .update({
+            where: { id: r.id },
+            data: {
+              freePrizeName: milestone ? 'Milestone Free Coins' : 'Free Coins',
+              freePrizeEmoji: '🪙',
+              freeQuantity: milestone ? 60 : 10,
+            },
+          })
+          .catch(() => {})
+      }),
+    )
+  }
 }
 
 /** The active crates in display order. */
@@ -366,6 +411,10 @@ export type CrateLevelRow = {
   quantity: number
   priceCoins: number
   reached: boolean
+  /** Points-derived reach (FREE track rule): the level whose cumulative
+   *  threshold the user's crate POINTS alone already cover. Coin-bought
+   *  levels do NOT open free prizes — only crossed thresholds do. */
+  pointsReached: boolean
   /** True once the user CLAIMED this track's prize (CrateLevelGrant). */
   freeCollected: boolean
   crateCollected: boolean
@@ -406,8 +455,9 @@ export async function getCrateDetail(userId: string, crateId: string): Promise<C
   const unlocked = !!uc?.unlockedAt
   const cratePoints = uc?.cratePoints ?? 0
   // Read-side truth: the reached level is the max of the persisted marker
-  // (buys) and the points-derived level (level 1 is ALWAYS reached — its
-  // threshold counts as 0, so the first free prize is claimable at login).
+  // (buys) and the points-derived level. FREE prizes follow the POINTS level
+  // alone (freeClaimable below) — only crossed thresholds open free prizes,
+  // never coin-bought levels.
   const reachedLevel = Math.min(crate.levelCount, Math.max(uc?.currentLevel ?? 0, pointsLevelFor(cratePoints, levels)))
   // Keep the persisted marker honest (monotonic; never blocks the payload).
   if (uc && reachedLevel > uc.currentLevel) {
@@ -451,11 +501,13 @@ export async function getCrateDetail(userId: string, crateId: string): Promise<C
         .catch(() => [] as Awaited<ReturnType<typeof db.gameItem.findMany>>)
     : []
   const itemById = new Map(giftItems.map((g) => [g.id, g] as const))
+  const pointsLevel = pointsLevelFor(cratePoints, levels)
 
   const levelRows: CrateLevelRow[] = levels.map((lv) => {
     const gift = lv.prizeType !== 'COINS' && lv.itemId ? itemById.get(lv.itemId) : undefined
     const freeGift = lv.freePrizeType !== 'COINS' && lv.freeItemId ? itemById.get(lv.freeItemId) : undefined
     const reached = lv.level <= currentLevel
+    const pointsReached = lv.level <= pointsLevel
     const freeCollected = grantedFree.has(lv.level)
     const crateCollected = grantedCrate.has(lv.level)
     return {
@@ -467,9 +519,10 @@ export async function getCrateDetail(userId: string, crateId: string): Promise<C
       quantity: lv.quantity,
       priceCoins: lv.priceCoins,
       reached,
+      pointsReached,
       freeCollected,
       crateCollected,
-      freeClaimable: reached && !freeCollected,
+      freeClaimable: pointsReached && !freeCollected,
       crateClaimable: reached && unlocked && !crateCollected,
       freePrizeType: lv.freePrizeType,
       freePrizeName: lv.freePrizeName ?? freeGift?.name ?? (lv.freePrizeType === 'COINS' ? 'Free Coins' : 'Gift'),
@@ -659,8 +712,12 @@ export async function claimCratePrize(
   const thresholdRows = await db.crateLevel
     .findMany({ where: { crateId }, select: { level: true, thresholdPoints: true }, orderBy: { level: 'asc' } })
     .catch(() => [] as { level: number; thresholdPoints: number }[])
-  const reachedLevel = Math.max(uc?.currentLevel ?? 0, pointsLevelFor(uc?.cratePoints ?? 0, thresholdRows))
-  if (level > reachedLevel) return { ok: false, error: 'level_locked' }
+  // FREE prizes unlock ONLY through crossed crate-points thresholds — the
+  // points-derived level (coin-bought levels never open free prizes). CRATE
+  // prizes additionally honor the persisted marker (buys advance it).
+  const pointsLevel = pointsLevelFor(uc?.cratePoints ?? 0, thresholdRows)
+  const reachedLevel = Math.max(uc?.currentLevel ?? 0, pointsLevel)
+  if (level > (track === 'FREE' ? pointsLevel : reachedLevel)) return { ok: false, error: 'level_locked' }
 
   const existing = await db.crateLevelGrant
     .findUnique({ where: { userId_crateId_level_track: { userId, crateId, level, track } } })

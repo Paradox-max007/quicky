@@ -71,6 +71,7 @@ import { useGameChatStore } from '@/store/game-chat'
 import { isNative } from '@/lib/capacitor'
 import { GameInteractionPanel } from './GameInteractionPanel'
 import { CratesBanner } from '../pass/CratesBanner'
+import { GiftsHubModal } from '../gifts/GiftsHubModal'
 import { formatCoinCount, type GamePrimaryConfig } from './game-configs'
 
 const TAGLINE_VISIBLE_MS = 3200 // refactor PRD §20 cadence — slow, subtle
@@ -116,6 +117,12 @@ export function GamePrimaryScreen({
   const view = useQuickyStore((s) => s.view)
   const chatList = useGameChatStore((s) => s.list)
   const refreshChatList = useGameChatStore((s) => s.refreshList)
+
+  // Gifts & Style hub — opened by the Total Gifts stat tile (the 💝 chip).
+  // `giftsBump` optimistically bumps the tile's count the moment a gift is
+  // sent from the modal (the landing stats refresh on the next visit).
+  const [giftsOpen, setGiftsOpen] = useState(false)
+  const [giftsBump, setGiftsBump] = useState(0)
 
   // The desktop social columns are self-contained — no panel ref needed.
   // Native detection is deferred (async callback, never sync-in-effect) so
@@ -298,8 +305,11 @@ export function GamePrimaryScreen({
                         )}
                       </button>
 
-                      {/* Profile image — centered between the two icons */}
-                      <span className="w-20 h-20 rounded-full overflow-hidden border-2 border-[var(--qk-accent)]/50 bg-gradient-to-br from-[var(--qk-accent)] to-[var(--qk-purple)] flex items-center justify-center">
+                      {/* Profile image — centered between the two icons
+                          (SQUARE with soft corners — v2 §4 revision: the
+                          main-screen avatar is square, matching the prize
+                          tiles and the gifting hub's square previews). */}
+                      <span className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-[var(--qk-accent)]/50 bg-gradient-to-br from-[var(--qk-accent)] to-[var(--qk-purple)] flex items-center justify-center">
                         {avatar ? (
                           <img src={avatar} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -339,26 +349,30 @@ export function GamePrimaryScreen({
                       <div className="grid grid-cols-4 gap-2.5 mt-5">
                         {config.gameStats.map((st) => {
                           const isCoin = st.key === 'total-coins'
+                          // The GIFTS tile opens the Gifts & Style hub (send
+                          // DB-catalog gifts to friends + browse cosmetics).
+                          const isGifts = st.key === 'total-gifts'
                           const coins = isCoin && coinBalance != null ? coinBalance : st.value
                           const display = isCoin
                             ? formatCoinCount(typeof coins === 'number' ? coins : Number(coins) || 0)
                             : typeof st.value === 'number'
-                              ? st.value.toLocaleString('en-US')
+                              ? (st.value + (isGifts ? giftsBump : 0)).toLocaleString('en-US')
                               : st.value
-                          const TileTag = (isCoin && onBuyCoins ? 'button' : 'div') as 'button' | 'div'
+                          const interactive = (isCoin && onBuyCoins) || isGifts
+                          const TileTag = (interactive ? 'button' : 'div') as 'button' | 'div'
                           return (
                             <TileTag
                               key={st.key}
-                              {...(isCoin && onBuyCoins
+                              {...(interactive
                                 ? {
                                     type: 'button' as const,
-                                    onClick: onBuyCoins,
-                                    'aria-label': 'Buy coins — open the coin store',
-                                    'data-testid': 'landing-coin-add',
+                                    onClick: isGifts ? () => setGiftsOpen(true) : onBuyCoins,
+                                    'aria-label': isGifts ? 'Open the gifts and cosmetics hub' : 'Buy coins — open the coin store',
+                                    'data-testid': isGifts ? 'game-primary-gifts-chip' : 'landing-coin-add',
                                   }
                                 : {})}
                               className={`relative bg-white/5 border border-white/10 rounded-2xl p-2.5 flex flex-col items-center text-center gap-1 ${
-                                isCoin && onBuyCoins ? 'hover:bg-white/10 active:scale-95 transition-all' : ''
+                                interactive ? 'hover:bg-white/10 active:scale-95 transition-all cursor-pointer' : ''
                               }`}
                             >
                               {isCoin && onBuyCoins && (
@@ -618,6 +632,17 @@ export function GamePrimaryScreen({
           )}
         </div>
       </div>
+
+      {/* ── GIFTS & STYLE HUB — the Total Gifts tile opens this modal (send
+          DB-catalog gifts to friends · browse frames/hats/name icons; chat
+          bubbles are event-only and stay in the wardrobe). */}
+      <GiftsHubModal
+        open={giftsOpen}
+        onClose={() => setGiftsOpen(false)}
+        coinBalance={coinBalance ?? null}
+        onBuyCoins={onBuyCoins}
+        onGiftSent={({ quantity }) => setGiftsBump((b) => b + quantity)}
+      />
     </div>
   )
 }

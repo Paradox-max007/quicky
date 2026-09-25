@@ -163,7 +163,8 @@ export function CrateDetailsContent() {
         toast(`Already claimed — ${prizeName}`, { description: `Level ${lv.level} · FREE track` })
         return
       }
-      toast(`Locked — reach level ${lv.level}`, { description: `Needs ${formatCompact(lv.thresholdPoints)} crate points · place 1st-8th in realms` })
+      // No threshold numbers in popups — the tile itself carries the pts badge.
+      toast(`Locked — reach level ${lv.level}`, { description: 'Win realms to earn crate points' })
       return
     }
     if (!crate?.unlocked) {
@@ -174,7 +175,7 @@ export function CrateDetailsContent() {
       toast(`Already claimed — ${prizeName}`, { description: `Level ${lv.level} · CRATE track` })
       return
     }
-    toast(`Locked — reach level ${lv.level}`, { description: `Needs ${formatCompact(lv.thresholdPoints)} crate points · place 1st-8th in realms` })
+    toast(`Locked — reach level ${lv.level}`, { description: 'Win realms to earn crate points' })
   }
 
   if (!crateId) return null
@@ -474,13 +475,21 @@ function PrizeRow({
         {claimable && <span className="absolute inset-0 rounded-2xl border-2 animate-pulse" style={{ borderColor: `color-mix(in srgb, ${accent} 60%, transparent)` }} />}
       </span>
 
-      {/* Level + name + honest status */}
+      {/* Level + name + honest status. The pts badge shows the CUMULATIVE
+          crate points this level needs — on EVERY tile, claimed or not. */}
       <span className="min-w-0 flex-1 flex flex-col gap-0.5">
         <span className="flex items-center gap-1.5 text-[10px] font-black tabular-nums text-white/40 uppercase tracking-wider">
           Level {lv.level}
           {!isFree && MILESTONES.includes(lv.level as (typeof MILESTONES)[number]) && (
             <Star className="w-2.5 h-2.5 text-[var(--qk-gold)]" fill="currentColor" aria-hidden />
           )}
+          <span
+            className="ml-auto rounded-full px-1.5 py-px text-[9px] font-black tabular-nums"
+            style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}
+            title={`${lv.thresholdPoints.toLocaleString()} crate points to reach level ${lv.level}`}
+          >
+            {formatCompact(lv.thresholdPoints)} pts
+          </span>
         </span>
         <span className="text-[14.5px] font-bold truncate text-white/90">{name ?? 'Prize'}</span>
         {claimable ? (
@@ -498,9 +507,7 @@ function PrizeRow({
         ) : packLocked ? (
           <span className="mt-0.5 text-[10px] font-bold text-white/45">Get the crate pack to claim</span>
         ) : (
-          <span className="mt-0.5 text-[10px] font-bold text-white/45 tabular-nums">
-            {formatCompact(lv.thresholdPoints)} pts to unlock
-          </span>
+          <span className="mt-0.5 text-[10px] font-bold text-white/45">Locked</span>
         )}
       </span>
     </button>
@@ -543,7 +550,7 @@ function MainPrizeTile({ lv, unlocked, onTap }: { lv: CrateLevelRowClient; unloc
         <span className={`text-[30px] leading-none ${!unlocked || !reached ? 'grayscale' : ''}`}>{lv.prizeEmoji ?? '🏆'}</span>
       </span>
       <span className="w-full px-1 text-[8px] font-black uppercase tracking-wide text-white/70 text-center truncate">
-        {claimed ? 'Claimed' : claimable ? 'Claim now' : !reached ? `${formatCompact(lv.thresholdPoints)} pts` : 'Locked'}
+        {claimed ? 'Claimed' : claimable ? 'Claim now' : `${formatCompact(lv.thresholdPoints)} pts`}
       </span>
       {claimable && <span className="absolute inset-0 rounded-2xl border-2 animate-pulse" style={{ borderColor: 'color-mix(in srgb, var(--qk-gold) 55%, transparent)' }} />}
       {!reached && !claimable && (

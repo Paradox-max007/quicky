@@ -1,5 +1,38 @@
 // Quicky — client-side API helpers
 
+// ─── GIFTS HUB types (main game screen modal) ──────────────────────────────
+
+/** One DB-catalog gift (GameItem category 'gift') in the Gifts tab. */
+export type GiftsHubGift = {
+  id: string
+  categoryId: string | null
+  name: string
+  /** Resolved display payload — image URL or emoji glyph. */
+  icon: string | null
+  iconType?: string | null
+  emoji: string | null
+  priceCoins: number
+  maxQuantity?: number | null
+  tier?: string | null
+  sortOrder?: number
+}
+
+/** One ACTIVE cosmetic catalog entry (Frames / Hats / Name Icons tabs). */
+export type GiftsHubCosmeticEntry = {
+  id: string
+  rewardType: string
+  name: string
+  description: string | null
+  rarity: string
+  /** Level assets: 1/2 static (image url or emoji), 3 animated. */
+  levels?: Record<string, unknown> | null
+  /** NAME_DECORATOR left/right glyphs. */
+  decorator?: { left?: string; right?: string } | null
+  /** Which levels the viewer already owns. */
+  ownedLevels: number[]
+  anyEquipped: boolean
+}
+
 async function jsonFetch<T = any>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, {
     ...init,
@@ -1051,6 +1084,19 @@ export const api = {
   },
   cosmetics: {
     list: () => jsonFetch<{ cosmetics: any[] }>('/api/quicky/cosmetics'),
+    /** Wardrobe + the full ACTIVE cosmetic catalog with owned levels —
+     *  powers the Gifts & Cosmetics modal's browse tabs. */
+    catalog: () => jsonFetch<{ cosmetics: any[]; catalog: GiftsHubCosmeticEntry[] }>('/api/quicky/cosmetics?catalog=1'),
+  },
+  // ─── GIFTS HUB (main game screen — friend gifting, no room) ─────────
+  giftsHub: {
+    catalog: () =>
+      jsonFetch<{ catalog: GiftsHubGift[]; coinBalance: number; giftsSent: number; giftsReceived: number }>('/api/quicky/gifts'),
+    send: (recipientId: string, itemId: string, quantity = 1) =>
+      jsonFetch<{ ok: boolean; coinBalance: number; recipientName: string; quantity: number; totalCost: number }>('/api/quicky/gifts', {
+        method: 'POST',
+        body: JSON.stringify({ recipientId, itemId, quantity }),
+      }),
   },
   // ─── MONTHLY SEASON (crate-pass PRD — the ❤ room chip) ──────────────
   season: {
