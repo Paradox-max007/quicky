@@ -19,6 +19,7 @@
 import type { Prisma } from '@prisma/client'
 import { getActiveGiftMultiplier } from './gift-multiplier'
 import { ensureRealmParticipation, type RealmParticipation } from './realm-cycle'
+import { getOrCreateActiveSeason, seasonEventBoost, awardSeasonPoints } from '@/lib/quicky/season'
 
 export type RealmAwardPlan = {
   giftEventId: string
@@ -33,6 +34,10 @@ export type RealmAwardPlan = {
   senderPoints: number
   receiverPointsEach: number
   participants: Map<string, RealmParticipation>
+  /** Monthly-season award context (crate-pass PRD): the active season + the
+   *  running season-event boost — resolved BEFORE the transaction. */
+  season: { id: string; name: string } | null
+  seasonBoost: number
 }
 
 export type RealmAwardResult = {
@@ -57,6 +62,10 @@ export async function planRealmAward(
 ): Promise<RealmAwardPlan> {
   const active = await getActiveGiftMultiplier()
   const participants = await ensureRealmParticipation([senderId, ...recipientIds])
+  // Monthly season (crate-pass PRD) — resolve once, pre-transaction; the
+  // season points themselves are awarded INSIDE the gift transaction.
+  const seasonRow = await getOrCreateActiveSeason().catch(() => null)
+  const seasonBoost = seasonRow ? await seasonEventBoost(seasonRow.id).catch(() => 1) : 1
 
   // Only users with an active realm participate in point earning.
   const activeRecipients = recipientIds.filter((id) => participants.has(id))
@@ -78,6 +87,8 @@ export async function planRealmAward(
     senderPoints,
     receiverPointsEach,
     participants,
+    season: seasonRow ? { id: seasonRow.id, name: seasonRow.name } : null,
+    seasonBoost,
   }
 }
 
@@ -211,6 +222,18 @@ export async function applyRealmAward(
         data: { thresholdReachedAt: now },
       })
     }
+
+    // ── 4. Monthly SEASON points (crate-pass PRD — the ❤ room chip) ──────
+    // Same award moment, same transaction: sender + every recipient earn
+    // season points equal to their realm allocation, boosted by any RUNNING
+    // season event. A retried gift is already guarded by `isNew` above.
+    const seasonEntries = [
+      ...(plan.senderPoints > 0 ? [{ userId: plan.senderId, points: plan.senderPoints }] : []),
+      ...plan.recipientIds
+        .filter((id) => plan.receiverPointsEach > 0)
+        .map((id) => ({ userId: id, points: plan.receiverPointsEach })),
+    ]
+    await awardSeasonPoints(tx, plan.season, plan.seasonBoost, seasonEntries)
   }
 
   return {

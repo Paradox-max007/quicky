@@ -51,6 +51,15 @@ export async function PATCH(req: NextRequest) {
     }
     data.cycleDurationDays = d
   }
+  // Crate-pass PRD — crate points granted when this realm is WON (promotion
+  // at settlement). Applies to FUTURE settlements (history is settled).
+  if (body?.cratePoints !== undefined) {
+    const cp = Number(body.cratePoints)
+    if (!Number.isInteger(cp) || cp < 0 || cp > 10_000) {
+      return NextResponse.json({ error: 'invalid_crate_points', message: 'Crate points must be a whole number between 0 and 10,000.' }, { status: 400 })
+    }
+    data.cratePoints = cp
+  }
   if (body?.isActive !== undefined) data.isActive = Boolean(body.isActive)
   if (body?.rewards !== undefined) {
     const parsed = validateRewardsConfig(body.rewards)

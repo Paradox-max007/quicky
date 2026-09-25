@@ -25,6 +25,7 @@ type RealmDef = {
   cycleDurationDays: number
   isActive: boolean
   rewards: string | null
+  cratePoints: number
 }
 
 type ItemOption = { id: string; name: string; emoji: string; iconType: string; iconValue: string | null }
@@ -115,6 +116,7 @@ export function AdminRealmsScreen() {
   // Editable fields for the open realm row.
   const [thresholdDraft, setThresholdDraft] = useState('')
   const [durationDraft, setDurationDraft] = useState('')
+  const [cratePointsDraft, setCratePointsDraft] = useState('')
   const [activeDraft, setActiveDraft] = useState(true)
   const [rewardsDraft, setRewardsDraft] = useState<RewardsConfig>({ first: [], second: [], third: [] })
   const [consolationDraft, setConsolationDraft] = useState<Record<string, string>>({})
@@ -151,6 +153,7 @@ export function AdminRealmsScreen() {
     setEditing(editing === r.level ? null : r.level)
     setThresholdDraft(String(r.promotionThreshold))
     setDurationDraft(String(r.cycleDurationDays))
+    setCratePointsDraft(String(r.cratePoints ?? r.level))
     setActiveDraft(r.isActive)
     setRewardsDraft(parseRewards(r.rewards))
     setConsolationDraft(Object.fromEntries(CONSOLATION_PLACES.map((p) => [p, String(parseConsolation(r.rewards)[p])])))
@@ -164,8 +167,10 @@ export function AdminRealmsScreen() {
   const save = async (level: number) => {
     const t = Math.floor(Number(thresholdDraft))
     const d = Math.floor(Number(durationDraft))
+    const cp = Math.floor(Number(cratePointsDraft))
     if (!Number.isInteger(t) || t < 0) return toast.error('Threshold must be a whole number ≥ 0.')
     if (!Number.isInteger(d) || d < 1 || d > 30) return toast.error('Cycle duration must be 1-30 days.')
+    if (!Number.isInteger(cp) || cp < 0 || cp > 10_000) return toast.error('Crate points must be a whole number between 0 and 10,000.')
     for (const place of PLACE_LIMITS) {
       if (rewardsDraft[place.key].length > place.limit) {
         return toast.error(`${place.label.split(' (')[0]} allows at most ${place.limit} item${place.limit > 1 ? 's' : ''}.`)
@@ -181,7 +186,7 @@ export function AdminRealmsScreen() {
     }
     setSaving(true)
     try {
-      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, rewards: { ...rewardsDraft, consolationCoins: consolation } })
+      await api.admin.realmConfig.update(level, { promotionThreshold: t, cycleDurationDays: d, isActive: activeDraft, cratePoints: cp, rewards: { ...rewardsDraft, consolationCoins: consolation } })
       if (rewardFor === level) {
         await api.admin.realmRewards.set(
           level,
@@ -290,7 +295,7 @@ export function AdminRealmsScreen() {
 
                 {isOpen && (
                   <div className="px-3 pb-3 flex flex-col gap-3 border-t border-white/8 pt-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1.5">
                         <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Promotion threshold {r.level >= 15 && '(cap — no promotion)'}</span>
                         <input
@@ -307,6 +312,16 @@ export function AdminRealmsScreen() {
                           value={durationDraft}
                           onChange={(e) => setDurationDraft(e.target.value.replace(/[^0-9]/g, ''))}
                           inputMode="numeric"
+                          className="rounded-xl bg-[#0B0E14] border border-white/10 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-[var(--qk-accent)]/50"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Crate points on win 🎁</span>
+                        <input
+                          value={cratePointsDraft}
+                          onChange={(e) => setCratePointsDraft(e.target.value.replace(/[^0-9]/g, ''))}
+                          inputMode="numeric"
+                          title="Crate points granted to players who WIN this realm (promotion at settlement) — advances their crate's levels 1-for-1"
                           className="rounded-xl bg-[#0B0E14] border border-white/10 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-[var(--qk-accent)]/50"
                         />
                       </label>

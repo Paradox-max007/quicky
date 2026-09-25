@@ -71,10 +71,10 @@ export function LudoRoom({
   const closure = useLudoRoomStore((s) => s.closure)
   const mentionFlashId = useLudoRoomStore((s) => s.mentionFlashId)
   const setCoinBalance = useLudoRoomStore((s) => s.setCoinBalance)
-  // Realm PRD §41/§71 — the shared realm HUD chip + event-banner queue.
-  // openLeaderboard: the 🏆 HUD chip opens the SAME realm leaderboard
-  // surface the Games hub trophy opens (full screen mobile / drawer web).
-  const { hudRealm, bannerEvents, openDetails, openLeaderboard } = useRoomRealm()
+  // Realm PRD §41/§71 + crate-pass PRD — the shared realm HUD chips + event
+  // banners. ❤ = season points (monthly), 🏆 = realm cycle points (→ the
+  // leaderboard), 👑 = realm level (→ the Realm Pass / crates store).
+  const { hudRealm, seasonPoints, bannerEvents, openLeaderboard, openPass } = useRoomRealm()
 
   const roomChatPanel = useQuickyStore((s) => s.roomChatPanel)
   const setRoomChatPanel = useQuickyStore((s) => s.setRoomChatPanel)
@@ -88,7 +88,6 @@ export function LudoRoom({
   // lands FLUSH on the keyboard's top edge via a live rect measurement.
   // The board never changes size (lockedStageHeight below).
   const { kbUp, kbHeightRef } = useRoomKeyboardPop()
-  const [gamesPlayed, setGamesPlayed] = useState(0)
   const [showCoinStore, setShowCoinStore] = useState(false)
   const [isDesktop, setIsDesktop] = useState(false)
   const isNativeCapacitor = Capacitor.isNativePlatform()
@@ -128,20 +127,6 @@ export function LudoRoom({
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [])
-
-  // HUD 🏆 — real games-played from the shared landing stats endpoint
-  useEffect(() => {
-    let stopped = false
-    api.spinBottle
-      .landing()
-      .then((s) => {
-        if (!stopped) setGamesPlayed(s.gamesPlayed ?? 0)
-      })
-      .catch(() => {})
-    return () => {
-      stopped = true
-    }
   }, [])
 
   // ── RUNTIME ATTACH (Ludo PRD §62/§99) — idempotent, survives navigation.
@@ -251,14 +236,14 @@ export function LudoRoom({
           </div>
           <div className="sbr-webtop-center">
             <RoomHudChips
-              hearts={economy.kissPoints}
-              trophies={gamesPlayed}
+              hearts={seasonPoints}
+              trophies={hudRealm?.points ?? 0}
               crowns={me?.isPremium ? 1 : 0}
               gifts={economy.giftsReceived}
               coins={economy.coinBalance}
               onAddCoins={() => setShowCoinStore(true)}
               realm={hudRealm}
-              onRealm={openDetails}
+              onRealm={openPass}
               onTrophy={openLeaderboard}
             />
           </div>
@@ -268,15 +253,15 @@ export function LudoRoom({
         {/* ═══ MOBILE HUD (hidden ≥1024px) ═══ */}
         <div className="sbr-m-only">
           <RoomTopHud
-            hearts={economy.kissPoints}
-            trophies={gamesPlayed}
+            hearts={seasonPoints}
+            trophies={hudRealm?.points ?? 0}
             crowns={me?.isPremium ? 1 : 0}
             gifts={economy.giftsReceived}
             coins={economy.coinBalance}
             onRoomOptions={openExit}
             onAddCoins={() => setShowCoinStore(true)}
             realm={hudRealm}
-            onRealm={openDetails}
+            onRealm={openPass}
             onTrophy={openLeaderboard}
           />
         </div>

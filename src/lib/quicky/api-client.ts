@@ -627,7 +627,7 @@ export const api = {
     realmConfig: {
       list: () =>
         jsonFetch<{ realms: any[]; itemOptions: any[] }>('/api/quicky/admin/realm-config'),
-      update: (level: number, data: { promotionThreshold?: number; cycleDurationDays?: number; isActive?: boolean; rewards?: unknown }) =>
+      update: (level: number, data: { promotionThreshold?: number; cycleDurationDays?: number; isActive?: boolean; rewards?: unknown; cratePoints?: number }) =>
         jsonFetch<{ ok: boolean; realm: any }>('/api/quicky/admin/realm-config', {
           method: 'PATCH',
           body: JSON.stringify({ level, ...data }),
@@ -726,6 +726,45 @@ export const api = {
         jsonFetch<{ ok: boolean; disabled: boolean }>('/api/quicky/admin/seasons', {
           method: 'DELETE',
           body: JSON.stringify({ id }),
+        }),
+    },
+    // ─── crate-pass PRD — monthly seasons + crates ─────────────────────
+    monthlySeasons: {
+      list: () =>
+        jsonFetch<{ seasons: any[]; itemOptions: any[] }>('/api/quicky/admin/monthly-seasons'),
+      create: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; season: any }>('/api/quicky/admin/monthly-seasons', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      update: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/monthly-seasons', {
+          method: 'PATCH',
+          body: JSON.stringify(data),
+        }),
+      remove: (id: string) =>
+        jsonFetch<{ ok: boolean; error?: string; message?: string }>(`/api/quicky/admin/monthly-seasons?id=${id}`, {
+          method: 'DELETE',
+        }),
+    },
+    crates: {
+      list: () =>
+        jsonFetch<{ crates: any[]; itemOptions: any[]; realms: any[] }>('/api/quicky/admin/crates'),
+      levels: (crateId: string) =>
+        jsonFetch<{ levels: any[] }>(`/api/quicky/crates/${crateId}`),
+      create: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; crate: any }>('/api/quicky/admin/crates', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      update: (data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; crate?: any; error?: string; message?: string }>('/api/quicky/admin/crates', {
+          method: 'PATCH',
+          body: JSON.stringify(data),
+        }),
+      remove: (id: string) =>
+        jsonFetch<{ ok: boolean; error?: string; message?: string }>(`/api/quicky/admin/crates?id=${id}`, {
+          method: 'DELETE',
         }),
     },
     realmRewards: {
@@ -1004,5 +1043,24 @@ export const api = {
   },
   cosmetics: {
     list: () => jsonFetch<{ cosmetics: any[] }>('/api/quicky/cosmetics'),
+  },
+  // ─── MONTHLY SEASON (crate-pass PRD — the ❤ room chip) ──────────────
+  season: {
+    status: () => jsonFetch<any>('/api/quicky/season'),
+  },
+  // ─── CRATES — the realm pass (crown 👑 room chip) ─────────────────────
+  crates: {
+    list: () => jsonFetch<{ crates: any[] }>('/api/quicky/crates'),
+    detail: (crateId: string) => jsonFetch<any>(`/api/quicky/crates/${crateId}`),
+    purchase: (crateId: string) =>
+      jsonFetch<{ ok: boolean; coinBalance: number; currentLevel: number; newLevels: number[] }>('/api/quicky/crates', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'purchase', crateId }),
+      }),
+    buyLevels: (crateId: string, levels: number) =>
+      jsonFetch<{ ok: boolean; coinBalance: number; currentLevel: number; newLevels: number[] }>('/api/quicky/crates/buy', {
+        method: 'POST',
+        body: JSON.stringify({ crateId, levels }),
+      }),
   },
 }

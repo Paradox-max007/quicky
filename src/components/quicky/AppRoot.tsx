@@ -50,9 +50,11 @@ import { GiftBackSheet } from './gift-back/GiftBackSheet'
 import { RealmDetails } from './realm/RealmDetails'
 import { RealmResult } from './realm/RealmResult'
 import { RealmLeaderboardScreen } from './realm/RealmLeaderboardScreen'
+import { RealmPassScreen } from './pass/RealmPassScreen'
 import { initPushSession } from '@/lib/quicky/push-client'
 import { RewardCollectPopup } from './rewards/RewardCollectPopup'
 import { useRealmStore } from '@/store/realm'
+import { usePassStore } from '@/store/pass'
 import { useRewardsStore, subscribeRewardsChannel, resetRewardsChannel } from '@/store/rewards'
 import { primeMentionSound } from '@/lib/quicky/mention-sound'
 import { MatchCelebration } from './MatchCelebration'
@@ -150,6 +152,16 @@ export function AppRoot() {
         // the room 🏆 chip or the Games hub trophy) or the 👑 details sheet
         // is on top, hardware back just closes it — the view underneath
         // (e.g. a LIVE game room) must stay untouched, never be left.
+        // Same for the Realm Pass screens (crown → crate store → details).
+        const pass = usePassStore.getState()
+        if (pass.crateId) {
+          pass.backToStore()
+          return
+        }
+        if (pass.passOpen) {
+          pass.closePass()
+          return
+        }
         const realm = useRealmStore.getState()
         if (realm.leaderboardOpen) {
           realm.closeLeaderboard()
@@ -597,6 +609,12 @@ export function AppRoot() {
       <RealmDetails />
       <RealmResult />
       <RealmLeaderboardScreen />
+
+      {/* Crate-pass PRD — the 👑 room chip opens the Realm Pass (crates):
+          realm details + crate store (screen 1) → crate details with packs +
+          the 100-level prize track (screen 2). Sliding screens on mobile
+          web/Capacitor, a centered modal on desktop web. */}
+      <RealmPassScreen />
 
       {/* Admin-console PRD §12 — the reward-collection popup: pending grants
           from settled realm cycles (online push + offline return). */}

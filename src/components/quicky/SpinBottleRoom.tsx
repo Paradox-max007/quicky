@@ -161,10 +161,10 @@ export function SpinBottleRoom({
   const [sendingChat, setSendingChat] = useState(false)
   const [showExit, setShowExit] = useState(false)
   const [switching, setSwitching] = useState(false)
-  // Realm PRD §41/§71 — the shared realm HUD chip + event-banner queue.
-  // openLeaderboard: the 🏆 HUD chip opens the SAME realm leaderboard
-  // surface the Games hub trophy opens (full screen mobile / drawer web).
-  const { hudRealm, bannerEvents, openDetails, openLeaderboard } = useRoomRealm()
+  // Realm PRD §41/§71 + crate-pass PRD — the shared realm HUD chips + event
+  // banners. ❤ = season points (monthly), 🏆 = realm cycle points (→ the
+  // leaderboard), 👑 = realm level (→ the Realm Pass / crates store).
+  const { hudRealm, seasonPoints, bannerEvents, openLeaderboard, openPass } = useRoomRealm()
   // Duel spotlight presentation state — `dismissedSpinId` is the spin whose
   // result panel has been shown & dismissed (cards slide back).
   const [dismissedSpinId, setDismissedSpinId] = useState<string | null>(null)
@@ -180,7 +180,6 @@ export function SpinBottleRoom({
   const { kbUp, kbHeightRef } = useRoomKeyboardPop()
   // ─── v3 state domains (§91): coin store, gift sheet, player interaction —
   // each isolated so a gift arriving never rebuilds the table.
-  const [gamesPlayed, setGamesPlayed] = useState(0) // HUD 🏆 (DB-driven)
   const [showCoinStore, setShowCoinStore] = useState(false)
   // Web breakpoint (≥1024px) → popover interaction; below → bottom sheet (§82/§83)
   const [isDesktop, setIsDesktop] = useState(false)
@@ -278,20 +277,6 @@ export function SpinBottleRoom({
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [])
-
-  // HUD 🏆 — real games-played from the DB (landing stats endpoint)
-  useEffect(() => {
-    let stopped = false
-    api.spinBottle
-      .landing()
-      .then((s) => {
-        if (!stopped) setGamesPlayed(s.gamesPlayed ?? 0)
-      })
-      .catch(() => {})
-    return () => {
-      stopped = true
-    }
   }, [])
 
   // ─── RUNTIME ATTACH (game-chat PRD §5/§99) ──────────────────────────────
@@ -677,14 +662,14 @@ export function SpinBottleRoom({
           </div>
           <div className="sbr-webtop-center">
             <RoomHudChips
-              hearts={economy.kissPoints}
-              trophies={gamesPlayed}
+              hearts={seasonPoints}
+              trophies={hudRealm?.points ?? 0}
               crowns={me?.isPremium ? 1 : 0}
               gifts={economy.giftsReceived}
               coins={economy.coinBalance}
               onAddCoins={() => setShowCoinStore(true)}
               realm={hudRealm}
-              onRealm={openDetails}
+              onRealm={openPass}
               onTrophy={openLeaderboard}
             />
           </div>
@@ -695,15 +680,15 @@ export function SpinBottleRoom({
         {/* ═══ MOBILE HUD (hidden ≥1024px) — no back arrow (§31) ═══ */}
         <div className="sbr-m-only">
           <RoomTopHud
-            hearts={economy.kissPoints}
-            trophies={gamesPlayed}
+            hearts={seasonPoints}
+            trophies={hudRealm?.points ?? 0}
             crowns={me?.isPremium ? 1 : 0}
             gifts={economy.giftsReceived}
             coins={economy.coinBalance}
             onRoomOptions={openExit}
             onAddCoins={() => setShowCoinStore(true)}
             realm={hudRealm}
-            onRealm={openDetails}
+            onRealm={openPass}
             onTrophy={openLeaderboard}
           />
         </div>

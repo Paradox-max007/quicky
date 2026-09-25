@@ -20,6 +20,7 @@ import { ensureRealmBootstrap } from './realm-config'
 import { eligibleForPromotion } from './realm-promotion'
 import { parseRewardsConfig, grantRewardItems, parseConsolationCoins } from './realm-rewards'
 import { nextAfterPromotion } from './realm-seasons'
+import { awardCratePoints } from '@/lib/quicky/crates'
 import { createPendingGrants, type GrantSpec } from '@/lib/quicky/rewards/catalog'
 import { getClient } from '@/lib/quicky/realtime'
 
@@ -283,7 +284,11 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
   // Consolation coins for places 4-8: cycle SNAPSHOT first (§26/§39 — admin
   // edits never rewrite a running cycle), the live realm definition as the
   // fallback for cycles created before the consolation system existed.
-  const defRow = await db.realmDefinition.findUnique({ where: { level: cycle.realmLevel }, select: { rewards: true } }).catch(() => null)
+  const defRow = await db.realmDefinition.findUnique({ where: { level: cycle.realmLevel }, select: { rewards: true, cratePoints: true } }).catch(() => null)
+  // Crate-pass PRD — winning THIS realm (promotion at settlement) grants the
+  // admin-configured crate points (successive incrementation default = the
+  // level number, seeded by migration). Fire-and-forget: never breaks settle.
+  const realmCratePoints = Math.max(0, defRow?.cratePoints ?? cycle.realmLevel)
   const consolation = parseConsolationCoins(cycle.rewardSnapshot) ?? parseConsolationCoins(defRow?.rewards ?? null)
   // Admin-console PRD §10 — catalog-based rewards assigned per position,
   // SNAPSHOTTED into the cycle at creation ("catalog" block in the JSON):
@@ -384,6 +389,12 @@ export async function settleOneCycle(cycleId: string): Promise<boolean> {
             .update({ where: { id: member.userId }, data: { coinBalance: { increment: coins } } })
             .catch(() => {})
         }
+      }
+
+      // Crate-pass PRD — the realm was WON (promotion): crate points land on
+      // the user's crate (levels advance instantly when the crate is unlocked).
+      if (promoted && realmCratePoints > 0) {
+        await awardCratePoints(member.userId, realmCratePoints)
       }
 
       // Reset the user's live state: promoted → level up (or SEASON ROLLOVER

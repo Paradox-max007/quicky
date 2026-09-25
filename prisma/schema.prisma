@@ -133,9 +133,13 @@ model User {
   // ─── Admin console PRD — reward grants + cosmetics inventory ────────────
   rewardGrants      UserRewardGrant[]
   cosmetics         UserCosmetic[]
-  // ─── FCM push + rewarded ads ────────────────────────────────────────────
+  // ─── FCM push + rewarded ads ──────────────────────────────────────────────
   pushTokens        PushToken[]
   adRewards         AdRewardEvent[]
+  // ─── Monthly Season + Crates (realm pass) ──────────────────────────────
+  seasons           UserSeason[]
+  cratePasses       UserCrate[]
+  crateLevelGrants  CrateLevelGrant[]
 }
 
 model Photo {
@@ -1235,6 +1239,10 @@ model RealmDefinition {
   // JSON reward config: { "first": [{itemId, quantity}], "second": [...], "third": [...] }
   // Limits (PRD §53): first ≤ 5 items, second ≤ 3, third ≤ 1.
   rewards           String?
+  // CRATE points granted when this realm is WON (promotion at settlement).
+  // Defaults to the level number (successive incrementation); admin-editable
+  // per realm from the console (crate pass PRD).
+  cratePoints       Int      @default(1)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -1518,6 +1526,160 @@ model AdminSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MONTHLY SEASON (crate-pass PRD)
+// A calendar-month competitive window. The ❤ chip in the game rooms shows
+// the viewer's points for the ACTIVE season; when the window rolls over the
+// points reset with the new season row (history preserved per season).
+// Admin manages name / image / seasonal gifts / season events.
+// Distinct from RealmSeason (the realm-LADDER season above the 15 realms).
+// ─────────────────────────────────────────────────────────────────────────────
+model Season {
+  id        String   @id @default(cuid())
+  name      String
+  imageUrl  String?
+  startsAt  DateTime
+  endsAt    DateTime
+  // Exactly one season should be active at a time; the active row is the one
+  // whose window contains "now" (isActive is the admin's master switch).
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gifts  SeasonGift[]
+  events SeasonEvent[]
+  users  UserSeason[]
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+// Season-scoped gift catalog entries — which existing GameItems are featured
+// as "seasonal gifts" for the season (display + gifting surface).
+model SeasonGift {
+  id        String  @id @default(cuid())
+  seasonId  String
+  itemId    String
+  sortOrder Int     @default(0)
+  season    Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, itemId])
+}
+
+// Season events — banner-style happenings inside a season window. The
+// multiplier boosts SEASON points while the event runs (realm points use the
+// separate GiftMultiplierEvent system).
+model SeasonEvent {
+  id          String   @id @default(cuid())
+  seasonId    String
+  name        String
+  emoji       String   @default("✨")
+  description String?
+  multiplier  Int      @default(1)
+  startsAt    DateTime
+  endsAt    DateTime
+  season      Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, startsAt])
+}
+
+// Per-user points for ONE season (the ❤ room chip value).
+model UserSeason {
+  id        String   @id @default(cuid())
+  userId    String
+  seasonId  String
+  points    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  season    Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, seasonId])
+  @@index([seasonId, points])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRATES — the "realm pass"
+// A purchasable 100-level prize track (the crown 👑 room chip opens the pass
+// store). Levels advance by CRATE POINTS (earned by winning realms — each
+// realm grants its admin-configured cratePoints) or by buying levels with
+// coins (per-level price admin-configured). Every reached level unlocks its
+// configured prize exactly once (CrateLevelGrant is the idempotency key).
+// ─────────────────────────────────────────────────────────────────────────────
+model Crate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  // Coins to unlock ("get") the crate.
+  priceCoins  Int      @default(500)
+  levelCount  Int      @default(100)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  levels CrateLevel[]
+  users  UserCrate[]
+
+  @@index([isActive, sortOrder])
+}
+
+// Per-level configuration (admin-owned): the PRIZE unlocked at this level and
+// the COIN price to buy the level outright.
+model CrateLevel {
+  id         String  @id @default(cuid())
+  crateId    String
+  level      Int
+  // "GIFT" (GameItem by itemId) | "COINS"
+  prizeType  String  @default("GIFT")
+  itemId     String?
+  // Display fields (used for COINS prizes / custom labels).
+  prizeName  String?
+  prizeEmoji String?
+  quantity   Int     @default(1)
+  // Coin price to BUY this level outright (packs sum these).
+  priceCoins Int     @default(100)
+  crate      Crate   @relation(fields: [crateId], references: [id], onDelete: Cascade)
+
+  @@unique([crateId, level])
+}
+
+// Per-user crate state. currentLevel = min(levelCount, cratePoints +
+// boughtLevels) — recomputed on every award/purchase; prizes are granted for
+// each NEWLY reached level (idempotent through CrateLevelGrant).
+model UserCrate {
+  id           String    @id @default(cuid())
+  userId       String
+  crateId      String
+  // NULL = locked (not purchased yet). Crate points can accumulate while
+  // locked and apply the moment the crate is unlocked.
+  unlockedAt   DateTime?
+  cratePoints  Int       @default(0)
+  boughtLevels Int       @default(0)
+  currentLevel Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crate        Crate     @relation(fields: [crateId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, crateId])
+}
+
+// Prize-grant ledger — one row per level REACHED (idempotency key
+// userId+crateId+level). source: "WON" (crate points) | "BOUGHT" (coins).
+model CrateLevelGrant {
+  id        String   @id @default(cuid())
+  userId    String
+  crateId   String
+  level     Int
+  source    String   @default("WON")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, crateId, level])
+  @@index([userId, createdAt])
 }
 
 

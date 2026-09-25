@@ -1,17 +1,24 @@
 'use client'
 
-// Quicky — ROOM REALM HOOK (realm PRD §41/§70-§72)
-// The ONE shared bridge between the global realm store and ANY game room:
-//   · hudRealm    — the 👑 HUD chip payload (level/name/points/threshold)
-//   · bannerEvents— the event-banner rotation queue: multiplier (§14/§17,
-//                   high priority) + realm-cycle-ending + the legacy
-//                   tonight event as the eternal fallback
-//   · refresh     — mounted rooms fetch a fresh authoritative snapshot (§68)
+// Quicky — ROOM REALM HOOK (realm PRD §41/§70-§72 + crate-pass PRD)
+// The ONE shared bridge between the global realm/pass stores and ANY game
+// room:
+//   · hudRealm     — the 👑 HUD chip payload (level/name/points/threshold)
+//   · seasonPoints — the ❤ HUD chip value (MONTHLY season points)
+//   · bannerEvents — the event-banner rotation queue: multiplier (§14/§17,
+//                    high priority) + realm-cycle-ending + the legacy
+//                    tonight event as the eternal fallback
+//   · refresh      — mounted rooms fetch a fresh authoritative snapshot (§68)
+//   · openDetails  — the realm details sheet (Cohort/History tabs)
+//   · openLeaderboard — the 🏆 chip → the realm leaderboard screen/drawer
+//   · openPass     — the 👑 chip → the REALM PASS (realm details + crates
+//                    store — a sliding screen on mobile, a modal on desktop)
 // Both room games (and future ones) consume this — never a per-game realm
 // system (§70).
 
 import { useEffect, useMemo } from 'react'
 import { useRealmStore } from '@/store/realm'
+import { usePassStore } from '@/store/pass'
 import { tonightEvent, type RoomEvent } from '@/components/quicky/RoomEventBanner'
 import type { RealmHudData } from '@/components/quicky/RoomTopHud'
 
@@ -23,10 +30,16 @@ export function useRoomRealm() {
   const openDetails = useRealmStore((s) => s.openDetails)
   const openLeaderboard = useRealmStore((s) => s.openLeaderboard)
 
+  const season = usePassStore((s) => s.season)
+  const refreshSeason = usePassStore((s) => s.refreshSeason)
+  const openPass = usePassStore((s) => s.openPass)
+
   // §68 — the room mounts → authoritative snapshot (one fetch, shared state).
   useEffect(() => {
     void refresh()
-  }, [refresh])
+    // Crate-pass PRD — the ❤ chip needs the monthly season state too.
+    void refreshSeason()
+  }, [refresh, refreshSeason])
 
   const hudRealm: RealmHudData | null = useMemo(
     () =>
@@ -35,6 +48,9 @@ export function useRoomRealm() {
         : null,
     [snapshot]
   )
+
+  /** ❤ MONTHLY season points (crate-pass PRD) — null while loading. */
+  const seasonPoints = season?.points ?? 0
 
   const bannerEvents: RoomEvent[] = useMemo(() => {
     const list: RoomEvent[] = []
@@ -60,5 +76,5 @@ export function useRoomRealm() {
     return list
   }, [multiplier, snapshot])
 
-  return { hudRealm, bannerEvents, openDetails, openLeaderboard, loaded }
+  return { hudRealm, seasonPoints, bannerEvents, openDetails, openLeaderboard, openPass, loaded }
 }

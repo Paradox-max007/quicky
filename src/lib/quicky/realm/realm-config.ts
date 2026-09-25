@@ -65,6 +65,9 @@ export async function ensureRealmBootstrap(): Promise<void> {
           description: r.description,
           promotionThreshold: r.promotionThreshold,
           cycleDurationDays: r.cycleDurationDays,
+          // Crate-pass PRD — successive incrementation default: winning realm
+          // N grants N crate points (admin-editable per realm afterwards).
+          cratePoints: r.level,
           // Seed the 4th-8th place consolation coins (4th=50 … 8th=5) —
           // admins edit them per realm afterwards from the console.
           rewards: JSON.stringify({ first: [], second: [], third: [], consolationCoins: DEFAULT_CONSOLATION_COINS }),

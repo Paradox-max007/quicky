@@ -30,6 +30,7 @@ import {
   Sparkles,
   TestTube2,
   CalendarRange,
+  Package,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/quicky/api-client'
@@ -47,6 +48,8 @@ import { AdminRealmsScreen } from './AdminRealmsScreen'
 import { AdminRewardsScreen } from './AdminRewardsScreen'
 import { AdminSeasonsScreen } from './AdminSeasonsScreen'
 import { AdminSettingsScreen } from './AdminSettingsScreen'
+import { AdminCratesScreen } from './AdminCratesScreen'
+import { AdminMonthlySeasons } from './AdminMonthlySeasons'
 
 type Section =
   | 'overview'
@@ -55,6 +58,7 @@ type Section =
   | 'events'
   | 'realms'
   | 'seasons'
+  | 'crates'
   | 'rewards'
   | 'stickers'
   | 'rules'
@@ -72,6 +76,7 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard; group: s
   { key: 'events', label: 'Events', icon: Zap, group: 'Content' },
   { key: 'realms', label: 'Realms', icon: Crown, group: 'Content' },
   { key: 'seasons', label: 'Seasons', icon: CalendarRange, group: 'Content' },
+  { key: 'crates', label: 'Crates / Pass', icon: Package, group: 'Content' },
   { key: 'rewards', label: 'Rewards & Cosmetics', icon: Sparkles, group: 'Content' },
   { key: 'stickers', label: 'Sticker Sets', icon: Sticker, group: 'Content' },
   { key: 'live', label: 'Live Tables', icon: Radio, group: 'Operations' },
@@ -229,7 +234,15 @@ export function AdminConsole({ adminName }: { adminName: string }) {
           {section === 'gifts' && <AdminGiftsScreen onBack={() => setSection('overview')} />}
           {section === 'events' && <AdminMultiplierEventsScreen />}
           {section === 'realms' && <AdminRealmsScreen />}
-          {section === 'seasons' && <AdminSeasonsScreen />}
+          {/* crate-pass PRD — the monthly seasons block sits at the top of the
+              Seasons console (below it: the realm-LADDER seasons). */}
+          {section === 'seasons' && (
+            <div className="flex flex-col gap-4">
+              <AdminMonthlySeasons />
+              <AdminSeasonsScreen />
+            </div>
+          )}
+          {section === 'crates' && <AdminCratesScreen />}
           {section === 'rewards' && <AdminRewardsScreen />}
           {section === 'stickers' && <AdminStickersScreen onBack={() => setSection('overview')} />}
           {section === 'rules' && <AdminRulesScreen onBack={() => setSection('overview')} />}
