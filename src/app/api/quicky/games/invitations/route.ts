@@ -14,6 +14,7 @@ import {
   sweepExpiredInvitations,
 } from '@/lib/quicky/dating-games/invitations'
 import { notifyGameInvite } from '@/lib/quicky/game-invites'
+import { canPlayGame } from '@/lib/quicky/entitlements'
 
 // ── POST /api/quicky/games/invitations — create (PRD §53) ───────────────
 //
@@ -45,6 +46,25 @@ export async function POST(req: NextRequest) {
   }
   if (recipientId === me.id) {
     return NextResponse.json({ error: 'cannot_invite_self' }, { status: 400 })
+  }
+
+  // ── Premium Party Games PRD §10 — server-side entitlement gate.
+  // A Free user cannot create a Ludo invitation. The check uses the live
+  // User row (with premiumUntil freshness). The UI is expected to show
+  // the subscription modal BEFORE calling this route (PRD §43), but the
+  // server is the authority — direct API calls cannot bypass the gate
+  // (PRD §6, §48). Truth or Dare invitations are FREE and bypass this
+  // gate (canPlayGame returns allowed=true for FREE games).
+  const meFull = await db.user.findUnique({
+    where: { id: me.id },
+    select: { isPremium: true, premiumUntil: true },
+  })
+  const entitlement = canPlayGame(meFull, gameType as any)
+  if (!entitlement.allowed) {
+    return NextResponse.json(
+      { error: 'premium_required', paywall: 'games', game: gameType },
+      { status: 402 }
+    )
   }
 
   // The recipient must be the OTHER participant of the match (PRD §9).

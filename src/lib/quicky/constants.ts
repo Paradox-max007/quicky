@@ -12,9 +12,14 @@ export const QUICKY = {
     gold: '#F5C570',
   },
 
-  // Free-tier limits per PRD §5.2, §8.3
+  // Free-tier limits (Premium Party Games PRD §13, §15, §46)
+  //   Likes:      10/day  (was 50 — PRD §13 lowers this to push upgrade)
+  //   Super Likes: 1/day  (unchanged from prior PRD)
+  //   Rewinds:     1/day
+  //   Quickies:    8/day
+  // Premium users get unlimited likes + quickies + rewinds and 5 superlikes/day.
   limits: {
-    freeLikesPerDay: 50,
+    freeLikesPerDay: 10,
     freeSuperLikesPerDay: 1,
     freeRewindsPerDay: 1,
     freeQuickyPerDay: 8, // mid-range of 5-10
@@ -122,9 +127,17 @@ export const TOD_DECKS: Record<string, { text: string; deck: 'flirty' | 'deep' |
   ],
 }
 
+// Per-game premium flags. The authoritative source of truth is now
+// src/lib/quicky/entitlements.ts (GAME_ENTITLEMENTS); this GAMES const is
+// kept for legacy callers (e.g. the GAMES catalog list) but the values
+// mirror the entitlement table so they stay consistent.
+//
+// Truth or Dare is FREE (PRD §1 — "Free Game"). Never Have I Ever is FREE
+// too (it'll be a free game once it ships; currently COMING_SOON per the
+// dating-games registry). The other icebreaker games remain premium.
 export const GAMES: { id: string; name: string; icon: string; desc: string; premium: boolean }[] = [
-  { id: 'truth_or_dare', name: 'Truth or Dare', icon: '\u{1F525}', desc: 'Curated decks: Flirty, Deep, Funny, Spicy', premium: true },
-  { id: 'never_have_i_ever', name: 'Never Have I Ever', icon: '\u{1F929}', desc: 'Reveal simultaneously, keep score', premium: true },
+  { id: 'truth_or_dare', name: 'Truth or Dare', icon: '\u{1F525}', desc: 'Curated decks: Flirty, Deep, Funny, Spicy', premium: false },
+  { id: 'never_have_i_ever', name: 'Never Have I Ever', icon: '\u{1F929}', desc: 'Reveal simultaneously, keep score', premium: false },
   { id: 'would_you_rather', name: 'Would You Rather', icon: '\u{1F914}', desc: 'Pick a side, then discuss', premium: true },
   { id: 'icebreaker_roulette', name: 'Icebreaker Roulette', icon: '\u{1F3B0}', desc: 'Spin for a random deep question', premium: true },
   { id: 'two_truths_lie', name: 'Two Truths and a Lie', icon: '\u{1F913}', desc: 'Find the fib in three statements', premium: true },

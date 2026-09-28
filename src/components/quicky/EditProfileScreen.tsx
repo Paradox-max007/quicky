@@ -95,7 +95,11 @@ export function EditProfileScreen() {
         city,
         interests,
         prompts,
-        htCm: htCm ?? undefined,
+        // Premium Party Games PRD §24 — FIX: previously sent as `htCm`
+        // which the server silently ignored (server key is `heightCm`).
+        // Sending `null` explicitly clears height ("Prefer not to say"),
+        // which the server now supports. Sending a number sets it.
+        heightCm: htCm ?? null,
         education: education || undefined,
         lifestyle: lifestyle || undefined,
       }

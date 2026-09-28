@@ -71,7 +71,11 @@ export function PremiumView() {
     { icon: Heart, label: 'Unlimited Likes', desc: 'No daily limit, ever' },
     { icon: Camera, label: 'Unlimited Quickies', desc: 'Send as many disappearing Quickies as you want' },
     { icon: Zap, label: '5 Super Likes / day', desc: '5x more Super Likes than free' },
-    { icon: Sparkles, label: 'Truth or Dare + Games', desc: 'Exclusive in-chat games' },
+    // Premium Party Games PRD §2, §3 — the Premium Party Games category
+    // (Spin the Bottle + Ludo). Truth or Dare is intentionally NOT in this
+    // list because it's free (PRD §1) — listing it as a Premium perk would
+    // be misleading.
+    { icon: Sparkles, label: 'Premium Party Games', desc: 'Spin the Bottle + Ludo' },
     { icon: Filter, label: 'Advanced Filters', desc: 'Height, education, lifestyle, verified-only' },
     { icon: MapPin, label: 'Passport', desc: 'Match anywhere in the world' },
     { icon: Crown, label: 'Premium Badge', desc: 'Stand out with a gold badge' },

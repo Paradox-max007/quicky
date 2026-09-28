@@ -31,11 +31,32 @@ import { activeLudoPlayerCount, assignLudoRoomAndSeat, normalizeLudoMode } from 
 import { scheduleLudoCountdown, seatedLudoPlayers } from '@/lib/quicky/ludo-server'
 import { touchMemberActivity } from '@/lib/quicky/room-activity'
 import { createGameState } from '@/lib/quicky/ludo/rules'
+import { canPlayGame } from '@/lib/quicky/entitlements'
 import type { Prisma } from '@prisma/client'
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // ── Premium Party Games PRD §6, §10 — server-side entitlement gate.
+  // Ludo is a Premium Party Game. Free users CANNOT join a room (neither
+  // 2P duel nor 4P table). The check uses the live User row (with
+  // premiumUntil freshness) so a just-expired premium is also blocked.
+  // The UI is expected to show the subscription modal BEFORE calling this
+  // route (PRD §43), but the server is the authority — direct API calls
+  // cannot bypass the gate (PRD §6, §48). Same rule applies whether Ludo
+  // is launched from Games page or Dating Chat (PRD §41).
+  const meFull = await db.user.findUnique({
+    where: { id: me.id },
+    select: { isPremium: true, premiumUntil: true },
+  })
+  const entitlement = canPlayGame(meFull, 'ludo')
+  if (!entitlement.allowed) {
+    return NextResponse.json(
+      { error: 'premium_required', paywall: 'games', game: 'ludo' },
+      { status: 402 }
+    )
+  }
 
   // The table MODE is chosen by the player BEFORE starting (2P duel or a
   // full 4-player table). Anything else falls back to the 2P duel.

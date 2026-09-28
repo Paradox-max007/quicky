@@ -2,10 +2,15 @@
 // POST /api/quicky/dm { toUserId, text }
 // Premium members can start a chat with someone they haven't mutually
 // matched with yet. Creates (or reuses) a match and posts the message.
+//
+// NOTE: the existing match-creation flow runs the messaging-privacy gate
+// via canMessage() (PRD §18-§21). The recipient's `allowAnyoneMessage`
+// setting is enforced even when the sender is Premium (PRD §19).
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { pushNotify } from '@/lib/quicky/push'
+import { canMessage } from '@/lib/quicky/messaging-privacy'
 
 export async function POST(req: NextRequest) {
   const me = await getCurrentUser()
@@ -26,16 +31,29 @@ export async function POST(req: NextRequest) {
   const target = await db.user.findUnique({ where: { id: toUserId } })
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Blocked either way? Refuse.
-  const block = await db.block.findFirst({
-    where: {
-      OR: [
-        { blockerId: me.id, blockedId: toUserId },
-        { blockerId: toUserId, blockedId: me.id },
-      ],
-    },
+  // ── MESSAGING PRIVACY (Premium Party Games PRD §18-§21)
+  // The DM route is the cold-start surface; existing-conversation grand-
+  // fathering doesn't apply because the match may not even exist yet. The
+  // recipient's `allowAnyoneMessage` setting is enforced — when OFF, only
+  // Friends / Connections (mutual Match) may DM. Premium status does NOT
+  // bypass this (PRD §19). The block check is folded into canMessage().
+  const msgPerm = await canMessage({
+    senderId: me.id,
+    recipientId: toUserId,
+    conversationKey: 'dm',
   })
-  if (block) return NextResponse.json({ error: 'Not available' }, { status: 403 })
+  if (!msgPerm.allowed) {
+    if (msgPerm.reason === 'blocked') {
+      return NextResponse.json({ error: 'Not available' }, { status: 403 })
+    }
+    if (msgPerm.reason === 'recipient_privacy') {
+      return NextResponse.json(
+        { error: 'recipient_privacy', message: 'They only accept messages from friends and connections.' },
+        { status: 403 }
+      )
+    }
+    return NextResponse.json({ error: msgPerm.reason ?? 'not_allowed' }, { status: 403 })
+  }
 
   // Reuse an existing active match between the two users, otherwise create one
   let match = await db.match.findFirst({

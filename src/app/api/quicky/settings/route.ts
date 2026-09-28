@@ -20,6 +20,10 @@ const DEFAULT_SETTINGS = {
   privacyHideOnline: false,
   privacyHideTyping: false,
   privacyHideReadReceipts: false,
+  // Premium Party Games PRD §18 — default TRUE so existing users keep
+  // current behaviour; turning OFF restricts new conversations to
+  // Friends / Connections.
+  allowAnyoneMessage: true,
   theme: 'dark' as const,
 }
 
@@ -73,6 +77,10 @@ export async function PATCH(req: NextRequest) {
   const boolFields = [
     'notifMessages', 'notifConnectionReqs', 'notifLikes', 'notifSuperLikes', 'notifProfileViews', 'notifSnackbars', 'notifGameEvents',
     'privacyHideAge', 'privacyHideDistance', 'privacyHideOnline', 'privacyHideTyping', 'privacyHideReadReceipts',
+    // Premium Party Games PRD §18 — messaging-privacy toggle. Free + Premium
+    // users BOTH can change this; Premium status does not bypass the rule
+    // (PRD §19), so the toggle must be available to everyone.
+    'allowAnyoneMessage',
   ]
   for (const f of boolFields) {
     if (body[f] !== undefined) allowed[f] = Boolean(body[f])

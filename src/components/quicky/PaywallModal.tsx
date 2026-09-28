@@ -9,6 +9,7 @@ import { QUICKY } from '@/lib/quicky/constants'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { PREMIUM_PARTY_GAMES } from '@/lib/quicky/entitlements'
 
 const PAYWALL_COPY: Record<
   string,
@@ -17,7 +18,8 @@ const PAYWALL_COPY: Record<
   likes: {
     icon: Heart,
     title: 'You’re out of likes',
-    body: 'Free users get 50 likes per day. Upgrade for unlimited likes — and unlimited chances to find your match.',
+    // Premium Party Games PRD §13 — free likes lowered from 50 to 10/day.
+    body: 'Free users get 10 likes per day. Upgrade for unlimited likes — and unlimited chances to find your match.',
     perk: 'Unlimited Likes',
   },
   superlikes: {
@@ -34,9 +36,13 @@ const PAYWALL_COPY: Record<
   },
   games: {
     icon: Sparkles,
-    title: 'Premium-only games',
-    body: 'Truth or Dare, Never Have I Ever, Icebreaker Roulette — exclusive in-chat games to break the ice and keep matches talking.',
-    perk: 'Truth or Dare + 4 more games',
+    // Premium Party Games PRD §3, §42 — the games paywall now advertises
+    // the Premium Party Games category (Spin the Bottle + Ludo). Truth or
+    // Dare is intentionally NOT mentioned here because it remains free
+    // (PRD §1 — "Free Game").
+    title: 'Premium Party Games',
+    body: 'Quicky Premium includes Spin the Bottle and Ludo — premium party games that make any match more fun.',
+    perk: 'Spin the Bottle + Ludo',
   },
   see_likes: {
     icon: Crown,
@@ -188,11 +194,30 @@ export function PaywallModal() {
             <p className="text-sm text-white/60 text-center mt-2 text-pretty max-w-xs mx-auto">{copy.body}</p>
 
             {/* Perk highlight */}
-            <div className="mt-4 mb-4 bg-[var(--qk-gold)]/10 border border-[var(--qk-gold)]/30 rounded-2xl px-3 py-2.5 flex items-center gap-2">
+            <div className="mt-4 mb-3 bg-[var(--qk-gold)]/10 border border-[var(--qk-gold)]/30 rounded-2xl px-3 py-2.5 flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-[var(--qk-gold)]/20 flex items-center justify-center shrink-0">
                 <Sparkles className="w-3.5 h-3.5 text-[var(--qk-gold)]" />
               </div>
               <p className="text-sm font-semibold text-[var(--qk-gold)]">{copy.perk}</p>
+            </div>
+
+            {/* Premium Party Games PRD §3, §42 — every paywall variant lists
+                the Premium Party Games category so users see the value no
+                matter which entry point fired the modal. The list is driven
+                by the central PREMIUM_PARTY_GAMES array from entitlements.ts
+                so adding a new game later automatically updates this UI. */}
+            <div className="mb-4 -mt-1 px-3 py-2.5 rounded-2xl border border-[var(--qk-accent)]/25 bg-[var(--qk-accent)]/8">
+              <p className="text-[10px] uppercase tracking-widest font-semibold text-[var(--qk-accent-light)] mb-1.5">
+                Premium Party Games
+              </p>
+              <ul className="space-y-1.5">
+                {PREMIUM_PARTY_GAMES.map((g) => (
+                  <li key={g.id} className="flex items-center gap-2 text-sm text-white/85">
+                    <span className="text-base leading-none">{g.emoji}</span>
+                    <span className="font-medium">{g.name}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
             {/* Plans */}

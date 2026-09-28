@@ -121,11 +121,24 @@ export const api = {
       city?: string
       interests?: string[]
       prompts?: { prompt: string; answer: string }[]
+      // Premium Party Games PRD §24 — body height. Pass `null` to clear
+      // ("Prefer not to say"). Server validates 120–230 cm.
+      heightCm?: number | null
+      education?: string | null
+      lifestyle?: string | null
       discoveryAgeMin?: number
       discoveryAgeMax?: number
       discoveryDistanceKm?: number
       discoveryShowVerifiedOnly?: boolean
       discoveryRecentlyActive?: boolean
+      discoveryHeightMin?: number
+      discoveryHeightMax?: number
+      // The server stores these as JSON-encoded strings but ACCEPTS arrays
+      // in the request body (it does JSON.stringify itself — see
+      // src/app/api/quicky/auth/me/route.ts lines 242–254). The client
+      // shape is therefore string[] (matches the discovery UI).
+      discoveryEducations?: string[]
+      discoveryLifestyles?: string[]
     }) =>
       jsonFetch<{ ok: boolean; user: any }>('/api/quicky/auth/me', {
         method: 'PATCH',

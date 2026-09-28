@@ -96,11 +96,18 @@ export type UserSettings = {
   /** In-game notifications (turn alerts with Go-to-Game + private game-chat
    *  message modals while off the game screen). Gates GameAlertCenter. */
   notifGameEvents: boolean
+  // Premium Party Games PRD §13 — Super Likes daily notification toggle
+  // (was missing in the TS type; present in Prisma + the PATCH route).
+  notifSuperLikes: boolean
   privacyHideAge: boolean
   privacyHideDistance: boolean
   privacyHideOnline: boolean
   privacyHideTyping: boolean
   privacyHideReadReceipts: boolean
+  // Premium Party Games PRD §18 — messaging-privacy. When FALSE, only
+  // Friends / Connections (mutual matches) may send a NEW message to me.
+  // Existing conversations are grandfathered in (PRD §20).
+  allowAnyoneMessage: boolean
   theme: string
 }
 

@@ -28,10 +28,30 @@ import {
   activePlayerCount,
   normalizeGender,
 } from '@/lib/quicky/room-assignment'
+import { canPlayGame } from '@/lib/quicky/entitlements'
 
 export async function POST(_req: NextRequest) {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // ── Premium Party Games PRD §6, §11 — server-side entitlement gate.
+  // Spin the Bottle is a Premium Party Game. Free users CANNOT join a room.
+  // The check uses the live User row (with premiumUntil freshness) so a
+  // user whose premium expired mid-session is also blocked. The UI is
+  // expected to show the subscription modal BEFORE calling this route
+  // (PRD §43), but the server is the authority — direct API calls cannot
+  // bypass the gate (PRD §6, §48).
+  const meFull = await db.user.findUnique({
+    where: { id: me.id },
+    select: { isPremium: true, premiumUntil: true },
+  })
+  const entitlement = canPlayGame(meFull, 'spin_bottle')
+  if (!entitlement.allowed) {
+    return NextResponse.json(
+      { error: 'premium_required', paywall: 'games', game: 'spin_bottle' },
+      { status: 402 }
+    )
+  }
 
   // Lifecycle §4: reclaim abandoned rooms BEFORE hunting for a table.
   maybeRunCleanupLazy()

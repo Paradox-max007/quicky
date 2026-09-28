@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
 import { deleteUploadedMedia } from '@/lib/quicky/media-cleanup'
+import { canMessage } from '@/lib/quicky/messaging-privacy'
 
 // Hard TTL safety net: expired, unconsumed Quickies are consumed + their
 // media permanently deleted even if the client never reported the view.
@@ -175,15 +176,32 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
   // BEFORE the row is created — nothing is stored, so after a re-login or
   // refresh the failed message is simply gone. Both directions blocked.
   const dmPeer = match.userAId === me.id ? match.userBId : match.userAId
-  const blockRow = await db.block.findFirst({
-    where: {
-      OR: [
-        { blockerId: me.id, blockedId: dmPeer },
-        { blockerId: dmPeer, blockedId: me.id },
-      ],
-    },
+
+  // ── MESSAGING PRIVACY (Premium Party Games PRD §18-§21)
+  // The recipient's `allowAnyoneMessage` setting is enforced centrally
+  // via `canMessage()`. When the recipient has turned OFF "allow anyone
+  // to message me", only Friends / Connections (mutual Match) may send a
+  // NEW message. Existing conversations are grandfathered in (PRD §20).
+  // Premium status does NOT bypass this (PRD §19). The block check is
+  // also folded into canMessage() so the rule lives in one place.
+  const msgPerm = await canMessage({
+    senderId: me.id,
+    recipientId: dmPeer,
+    matchId,
+    conversationKey: 'match',
   })
-  if (blockRow) return NextResponse.json({ error: 'blocked' }, { status: 403 })
+  if (!msgPerm.allowed) {
+    if (msgPerm.reason === 'blocked') {
+      return NextResponse.json({ error: 'blocked' }, { status: 403 })
+    }
+    if (msgPerm.reason === 'recipient_privacy') {
+      return NextResponse.json(
+        { error: 'recipient_privacy', message: 'They only accept messages from friends and connections.' },
+        { status: 403 }
+      )
+    }
+    return NextResponse.json({ error: msgPerm.reason ?? 'not_allowed' }, { status: 403 })
+  }
 
   const body = await req.json()
   const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'sticker' | 'system' | 'game_activity'

@@ -425,6 +425,13 @@ model UserSettings {
   privacyHideOnline     Boolean  @default(false) // premium
   privacyHideTyping     Boolean  @default(false) // premium
   privacyHideReadReceipts Boolean @default(false) // premium
+  // Premium Party Games PRD §18-§20 — messaging privacy. When FALSE, only
+  // users who have an existing relationship with the recipient (a mutual
+  // Match, OR an accepted Friendship) may send a NEW message. Existing
+  // conversations continue to work — the gate is on initiating/sending,
+  // not on rendering past messages. Premium status does NOT bypass this
+  // (PRD §19).
+  allowAnyoneMessage   Boolean  @default(true)
   // Theme: dark | midnight | coral | lavender | gold
   theme                String   @default("dark")
   createdAt            DateTime @default(now())

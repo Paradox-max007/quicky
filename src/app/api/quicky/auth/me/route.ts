@@ -144,7 +144,16 @@ export async function PATCH(req: NextRequest) {
       data.city = city || null
     }
 
-    if (body.heightCm !== undefined) {
+    // Premium Party Games PRD §24, §27 — body-height fix. The previous
+    // implementation skipped the field whenever body.heightCm was undefined,
+    // which meant a user could set height once but never CLEAR it back to
+    // null ("Prefer not to say"). Now:
+    //   • body.heightCm === null  → explicitly clear the field.
+    //   • body.heightCm === <num> → validate 120–230 cm and persist.
+    //   • body.heightCm === undefined → don't touch the field (legacy).
+    if (body.heightCm === null) {
+      data.heightCm = null
+    } else if (body.heightCm !== undefined) {
       const h = Number(body.heightCm)
       if (!Number.isFinite(h) || h < 120 || h > 230) {
         return NextResponse.json({ error: 'Height must be 120–230 cm' }, { status: 400 })

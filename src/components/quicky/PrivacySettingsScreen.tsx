@@ -6,7 +6,7 @@ import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { SettingsSubScreen } from './SettingsSubScreen'
 import { Toggle } from './Toggle'
-import { Eye, MapPin, Clock, Type, Crown, Lock, CheckCheck } from 'lucide-react'
+import { Eye, MapPin, Clock, Type, Crown, Lock, CheckCheck, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type PrivacyToggle = {
@@ -15,9 +15,26 @@ type PrivacyToggle = {
   description: string
   icon: any
   premium?: boolean
+  /** When TRUE, the toggle's stored value is INVERTED relative to the user-
+   *  facing semantics (i.e. stored `false` = "allowed", UI shows ON). Used
+   *  for the messaging-privacy toggle which is stored as `allowAnyoneMessage`
+   *  (true = anyone can message). */
+  invert?: boolean
 }
 
+// Premium Party Games PRD §18 — the new "Allow anyone to message me" toggle.
+// It is FREE for everyone (Premium does not bypass — PRD §19). Listed FIRST
+// because it's the most user-facing privacy control. The "Hide …" toggles
+// below remain premium-gated where they were before.
 const TOGGLES: PrivacyToggle[] = [
+  {
+    key: 'allowAnyoneMessage',
+    label: 'Allow anyone to message me',
+    description: 'When OFF, only Friends and Connections (mutual matches) can start a new conversation.',
+    icon: MessageSquare,
+    premium: false,
+    // not inverted — `true` (default) means "anyone" can message; UI shows ON.
+  },
   { key: 'privacyHideAge', label: 'Hide Age', description: 'Your age won\'t appear on your public profile', icon: Clock },
   { key: 'privacyHideDistance', label: 'Hide Distance', description: 'Your distance from others won\'t be shown', icon: MapPin },
   { key: 'privacyHideOnline', label: 'Hide Online Status', description: 'Don\'t show when you\'re online', icon: Eye, premium: true },
@@ -84,7 +101,9 @@ export function PrivacySettingsScreen() {
   return (
     <SettingsSubScreen title="Privacy Settings">
       <div className="px-5 py-5">
-        <p className="text-xs text-white/50 mb-3 px-1">Control what others can see about you.</p>
+        <p className="text-xs text-white/50 mb-3 px-1">
+          Control who can message you and what others can see about you.
+        </p>
         <div className="bg-white/5 rounded-2xl border border-white/8 overflow-hidden">
           {TOGGLES.map((t, idx) => {
             const value = settings?.[t.key] ?? false

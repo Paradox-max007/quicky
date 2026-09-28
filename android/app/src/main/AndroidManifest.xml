@@ -39,4 +39,49 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Premium Party Games PRD §28-§37 — camera, microphone, location,
+         and push-notification permissions for the WebView-based features.
+
+         • CAMERA + RECORD_AUDIO — required by getUserMedia() inside the
+           WebView for the Quicky photo capture + voice-message recording
+           (ChatView.tsx → requestCameraPermission / requestMicPermission).
+           Without these declared, Android WKWebView refuses to grant
+           media access and the prompts hard-fail on every device.
+         • ACCESS_FINE_LOCATION + ACCESS_COARSE_LOCATION — required by the
+           @capacitor/geolocation plugin for the (future) location-based
+           discovery / distance filter. The plugin performs the runtime
+           permission request; the manifest entries are the static
+           declarations Android requires BEFORE the runtime prompt.
+         • POST_NOTIFICATIONS — Android 13+ runtime permission for FCM
+           push notifications (already wired via @capacitor-firebase/
+           messaging; the manifest entry was missing — push was silently
+           failing on Android 13+).
+         • READ_MEDIA_IMAGES (Android 13+) / READ_EXTERNAL_STORAGE
+           (Android ≤12) — required for the file-picker path used to
+           upload profile photos / gallery media (ChatView's gallery
+           button + PhotoVerification's <input capture>). -->
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Android 13+ (API 33+) runtime notification permission -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Android 13+ (API 33+) media-image access; READ_EXTERNAL_STORAGE
+         is the legacy equivalent for API ≤ 32. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Camera hardware feature is optional (not every device has one) —
+         declaring it `required="false"` lets the app install on devices
+         without a camera while still requesting the permission at runtime
+         on devices that DO have one. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
 </manifest>
