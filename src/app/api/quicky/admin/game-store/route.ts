@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
-import { getMonetizationStats, ensureGameStoreBootstrap } from '@/lib/quicky/game-store'
+import { getMonetizationStats, ensureGameStoreBootstrap, refundGamePurchase } from '@/lib/quicky/game-store'
 import { upsertBoostConfig, invalidateBoostConfigCache } from '@/lib/quicky/realm/realm-boost'
 
 export const dynamic = 'force-dynamic'
@@ -106,6 +106,20 @@ export async function POST(req: NextRequest) {
       })
       await logAdminAction(guard.me.id, 'game_store.boost.upsert', 'RealmBoostConfig', row.id, { realmLevel: row.realmLevel, multiplier: row.multiplier, hoursBeforeEnd: row.hoursBeforeEnd, enabled: row.enabled })
       return NextResponse.json({ ok: true, row })
+    }
+
+    // PRD §67 — refund a COMPLETED purchase: REFUND ledger event + balance
+    // reconciliation (never a silent status flip). Exactly-once.
+    if (kind === 'refund') {
+      const purchaseId = data.purchaseId ? String(data.purchaseId) : ''
+      if (!purchaseId) return NextResponse.json({ error: 'missing_purchase_id' }, { status: 400 })
+      const result = await refundGamePurchase(purchaseId)
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.error === 'not_found' ? 404 : 409 })
+      await logAdminAction(guard.me.id, 'game_store.purchase.refund', 'GamePurchase', purchaseId, {
+        coinsReclaimed: result.coinsReclaimed,
+        crateRevoked: result.crateRevoked,
+      })
+      return NextResponse.json({ ...result })
     }
 
     return NextResponse.json({ error: 'unknown_kind' }, { status: 400 })

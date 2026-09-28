@@ -137,6 +137,52 @@ export function RealmBoostBadge({ compact }: { compact?: boolean }) {
 }
 
 /**
+ * ⏰ Cycle countdown phase chip (Game Economy PRD §19): the countdown
+ * escalates as the cycle closes —
+ *     boost active → "🔥 2× ACTIVE"
+ *     ≤ 30 min     → "🔥 FINAL 30 MINUTES"
+ *     ≤ 5 min      → "🔥 FINAL 5 MINUTES"
+ *     ≤ 0          → "🏆 REALM COMPLETE"
+ * Renders nothing in the calm mid-cycle window (the plain timer covers it).
+ */
+export function RealmCyclePhaseBadge({ endsAt }: { endsAt: string }) {
+  const boost = useRealmStore((s) => s.boost)
+  const now = useNow(1000)
+  const remaining = new Date(endsAt).getTime() - now
+
+  let label: string | null = null
+  let bg = 'color-mix(in srgb, var(--qk-accent) 16%, transparent)'
+  let border = 'color-mix(in srgb, var(--qk-accent) 40%, transparent)'
+  let color = 'var(--qk-accent)'
+
+  if (remaining <= 0) {
+    label = '🏆 REALM COMPLETE'
+    bg = 'color-mix(in srgb, var(--qk-gold) 16%, transparent)'
+    border = 'color-mix(in srgb, var(--qk-gold) 40%, transparent)'
+    color = 'var(--qk-gold)'
+  } else if (remaining <= 5 * 60 * 1000) {
+    label = '🔥 FINAL 5 MINUTES'
+  } else if (remaining <= 30 * 60 * 1000) {
+    label = '🔥 FINAL 30 MINUTES'
+  } else if (boost.active && boost.multiplier > 1) {
+    label = `🔥 ${boost.multiplier}× ACTIVE`
+  }
+  if (!label) return null
+
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 border whitespace-nowrap"
+      style={{ background: bg, borderColor: border }}
+      data-testid="realm-cycle-phase"
+    >
+      <span className="text-[10px] font-black uppercase tracking-wide" style={{ color }}>
+        {label}
+      </span>
+    </span>
+  )
+}
+
+/**
  * ⚡ Gift multiplier header (PRD §14/§15/§72): "3× TIME — Send gifts and
  * earn more points — 01:42:18", driven by the realm store's live snapshot
  * and counting down from the SERVER expiresAt (client ticks are cosmetic).

@@ -52,8 +52,8 @@ import { RealmResult } from './realm/RealmResult'
 import { RealmLeaderboardScreen } from './realm/RealmLeaderboardScreen'
 import { RealmPassScreen } from './pass/RealmPassScreen'
 import { GameStoreModal } from './game-store/GameStoreModal'
-import { useGameStoreStore } from '@/store/game-store'
-import { resetMonetizationPrompts } from '@/lib/quicky/monetization'
+import { useGameStoreStore, openGameStore } from '@/store/game-store'
+import { resetMonetizationPrompts, trackFunnel } from '@/lib/quicky/monetization'
 import { initPushSession } from '@/lib/quicky/push-client'
 import { RewardCollectPopup } from './rewards/RewardCollectPopup'
 import { useRealmStore } from '@/store/realm'
@@ -63,7 +63,7 @@ import { primeMentionSound } from '@/lib/quicky/mention-sound'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
 import { GameInvitePopup } from './GameInvitePopup'
-import { Toaster as SonnerToaster } from 'sonner'
+import { Toaster as SonnerToaster, toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { useGameChatStore } from '@/store/game-chat'
 import { useGameRoomStore } from '@/store/game-room'
@@ -245,6 +245,35 @@ export function AppRoot() {
   // Session-scoped frequency caps for proactive Buy-Coins nudges.
   useEffect(() => {
     resetMonetizationPrompts()
+  }, [user?.id])
+
+  // ─── Purchase recovery (Game Economy PRD §70) ─────────────────────────────
+  // Every session start re-syncs entitlements with the server: a payment
+  // that landed while the app was closed (or a crate bought but never
+  // opened) is surfaced instead of being silently lost. The server is the
+  // single source of truth — the client only renders its answer.
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await api.gameStore.sync()
+        if (cancelled || !res) return
+        const owned = res.ownedCrates ?? []
+        if (owned.length > 0) {
+          trackFunnel('purchase_recovery_surfaced', { ownedCrates: owned.length })
+          toast(`You have ${owned.length} paid crate${owned.length === 1 ? '' : 's'} waiting to be opened.`, {
+            action: { label: 'Open', onClick: () => openGameStore('crates') },
+            duration: 9000,
+          })
+        }
+      } catch {
+        // recovery is best-effort — the Crates tab shows owned crates too
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [user?.id])
 
   // ─── Realm progression (realm PRD §68) ──────────────────────────────────

@@ -183,6 +183,15 @@ export function GiftSheet({ open, onClose, roomId, players, meId, coinBalance, o
             <span className="text-[var(--qk-gold)] text-sm">🪙</span>
             <span className="text-sm font-semibold text-[var(--qk-gold)]">{coinBalance.toLocaleString()}</span>
             <span className="text-xs text-white/50">coins</span>
+            {/* Game Economy PRD §53 — one-tap Buy Coins next to the balance. */}
+            <button
+              onClick={() => onBuyCoins?.()}
+              className="ml-1.5 flex items-center justify-center w-5 h-5 rounded-full text-[13px] font-black leading-none text-white bg-coral-gradient active:scale-95 transition-transform"
+              aria-label="Buy more coins"
+              data-testid="gift-header-buy-coins"
+            >
+              +
+            </button>
           </div>
         </div>
         <button onClick={onClose} className="p-2 rounded-full bg-white/5" aria-label="Close">

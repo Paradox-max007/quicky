@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Crown, Trophy, History } from 'lucide-react'
 import { useRealmStore } from '@/store/realm'
-import { RealmProgress, RealmCycleTimer, GiftMultiplierHeader } from './RealmProgress'
+import { RealmProgress, RealmCycleTimer, GiftMultiplierHeader, RealmCyclePhaseBadge } from './RealmProgress'
 import { RealmLeaderboard } from './RealmLeaderboard'
 
 type Tab = 'realm' | 'leaderboard' | 'history'
@@ -104,9 +104,13 @@ export function RealmDetails() {
                       {snapshot.cycle && (
                         <div className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 px-3 py-2.5">
                           <p className="text-[11px] font-bold uppercase tracking-wide opacity-70">Realm cycle</p>
-                          <p className="text-[12px] font-black tabular-nums" style={{ color: 'var(--qk-gold)' }}>
-                            <RealmCycleTimer endsAt={snapshot.cycle.endsAt} /> remaining
-                          </p>
+                          <div className="flex items-center gap-2">
+                            {/* Game Economy PRD §19 — escalating phase chip. */}
+                            <RealmCyclePhaseBadge endsAt={snapshot.cycle.endsAt} />
+                            <p className="text-[12px] font-black tabular-nums" style={{ color: 'var(--qk-gold)' }}>
+                              <RealmCycleTimer endsAt={snapshot.cycle.endsAt} /> remaining
+                            </p>
+                          </div>
                         </div>
                       )}
                       <div className="grid grid-cols-3 gap-2">

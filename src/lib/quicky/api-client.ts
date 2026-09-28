@@ -902,6 +902,12 @@ export const api = {
           `/api/quicky/admin/game-store?kind=${kind}&id=${id}${realmLevel ? `&realmLevel=${realmLevel}` : ''}`,
           { method: 'DELETE' }
         ),
+      /** PRD §67 — refund a completed purchase (ledger + balance reconciliation). */
+      refund: (purchaseId: string) =>
+        jsonFetch<{ ok: boolean; coinsReclaimed: number; crateRevoked: boolean; status: string }>(
+          '/api/quicky/admin/game-store',
+          { method: 'POST', body: JSON.stringify({ kind: 'refund', data: { purchaseId } }) }
+        ),
     },
   },
   // ─── GAME CHAT (game-chat PRD §7+) — private player-to-player messaging,

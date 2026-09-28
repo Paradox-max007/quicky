@@ -21,7 +21,7 @@ import { X, ArrowLeft, ArrowRight, Trophy, Crown, Play, TrendingUp } from 'lucid
 import { useRealmStore } from '@/store/realm'
 import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { formatCompact } from '@/lib/quicky/format'
-import { RealmCycleTimer, RealmBoostBadge } from './RealmProgress'
+import { RealmCycleTimer, RealmBoostBadge, RealmCyclePhaseBadge } from './RealmProgress'
 import { RewardedAdModal } from '../RewardedAdModal'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -60,6 +60,12 @@ export function RealmLeaderboardScreen() {
                 </span>
               )}
             </div>
+            {/* Game Economy PRD §19 — escalating countdown phase chip. */}
+            {snapshot.cycle && (
+              <div className="mt-2 flex items-center gap-2">
+                <RealmCyclePhaseBadge endsAt={snapshot.cycle.endsAt} />
+              </div>
+            )}
             <div className="mt-3 flex items-center gap-2 rounded-2xl bg-[var(--qk-gold)]/8 border border-[var(--qk-gold)]/15 px-3 py-2">
               <TrendingUp className="w-3.5 h-3.5 text-[var(--qk-gold)] shrink-0" aria-hidden />
               <p className="text-[11.5px] font-semibold leading-snug">

@@ -13,7 +13,7 @@
 //     funnel event counts + recent purchases (PRD §59-§62)
 
 import { useCallback, useEffect, useState } from 'react'
-import { Coins, Package, Flame, BarChart3, Plus, RefreshCw, Save, Trash2, Pencil } from 'lucide-react'
+import { Coins, Package, Flame, BarChart3, Plus, RefreshCw, Save, Trash2, Pencil, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { ConsoleCard, ConsoleRetry } from './AdminConsole'
@@ -91,6 +91,7 @@ export function AdminGameStoreScreen() {
   const [pkgDraft, setPkgDraft] = useState<Pkg | null>(null)
   const [crateDraft, setCrateDraft] = useState<Crate | null>(null)
   const [saving, setSaving] = useState(false)
+  const [refunding, setRefunding] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setFailed(false)
@@ -111,6 +112,28 @@ export function AdminGameStoreScreen() {
   useEffect(() => {
     void load()
   }, [load])
+
+  /** PRD §67 — refund a completed purchase (REFUND ledger + balance reconciliation). */
+  const refundPurchase = useCallback(
+    async (p: Stats['recentPurchases'][number]) => {
+      if (!window.confirm(`Refund ${p.user}'s ${p.productType} purchase ($${p.amount.toFixed(2)})?\n\nThis writes a REFUND ledger event and reclaims the credited coins (an unopened crate is revoked).`)) return
+      setRefunding(p.id)
+      try {
+        const res = await api.admin.gameStore.refund(p.id)
+        if (res?.ok) {
+          toast.success(`Purchase refunded — ${res.coinsReclaimed.toLocaleString()} coins reclaimed${res.crateRevoked ? ' · crate entitlement revoked' : ''}.`)
+          void load()
+        } else {
+          toast.error('Refund failed — is the purchase still COMPLETED?')
+        }
+      } catch {
+        toast.error('Refund request failed.')
+      } finally {
+        setRefunding(null)
+      }
+    },
+    [load]
+  )
 
   const savePkg = async () => {
     if (!pkgDraft) return
@@ -577,6 +600,7 @@ export function AdminGameStoreScreen() {
                       <th className="py-2 pr-3">Provider</th>
                       <th className="py-2 pr-3">Status</th>
                       <th className="py-2 pr-3">Date</th>
+                      <th className="py-2 pr-3" />
                     </tr>
                   </thead>
                   <tbody>
@@ -586,8 +610,22 @@ export function AdminGameStoreScreen() {
                         <td className="py-2.5 pr-3 text-xs font-bold">{p.productType}</td>
                         <td className="py-2.5 pr-3 tabular-nums">${p.amount.toFixed(2)}</td>
                         <td className="py-2.5 pr-3 text-xs text-white/50">{p.provider}</td>
-                        <td className="py-2.5 pr-3 text-xs font-bold text-[#30D158]">{p.status}</td>
+                        <td className="py-2.5 pr-3 text-xs font-bold">{p.status === 'COMPLETED' ? <span className="text-[#30D158]">COMPLETED</span> : p.status === 'REFUNDED' ? <span className="text-[#FF6B6B]">REFUNDED</span> : <span className="text-white/60">{p.status}</span>}</td>
                         <td className="py-2.5 pr-3 text-xs text-white/40">{new Date(p.createdAt).toLocaleString()}</td>
+                        <td className="py-2.5 pr-3">
+                          {p.status === 'COMPLETED' && (
+                            <button
+                              onClick={() => void refundPurchase(p)}
+                              disabled={refunding === p.id}
+                              className="flex items-center gap-1 rounded-lg border border-[#FF6B6B]/30 bg-[#FF6B6B]/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-[#FF6B6B] hover:bg-[#FF6B6B]/20 disabled:opacity-40 transition-colors"
+                              title="Refund this purchase — writes a REFUND ledger event and reconciles the balance (PRD §67)"
+                              data-testid={`admin-refund-${p.id}`}
+                            >
+                              <RotateCcw className="w-3 h-3" aria-hidden />
+                              {refunding === p.id ? 'Refunding…' : 'Refund'}
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

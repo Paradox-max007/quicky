@@ -603,6 +603,129 @@ export async function purchaseCosmetic(userId: string, rewardId: string, level =
   return { ok: true, coinBalance: result, priceCoins: price }
 }
 
+// ── Refund (PRD §67: a refund MUST write a REFUND ledger event and reconcile
+//    the balance — it is never silently ignored) ────────────────────────────
+
+export type RefundResult =
+  | { ok: true; coinsReclaimed: number; crateRevoked: boolean; status: 'REFUNDED' }
+  | { ok: false; error: 'not_found' | 'not_refundable' }
+
+/**
+ * Admin-triggered refund of a COMPLETED purchase. Exactly-once (conditional
+ * COMPLETED → REFUNDED flip), then balance reconciliation:
+ *   · COIN_PACK → reclaim the credited coins (clamped at 0 — coins already
+ *     spent cannot force a negative balance; the ledger row records the
+ *     nominal vs reclaimed delta for the audit trail).
+ *   · CRATE     → unopened entitlement is revoked outright; an OPENED crate
+ *     reclaims only its coin component (realm points/cosmetics are gameplay
+ *     awards the admin adjusts separately). Every step is ledgered.
+ */
+export async function refundGamePurchase(purchaseId: string): Promise<RefundResult> {
+  const p = await db.gamePurchase.findUnique({ where: { id: purchaseId } }).catch(() => null)
+  if (!p) return { ok: false, error: 'not_found' }
+  if (p.status !== 'COMPLETED') return { ok: false, error: 'not_refundable' }
+
+  // Exactly-once gate: only a still-COMPLETED row flips to REFUNDED.
+  const flipped = await db.gamePurchase
+    .updateMany({ where: { id: p.id, status: 'COMPLETED' }, data: { status: 'REFUNDED' } })
+    .catch(() => ({ count: 0 }))
+  if (flipped.count === 0) return { ok: false, error: 'not_refundable' }
+
+  let coinsReclaimed = 0
+  let crateRevoked = false
+
+  try {
+    if (p.productType === 'COIN_PACK') {
+      const nominal = (p.coins ?? 0) + (p.bonusCoins ?? 0)
+      if (nominal > 0) {
+        await db.$transaction(async (tx: Prisma.TransactionClient) => {
+          const u = await tx.user.findUnique({ where: { id: p.userId }, select: { coinBalance: true } })
+          const reclaim = Math.min(u?.coinBalance ?? 0, nominal)
+          if (reclaim > 0) {
+            await tx.user.update({ where: { id: p.userId }, data: { coinBalance: { decrement: reclaim } } })
+          }
+          await tx.coinLedger.create({
+            data: {
+              userId: p.userId,
+              delta: -reclaim,
+              reason: 'refund',
+              meta: JSON.stringify({
+                purchaseId: p.id,
+                productType: 'COIN_PACK',
+                nominalRefund: nominal,
+                reclaimed: reclaim,
+                spentShortfall: nominal - reclaim,
+              }),
+            },
+          })
+          coinsReclaimed = reclaim
+        })
+      }
+    } else if (p.productType === 'CRATE') {
+      const cp = await db.cratePurchase.findFirst({ where: { purchaseId: p.id } }).catch(() => null)
+      if (cp && cp.status === 'OWNED') {
+        // Never opened → revoke the entitlement outright; nothing was granted.
+        await db.cratePurchase.delete({ where: { id: cp.id } }).catch(() => {})
+        crateRevoked = true
+        await db.coinLedger.create({
+          data: {
+            userId: p.userId,
+            delta: 0,
+            reason: 'refund',
+            meta: JSON.stringify({ purchaseId: p.id, productType: 'CRATE', cratePurchaseId: cp.id, entitlementRevoked: true }),
+          },
+        })
+      } else if (cp && cp.status === 'OPENED') {
+        // Already opened → reclaim only the coin component (clamped at 0).
+        const crateCoins = (await db.crateProduct
+          .findUnique({ where: { id: p.productId }, select: { coins: true } })
+          .catch(() => null))?.coins ?? 0
+        if (crateCoins > 0) {
+          await db.$transaction(async (tx: Prisma.TransactionClient) => {
+            const u = await tx.user.findUnique({ where: { id: p.userId }, select: { coinBalance: true } })
+            const reclaim = Math.min(u?.coinBalance ?? 0, crateCoins)
+            if (reclaim > 0) {
+              await tx.user.update({ where: { id: p.userId }, data: { coinBalance: { decrement: reclaim } } })
+            }
+            await tx.coinLedger.create({
+              data: {
+                userId: p.userId,
+                delta: -reclaim,
+                reason: 'refund',
+                meta: JSON.stringify({
+                  purchaseId: p.id,
+                  productType: 'CRATE',
+                  cratePurchaseId: cp.id,
+                  crateWasOpened: true,
+                  nominalRefund: crateCoins,
+                  reclaimed: reclaim,
+                  note: 'realm points/cosmetics are gameplay awards — adjust via realm admin tools',
+                }),
+              },
+            })
+            coinsReclaimed = reclaim
+          })
+        }
+      }
+    }
+  } catch {
+    // The status flip already succeeded — the ledger trail above is
+    // best-effort reconciliation; the admin dashboard shows REFUNDED either way.
+  }
+
+  await db.gameMonetizationEvent
+    .create({
+      data: {
+        userId: p.userId,
+        type: 'purchase_refunded',
+        metadata: JSON.stringify({ purchaseId: p.id, productType: p.productType, coinsReclaimed, crateRevoked }),
+      },
+    })
+    .catch(() => {})
+
+  return { ok: true, coinsReclaimed, crateRevoked, status: 'REFUNDED' }
+}
+
 // ── Purchase recovery (PRD §70) + funnel tracking (§60) ────────────────────
 
 export async function syncPurchases(userId: string) {

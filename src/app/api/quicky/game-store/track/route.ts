@@ -19,6 +19,7 @@ const ALLOWED = new Set([
   'featured_viewed',
   'buy_coins_prompt',
   'buy_coins_prompt_dismissed',
+  'purchase_recovery_surfaced',
 ])
 
 export async function POST(req: NextRequest) {
