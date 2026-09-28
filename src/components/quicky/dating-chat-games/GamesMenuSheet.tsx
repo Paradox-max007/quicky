@@ -2,13 +2,14 @@
 
 // Dating Chat Games — Games Menu Sheet (PRD §5, §6, §51)
 //
-// Opens from the new 🎮 Games icon in the Dating Chat header. A bottom sheet
+// Opens from the 🎮 Games icon in the Dating Chat header. A bottom sheet
 // (mobile / tablet) or centered modal (desktop) listing the games in the
-// registry. Truth or Dare is HIDDEN — it does not appear (PRD §5).
+// registry. Each game's visibility/playability is driven by its registry
+// entry — see src/lib/quicky/dating-games/registry.ts.
 //
 // Behaviour:
-//   • Ludo (AVAILABLE) — Play Ludo button → calls onPlayLudo()
-//   • Never Have I Ever (COMING_SOON) — visually disabled, attractive; tap
+//   • AVAILABLE games (Ludo, Truth or Dare) — Play button → onPlayGame(gameType)
+//   • COMING_SOON games (Never Have I Ever) — visually disabled, attractive; tap
 //     shows a small "coming soon" toast (PRD §51). No room / invitation /
 //     session is created.
 //
@@ -16,17 +17,19 @@
 
 import { motion, AnimatePresence } from 'framer-motion'
 import { Gamepad2, X, Clock, Sparkles } from 'lucide-react'
-import { visibleDatingGames } from '@/lib/quicky/dating-games/registry'
+import { visibleDatingGames, DatingGame } from '@/lib/quicky/dating-games/registry'
 import { toast } from 'sonner'
 
 export function GamesMenuSheet({
   open,
   onClose,
-  onPlayLudo,
+  onPlayGame,
 }: {
   open: boolean
   onClose: () => void
-  onPlayLudo: () => void
+  /** Called when the user taps Play on an AVAILABLE game. The caller is
+   *  responsible for routing to the right game flow (propose Ludo vs ToD). */
+  onPlayGame: (gameType: 'ludo' | 'truth_or_dare' | 'never_have_i_ever') => void
 }) {
   return (
     <AnimatePresence>
@@ -85,9 +88,9 @@ export function GamesMenuSheet({
                   key={game.id}
                   game={game}
                   onPlay={() => {
-                    if (game.id === 'ludo') {
+                    if (game.status === 'AVAILABLE') {
                       onClose()
-                      onPlayLudo()
+                      onPlayGame(game.id)
                     } else if (game.status === 'COMING_SOON') {
                       // PRD §51 — informational toast, no room / invitation.
                       toast(`${game.name} is coming soon.`, {
@@ -115,7 +118,7 @@ function GameCard({
   game,
   onPlay,
 }: {
-  game: { id: string; name: string; description: string; status: string; emoji: string }
+  game: DatingGame
   onPlay: () => void
 }) {
   const comingSoon = game.status === 'COMING_SOON'

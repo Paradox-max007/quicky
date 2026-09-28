@@ -45,9 +45,13 @@ export type DatingGame = {
 //                    LudoGame overlay (GameSession-backed, server-authoritative).
 // Never Have I Ever: COMING_SOON — visible but not playable (PRD §51). Tap
 //                    shows an info toast; no room, no invitation, no session.
-// Truth or Dare:     HIDDEN — removed from the menu (PRD §5). The component
-//                    is kept in code so existing in-flight sessions can still
-//                    finish, but no new launches are possible from the UI.
+// Truth or Dare:     AVAILABLE — reuses the existing TruthOrDareGame overlay
+//                    + the same persisted-invitation flow as Ludo (mandatory
+//                    non-dismissible popup on the recipient, sender waiting
+//                    screen, server-authoritative invitation state machine).
+//                    The TruthOrDareGame component + game engine were already
+//                    present; this entry simply makes the game reachable from
+//                    the Games menu again.
 export const DATING_GAMES: DatingGame[] = [
   {
     id: 'ludo',
@@ -59,6 +63,15 @@ export const DATING_GAMES: DatingGame[] = [
     emoji: '🎲',
   },
   {
+    id: 'truth_or_dare',
+    name: 'Truth or Dare',
+    description: 'Take turns picking Truth or Dare — perfect for breaking the ice.',
+    status: 'AVAILABLE',
+    mode: 'PRIVATE_2_PLAYER',
+    launchType: 'INVITATION',
+    emoji: '✨',
+  },
+  {
     id: 'never_have_i_ever',
     name: 'Never Have I Ever',
     description: 'A fun question game for you and your chat partner.',
@@ -66,15 +79,6 @@ export const DATING_GAMES: DatingGame[] = [
     mode: 'PRIVATE_2_PLAYER',
     launchType: 'INVITATION',
     emoji: '💭',
-  },
-  {
-    id: 'truth_or_dare',
-    name: 'Truth or Dare',
-    description: 'Removed from the Games menu.',
-    status: 'HIDDEN',
-    mode: 'PRIVATE_2_PLAYER',
-    launchType: 'INVITATION',
-    emoji: '✨',
   },
 ]
 

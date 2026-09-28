@@ -1,12 +1,12 @@
 'use client'
 
-// Dating Chat Games — Ludo Waiting Screen (PRD §15, §16, §21, §22)
+// Dating Chat Games — Game Waiting Screen (PRD §15, §16, §21, §22)
 //
-// Replaces the small inline "Invite sent — waiting for {partner}…" banner
-// (ChatView lines 1108-1133) with a more substantial waiting state for the
-// Ludo-from-dating-chat flow. While the recipient decides, the sender sees:
+// Generic sender-side waiting state for any dating-chat game that uses the
+// persisted-invitation flow (currently Ludo + Truth or Dare). While the
+// recipient decides, the sender sees:
 //
-//   🎲 Ludo
+//   {emoji} {Game Name}
 //   Waiting for {partner}…
 //   ◌ ◌ ◌
 //   Invitation sent successfully
@@ -15,7 +15,7 @@
 // The screen listens via watchGameInvites and reacts instantly to the
 // recipient's PLAY_NOW / NOT_NOW (PRD §16 — no manual refresh).
 //
-//   • PLAY_NOW  → both sides transition into Ludo (caller's onAccepted)
+//   • PLAY_NOW  → both sides transition into the game (caller's onAccepted)
 //   • NOT_NOW   → caller shows the decline message + Back-to-Chat button
 //                 (PRD §22). Caller's onDeclined().
 //   • Cancel    → the sender taps "Cancel" → POST /games/invitations/[id]/cancel
@@ -26,15 +26,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Dices, X, ArrowLeft, Clock } from 'lucide-react'
+import { Dices, Sparkles, X, ArrowLeft } from 'lucide-react'
 import { watchGameInvites } from '@/lib/quicky/game-invites'
 import { api } from '@/lib/quicky/api-client'
+import { getDatingGame } from '@/lib/quicky/dating-games/registry'
 
-export function LudoWaitingScreen({
+export function GameWaitingScreen({
   open,
   partnerName,
   invitationId,
   matchId,
+  gameType,
   onCancel,
   onAccepted,
   onDeclined,
@@ -43,23 +45,29 @@ export function LudoWaitingScreen({
   partnerName: string | null
   invitationId: string | null
   matchId: string | null
+  /** Which game is being waited on — drives the icon + title. */
+  gameType: 'ludo' | 'truth_or_dare' | 'never_have_i_ever'
   onCancel: () => void
   onAccepted: () => void
   onDeclined: () => void
 }) {
   const [declined, setDeclined] = useState(false)
-  const [expired, setExpired] = useState(false)
   const [busy, setBusy] = useState(false)
   // Poll for the invitation status — PRD §16 wants realtime, but a 3s poll
   // is the safety net for missed broadcasts (Supabase realtime drops /
   // backgrounded app / re-login). Cheap call.
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Look up the game's display name + emoji from the registry so the
+  // waiting screen adapts to whatever game is being proposed.
+  const game = getDatingGame(gameType)
+  const gameName = game?.name ?? gameType
+  const gameEmoji = game?.emoji ?? '🎮'
+
   // Reset transient state when the screen (re-)opens.
   useEffect(() => {
     if (!open) {
       setDeclined(false)
-      setExpired(false)
       setBusy(false)
     }
   }, [open])
@@ -81,13 +89,14 @@ export function LudoWaitingScreen({
     })
   }, [open, matchId, invitationId, onAccepted])
 
-  // Poll safety net — every 3s, fetch the active invitation for this match.
-  // If it has transitioned out of PENDING, react accordingly.
+  // Poll safety net — every 3s, fetch the active invitation for this match
+  // and this specific gameType. If it has transitioned out of PENDING,
+  // react accordingly.
   useEffect(() => {
     if (!open || !matchId) return
     const check = async () => {
       try {
-        const res: any = await api.gameInvitations.activeForMatch(matchId, 'ludo')
+        const res: any = await api.gameInvitations.activeForMatch(matchId, gameType)
         if (!res?.invitation) {
           // No active invitation — could mean: declined, expired, cancelled,
           // or accepted+completed. If we're not already in a terminal UI
@@ -108,7 +117,7 @@ export function LudoWaitingScreen({
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = null
     }
-  }, [open, matchId, declined, onAccepted])
+  }, [open, matchId, declined, onAccepted, gameType])
 
   const cancelInvitation = async () => {
     if (busy || !invitationId) return
@@ -141,16 +150,23 @@ export function LudoWaitingScreen({
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h2 className="font-bold text-base">Ludo</h2>
+            <h2 className="font-bold text-base">{gameName}</h2>
             <div className="w-9 h-9" />
           </header>
 
           <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
             {!declined ? (
               <>
-                {/* Dice icon */}
+                {/* Game icon — uses the registry emoji for the active game.
+                    For Ludo we keep the Dices lucide icon (matches the
+                    LudoGame overlay); for ToD and others we use the emoji
+                    glyph + the Sparkles accent. */}
                 <div className="w-20 h-20 rounded-3xl bg-[var(--qk-accent)]/15 border border-[var(--qk-accent)]/30 flex items-center justify-center">
-                  <Dices className="w-10 h-10 text-[var(--qk-accent)]" />
+                  {gameType === 'ludo' ? (
+                    <Dices className="w-10 h-10 text-[var(--qk-accent)]" />
+                  ) : (
+                    <Sparkles className="w-10 h-10 text-[var(--qk-accent)]" />
+                  )}
                 </div>
 
                 {/* "Waiting for {partner}…" */}
@@ -179,6 +195,13 @@ export function LudoWaitingScreen({
                     Waiting for response…
                   </p>
                 </div>
+
+                {/* Game-emoji hint — small visual reminder of which game
+                    is being proposed (helps when the user has multiple
+                    pending invites in their head). */}
+                <p className="text-[11px] text-[var(--qk-text)]/35 mt-1">
+                  {gameEmoji} {gameName}
+                </p>
 
                 {/* Cancel button — PRD §45: pending invitation remains
                     server-side even after cancel; the recipient's popup

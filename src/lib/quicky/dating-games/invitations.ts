@@ -111,8 +111,9 @@ export async function createInvitation(opts: {
   const { matchId, gameType, senderId } = opts
 
   // Validate gameType against the registry — HIDDEN games cannot be invited
-  // (PRD §5 — Truth or Dare removed from the menu; programmatic invites are
-  // also blocked so stale clients cannot resurrect it).
+  // (programmatic invites are blocked so stale clients cannot resurrect a
+  // game that's been removed from the menu). Currently no game is HIDDEN —
+  // Ludo + Truth or Dare are AVAILABLE, Never Have I Ever is COMING_SOON.
   const game = getDatingGame(gameType)
   if (!game || game.status === 'HIDDEN') {
     return { invitation: null, created: false, error: 'game_not_available', status: 400 }

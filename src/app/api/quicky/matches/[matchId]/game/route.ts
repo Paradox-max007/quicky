@@ -263,6 +263,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
   if (action === 'end' && session.gameType !== 'ludo') {
     await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
     const posts = await createGamePostsForSession(session, null)
+    // Dating Chat Games PRD §29, §31, §57 — write the shared game_activity
+    // message into the dating chat for the just-ended session (one row,
+    // both users see the same card). Best-effort + idempotent. Truth or
+    // Dare (and any future non-Ludo game that ends via the 'end' action)
+    // goes through this path; the Ludo win path is wired separately inside
+    // the Ludo branch below (because Ludo's winner is known).
+    writeGameActivityForSession({ sessionId: session.id, winnerColor: null }).catch(() => {})
     return NextResponse.json({ ok: true, ended: true, gamePost: posts[me.id] ?? null })
   }
 
