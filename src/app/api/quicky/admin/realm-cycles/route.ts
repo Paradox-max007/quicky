@@ -5,11 +5,15 @@
 //   standings (rank / points / threshold flags) with point totals
 // GET /api/quicky/admin/realm-cycles?settle=1       — run the idempotent
 //   settlement job now (cron-style trigger)
+// GET /api/quicky/admin/realm-cycles?forceSettle=<cycleId> — finalize ONE
+//   cycle immediately (admin-console PRD §7 realm admin capabilities):
+//   server-authoritative rankings + reward grants even before its end time.
+//   Same idempotent SETTLING lock as the due-job — safe to re-run.
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requireAdmin } from '@/lib/quicky/admin'
+import { requireAdmin, logAdminAction } from '@/lib/quicky/admin'
 import { ensureRealmBootstrap } from '@/lib/quicky/realm/realm-config'
-import { settleDueCycles } from '@/lib/quicky/realm/realm-cycle'
+import { settleDueCycles, settleOneCycle } from '@/lib/quicky/realm/realm-cycle'
 
 export async function GET(req: NextRequest) {
   const gate = await requireAdmin()
@@ -21,6 +25,20 @@ export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.get('settle') === '1') {
     const settled = await settleDueCycles().catch(() => 0)
     return NextResponse.json({ ok: true, settled })
+  }
+
+  // Admin-console PRD §7 — force-finalize ONE cycle right now (rankings,
+  // promotions, reward grants — identical code path to the due job).
+  const forceSettleId = req.nextUrl.searchParams.get('forceSettle')
+  if (forceSettleId) {
+    const ok = await settleOneCycle(forceSettleId).catch(() => false)
+    if (ok) {
+      await logAdminAction(gate.me.id, 'finalize', 'realm_cycle', forceSettleId, {
+        forced: true,
+        note: 'Admin force-finalized the cycle before its end time',
+      })
+    }
+    return NextResponse.json({ ok, settled: ok ? 1 : 0 })
   }
 
   const cohortId = req.nextUrl.searchParams.get('cohortId')

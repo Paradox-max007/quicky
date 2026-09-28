@@ -16,6 +16,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/quicky/auth'
 import { db } from '@/lib/db'
+import { giftAvailabilityWhere, isGiftAvailable } from '@/lib/quicky/gift-availability'
+import { isPrismaSchemaDrift } from '@/lib/quicky/prisma-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,18 +25,28 @@ export async function GET(_req: NextRequest) {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const [items, user] = await Promise.all([
-    db.gameItem.findMany({
-      where: { isActive: true, category: 'gift' },
+  // Drift-safe catalog read: on a half-synced machine (missing the
+  // availability columns — see prisma/migration-sync-admin-prd.sql) the
+  // window filter degrades to the pre-PRD list instead of 500ing.
+  const items = await db.gameItem
+    .findMany({
+      where: { isActive: true, category: 'gift', ...giftAvailabilityWhere() },
       orderBy: { sortOrder: 'asc' },
-    }),
-    db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true, giftsSentCount: true, giftsReceivedCount: true } }),
-  ])
+    })
+    .catch(async (e) => {
+      if (!isPrismaSchemaDrift(e)) throw e
+      return db.gameItem.findMany({
+        where: { isActive: true, category: 'gift' },
+        orderBy: { sortOrder: 'asc' },
+      })
+    })
+  const user = await db.user.findUnique({ where: { id: me.id }, select: { coinBalance: true, giftsSentCount: true, giftsReceivedCount: true } })
 
   const catalog = items.map((g) => ({
     id: g.id,
     categoryId: g.categoryId,
     name: g.name,
+    description: g.description,
     // Resolved display payload — iconValue (image URL) wins, emoji fallback.
     icon: g.iconValue ?? g.emoji,
     iconType: g.iconType,
@@ -69,11 +81,26 @@ export async function POST(req: NextRequest) {
   // Self-gifting stays allowed (room-flow parity — you pay, you get it).
 
   const [giftDef, recipient] = await Promise.all([
-    db.gameItem.findFirst({ where: { id: itemId, isActive: true, category: 'gift' } }),
+    // Drift-safe: on a half-synced DB the full-row select fails (P2021/P2022)
+    // — retry with the pre-PRD column set (availability = always available).
+    db.gameItem
+      .findFirst({ where: { id: itemId, isActive: true, category: 'gift' } })
+      .catch(async (e) => {
+        if (!isPrismaSchemaDrift(e)) throw e
+        return db.gameItem.findFirst({
+          where: { id: itemId, isActive: true, category: 'gift' },
+          select: { id: true, name: true, emoji: true, iconType: true, iconValue: true, coinPrice: true, maxQuantity: true },
+        })
+      }),
     db.user.findUnique({ where: { id: recipientId }, select: { id: true, name: true } }),
   ])
   if (!giftDef) return NextResponse.json({ error: 'invalid_item' }, { status: 400 })
   if (!recipient) return NextResponse.json({ error: 'recipient_not_found' }, { status: 400 })
+  // admin-console PRD §6.1 — a gift outside its availability window is not
+  // sendable (the catalogs hide it; this guards direct API calls too).
+  if (!isGiftAvailable(giftDef)) {
+    return NextResponse.json({ error: 'gift_not_available' }, { status: 400 })
+  }
 
   const unitPrice = giftDef.coinPrice
   if (!Number.isInteger(unitPrice) || unitPrice < 0) return NextResponse.json({ error: 'invalid_item' }, { status: 400 })

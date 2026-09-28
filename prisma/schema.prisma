@@ -815,6 +815,11 @@ model GameItem {
   // Games PRD §62 — per-gift send rules (admin-managed): max quantity per
   // bulk send (null = platform default 1000).
   maxQuantity Int?
+  // admin-console PRD §6.1 — optional availability window. null = always
+  // available; otherwise the gift is purchasable/sendable only inside the
+  // window (public catalog + room drawer filter on it).
+  availableFrom  DateTime?
+  availableUntil DateTime?
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
@@ -909,6 +914,10 @@ model GameRule {
   icon        String   @default("🎲")
   sortOrder   Int      @default(0)
   isActive    Boolean  @default(true)
+  // admin-console PRD §5.1 — drafts and publishing. A DRAFT step is admin-only
+  // (never served to the game screen); PUBLISHED steps go live when active.
+  // "DRAFT" | "PUBLISHED"
+  status      String   @default("PUBLISHED")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

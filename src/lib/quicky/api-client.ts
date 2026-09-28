@@ -7,6 +7,8 @@ export type GiftsHubGift = {
   id: string
   categoryId: string | null
   name: string
+  /** Optional admin-authored gift description (admin-console PRD §6.1). */
+  description?: string | null
   /** Resolved display payload — image URL or emoji glyph. */
   icon: string | null
   iconType?: string | null
@@ -47,7 +49,9 @@ async function jsonFetch<T = any>(input: string, init?: RequestInit): Promise<T>
   }
   const data = await res.json().catch(() => ({ error: 'invalid_json' }))
   if (!res.ok) {
-    const err = new Error((data as any)?.error ?? `Request failed (${res.status})`) as any
+    // Prefer the server's human-readable message (e.g. the Prisma drift
+    // remedy from /api/quicky/admin/* routes) over the terse error code.
+    const err = new Error((data as any)?.message ?? (data as any)?.error ?? `Request failed (${res.status})`) as any
     err.status = res.status
     err.body = data
     throw err
@@ -543,6 +547,13 @@ export const api = {
           method: 'PATCH',
           body: JSON.stringify({ kind, id, data }),
         }),
+      // admin-console PRD §18.1 — move-up/move-down reorder (persists
+      // server-side as a sortOrder swap).
+      move: (kind: 'category' | 'gift', id: string, direction: 'up' | 'down') =>
+        jsonFetch<{ ok: boolean; moved: boolean }>('/api/quicky/admin/gifts', {
+          method: 'PATCH',
+          body: JSON.stringify({ kind, id, move: direction }),
+        }),
       remove: (kind: 'category' | 'gift', id: string) =>
         jsonFetch<{ ok: boolean }>('/api/quicky/admin/gifts', {
           method: 'DELETE',
@@ -565,6 +576,13 @@ export const api = {
         jsonFetch<{ ok: boolean; rule: any }>('/api/quicky/admin/game-rules', {
           method: 'PATCH',
           body: JSON.stringify({ id, data }),
+        }),
+      // admin-console PRD §5.1/§18.1 — move-up / move-down reorder control;
+      // the new order persists (sortOrder swap server-side).
+      move: (id: string, direction: 'up' | 'down') =>
+        jsonFetch<{ ok: boolean; moved: boolean }>('/api/quicky/admin/game-rules', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, move: direction }),
         }),
       remove: (id: string) =>
         jsonFetch<{ ok: boolean }>('/api/quicky/admin/game-rules', {
@@ -648,6 +666,13 @@ export const api = {
           method: 'PATCH',
           body: JSON.stringify({ id, isAdmin }),
         }),
+      // admin-console PRD §12 — per-user reset from the Users console (same
+      // operations the designated test account gets in Settings).
+      reset: (id: string, kind: 'reset-progress' | 'reset-inventory') =>
+        jsonFetch<{ ok: boolean }>('/api/quicky/admin/users', {
+          method: 'PATCH',
+          body: JSON.stringify({ id, action: kind }),
+        }),
     },
     // Games PRD §67 — audit log viewer.
     audit: {
@@ -689,6 +714,12 @@ export const api = {
         jsonFetch<{ cohort: any }>(`/api/quicky/admin/realm-cycles?cohortId=${cohortId}`),
       settle: () =>
         jsonFetch<{ ok: boolean; settled: number }>('/api/quicky/admin/realm-cycles?settle=1'),
+      // admin-console PRD §7 — finalize ONE cycle immediately (server-
+      // authoritative rankings + grants, idempotent SETTLING lock).
+      forceSettle: (cycleId: string) =>
+        jsonFetch<{ ok: boolean; settled: number }>(
+          `/api/quicky/admin/realm-cycles?forceSettle=${encodeURIComponent(cycleId)}`
+        ),
     },
     // ─── ADMIN CONSOLE PRD — assets / reward catalog / seasons / test account
     assets: {

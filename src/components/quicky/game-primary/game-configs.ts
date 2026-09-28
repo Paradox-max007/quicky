@@ -114,7 +114,9 @@ export const SPIN_DEFAULT_TAGLINES = [
   'Make unexpected connections',
 ]
 
-// Lifecycle PRD §51 fallback — mirrors HowItWorksRules' built-in copy.
+// Lifecycle PRD §51 fallback — built-in copy used only when the admin has
+// published no rules for a game yet (served alongside game-configs since the
+// HowItWorksRules component was retired).
 const SPIN_FALLBACK_RULES: GameHowItWorksStep[] = [
   { id: 'fb-1', title: 'Take Your Seat', description: 'Join a room and meet other players around the table.', icon: '🎲' },
   { id: 'fb-2', title: 'Let It Spin', description: 'The system spins the bottle — when it points at you, the round begins.', icon: '🍾' },

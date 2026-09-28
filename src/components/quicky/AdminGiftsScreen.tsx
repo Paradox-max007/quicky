@@ -10,12 +10,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Pencil, X, PackageOpen, UploadCloud, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, X, PackageOpen, UploadCloud, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { useQuickyStore } from '@/store/quicky'
 import { cn } from '@/lib/utils'
 import { GiftIcon } from '@/components/quicky/GiftIcon'
+import { giftAvailabilityLabel } from '@/lib/quicky/gift-availability'
 
 type AdminCategory = {
   id: string
@@ -29,10 +30,14 @@ type AdminGift = {
   id: string
   categoryId: string | null
   name: string
+  description: string | null
   emoji: string
   iconType: string
   iconValue: string | null
   coinPrice: number
+  tier: string
+  availableFrom: string | null
+  availableUntil: string | null
   isActive: boolean
   sortOrder: number
 }
@@ -40,9 +45,13 @@ type AdminGift = {
 type GiftForm = {
   id?: string
   name: string
+  description: string
   icon: string
   categoryId: string
   priceCoins: string
+  tier: 'default' | 'premium' | 'seasonal'
+  availableFrom: string // '' = none (YYYY-MM-DD)
+  availableUntil: string // '' = none (YYYY-MM-DD)
   isActive: boolean
   sortOrder: string
 }
@@ -54,8 +63,32 @@ type CategoryForm = {
   isActive: boolean
 }
 
-const EMPTY_GIFT: GiftForm = { name: '', icon: '🎁', categoryId: '', priceCoins: '10', isActive: true, sortOrder: '99' }
+const EMPTY_GIFT: GiftForm = {
+  name: '',
+  description: '',
+  icon: '🎁',
+  categoryId: '',
+  priceCoins: '10',
+  tier: 'default',
+  availableFrom: '',
+  availableUntil: '',
+  isActive: true,
+  sortOrder: '99',
+}
 const EMPTY_CATEGORY: CategoryForm = { name: '', icon: '🎁', sortOrder: '99', isActive: true }
+
+/** 'YYYY-MM-DD' → start-of-day ISO ('' → null). */
+const dayStart = (v: string): string | null => (v ? new Date(`${v}T00:00:00`).toISOString() : null)
+/** 'YYYY-MM-DD' → end-of-day ISO so the last day stays sendable ('' → null). */
+const dayEnd = (v: string): string | null => (v ? new Date(`${v}T23:59:59.999`).toISOString() : null)
+/** ISO/Date-string → 'YYYY-MM-DD' for the date inputs (null → ''). */
+const isoToDay = (v: string | null | undefined): string => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
   const setView = useQuickyStore((s) => s.setView)
@@ -67,6 +100,8 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
   const [catForm, setCatForm] = useState<CategoryForm | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -90,12 +125,19 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
     if (!giftForm.name.trim()) return toast.error('Name is required')
     const price = Math.floor(Number(giftForm.priceCoins))
     if (!Number.isFinite(price) || price < 0) return toast.error('Price must be ≥ 0')
+    if (giftForm.availableFrom && giftForm.availableUntil && giftForm.availableFrom > giftForm.availableUntil) {
+      return toast.error('“Available until” must be on or after “available from”')
+    }
     setSaving(true)
     const data = {
       name: giftForm.name.trim(),
+      description: giftForm.description.trim(),
       icon: giftForm.icon.trim() || '🎁',
       categoryId: giftForm.categoryId || null,
       priceCoins: price,
+      tier: giftForm.tier,
+      availableFrom: dayStart(giftForm.availableFrom),
+      availableUntil: dayEnd(giftForm.availableUntil),
       isActive: giftForm.isActive,
       sortOrder: Math.floor(Number(giftForm.sortOrder)) || 0,
     }
@@ -149,6 +191,20 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
       await load()
     } catch (e: any) {
       toast.error(e.message ?? 'Update failed')
+    }
+  }
+
+  // admin-console PRD §18.1 — persistent move-up/move-down reorder.
+  const move = async (kind: 'gift' | 'category', id: string, direction: 'up' | 'down') => {
+    if (movingId) return
+    setMovingId(id)
+    try {
+      await api.admin.gifts.move(kind, id, direction)
+      await load()
+    } catch (e: any) {
+      toast.error(e.message ?? 'Reorder failed')
+    } finally {
+      setMovingId(null)
     }
   }
 
@@ -214,11 +270,36 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                   ))}
                 </select>
               </label>
-              <label className="text-xs font-semibold text-white/70 flex items-center gap-2 pb-2.5">
+              <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
+                Classification
+                <select
+                  className="qk-input"
+                  value={giftForm.tier}
+                  onChange={(e) => setGiftForm({ ...giftForm, tier: e.target.value as GiftForm['tier'] })}
+                  title="Optional rarity / premium classification (admin-console PRD §6.1)"
+                >
+                  <option value="default">Default</option>
+                  <option value="premium">Premium</option>
+                  <option value="seasonal">Seasonal</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-white/60 flex items-center gap-2 pb-2.5 col-span-2">
                 <input type="checkbox" checked={giftForm.isActive} onChange={(e) => setGiftForm({ ...giftForm, isActive: e.target.checked })} className="w-4 h-4 accent-[var(--qk-accent)]" />
                 Status: {giftForm.isActive ? 'Active' : 'Hidden'}
               </label>
             </div>
+
+            {/* Gift description (admin-console PRD §6.1 required field) */}
+            <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
+              Description
+              <textarea
+                className="qk-input min-h-[54px] resize-y"
+                value={giftForm.description}
+                onChange={(e) => setGiftForm({ ...giftForm, description: e.target.value })}
+                placeholder="A single rose to break the ice."
+                maxLength={200}
+              />
+            </label>
 
             {/* Gift image — upload from machine OR paste URL/emoji (PRD §6.1) */}
             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col gap-2.5">
@@ -243,7 +324,7 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
               <div className="flex items-center gap-2">
                 <label className="flex-1 min-w-0 cursor-pointer flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold text-white/60 hover:text-white hover:border-white/30 transition-colors">
                   <UploadCloud className="w-3.5 h-3.5" aria-hidden />
-                  <span className="gift-upload-label">Upload image (PNG / WebP / GIF)</span>
+                  <span className="gift-upload-label">{uploadProgress !== null ? `Uploading… ${uploadProgress}%` : 'Upload image (PNG / WebP / GIF)'}</span>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif,image/apng,image/svg+xml"
@@ -256,8 +337,9 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                         return
                       }
                       setUploading(true)
+                      setUploadProgress(0)
                       void api.admin.assets
-                        .upload(file, 'gifts')
+                        .upload(file, 'gifts', setUploadProgress)
                         .then((res) => {
                           setGiftForm((f) => (f ? { ...f, icon: res.url } : f))
                           toast.success('Gift image uploaded', { description: res.storage.mode === 'supabase' ? 'Stored in Supabase Storage' : 'Stored in local uploads' })
@@ -267,6 +349,7 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                         })
                         .finally(() => {
                           setUploading(false)
+                          setUploadProgress(null)
                           e.target.value = ''
                         })
                     }}
@@ -274,8 +357,38 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                 </label>
                 {uploading && <RefreshCw className="w-4 h-4 animate-spin text-white/40 shrink-0" aria-hidden />}
               </div>
+              {uploadProgress !== null && (
+                <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full bg-[var(--qk-accent)] transition-all" style={{ width: `${uploadProgress}%` }} />
+                </div>
+              )}
               <span className="text-[10px] text-white/35">Uploads are validated server-side and stored in Supabase Storage (bucket quicky-assets) — never as binaries on the app server.</span>
             </div>
+
+            {/* Optional availability window (admin-console PRD §6.1) */}
+            <div className="grid grid-cols-2 gap-3 items-end">
+              <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
+                Available from
+                <input
+                  className="qk-input"
+                  type="date"
+                  value={giftForm.availableFrom}
+                  onChange={(e) => setGiftForm({ ...giftForm, availableFrom: e.target.value })}
+                  title="Optional — the gift becomes purchasable/sendable from this day (00:00)"
+                />
+              </label>
+              <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
+                Available until
+                <input
+                  className="qk-input"
+                  type="date"
+                  value={giftForm.availableUntil}
+                  onChange={(e) => setGiftForm({ ...giftForm, availableUntil: e.target.value })}
+                  title="Optional — the last day the gift is sendable (through 23:59)"
+                />
+              </label>
+            </div>
+            <p className="-mt-1 text-[10px] text-white/35">Leave both empty for an always-available gift. Outside the window the gift is hidden from every catalog and sending is blocked.</p>
 
             <div className="grid grid-cols-2 gap-3 items-end">
               <label className="text-xs font-semibold text-white/60 flex flex-col gap-1">
@@ -332,8 +445,34 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                 <p className="text-sm">No gifts yet — create the first one.</p>
               </div>
             )}
-            {gifts.map((g) => (
-              <div key={g.id} className="bg-[var(--qk-card)] border border-white/10 rounded-2xl px-3.5 py-3 flex items-center gap-3">
+            {gifts.map((g, i) => {
+              const availability = giftAvailabilityLabel(g)
+              const outOfWindow =
+                (g.availableFrom && new Date(g.availableFrom).getTime() > Date.now()) ||
+                (g.availableUntil && new Date(g.availableUntil).getTime() < Date.now())
+              return (
+              <div key={g.id} className={cn('bg-[var(--qk-card)] border border-white/10 rounded-2xl px-3.5 py-3 flex items-center gap-3', (outOfWindow || !g.isActive) && 'opacity-60')}>
+                <div className="flex flex-col items-center gap-0.5 shrink-0">
+                  <button
+                    onClick={() => void move('gift', g.id, 'up')}
+                    disabled={movingId === g.id || i === 0}
+                    className="p-1 rounded-full hover:bg-white/10 disabled:opacity-25"
+                    aria-label={`Move ${g.name} up`}
+                    title="Move up (persists the new order)"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[10px] font-black text-white/35">{i + 1}</span>
+                  <button
+                    onClick={() => void move('gift', g.id, 'down')}
+                    disabled={movingId === g.id || i === gifts.length - 1}
+                    className="p-1 rounded-full hover:bg-white/10 disabled:opacity-25"
+                    aria-label={`Move ${g.name} down`}
+                    title="Move down (persists the new order)"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <span className="w-9 h-9 flex items-center justify-center shrink-0" aria-hidden>
                   <GiftIcon
                     icon={g.iconType === 'image' || g.iconType === 'png' ? (g.iconValue ?? g.emoji) : g.emoji}
@@ -343,15 +482,35 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                   />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-sm truncate">{g.name}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="font-bold text-sm truncate">{g.name}</p>
+                    {g.tier !== 'default' && (
+                      <span
+                        className={cn(
+                          'text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full border shrink-0',
+                          g.tier === 'premium'
+                            ? 'bg-[var(--qk-gold)]/15 border-[var(--qk-gold)]/30 text-[var(--qk-gold)]'
+                            : 'bg-sky-400/10 border-sky-400/25 text-sky-300'
+                        )}
+                      >
+                        {g.tier}
+                      </span>
+                    )}
+                    {outOfWindow && (
+                      <span className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-full border border-white/15 bg-white/5 text-white/45 shrink-0" title="Outside its availability window">
+                        SCHEDULED
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-white/45 truncate">
-                    {catName(g.categoryId)} · 🪙 {g.coinPrice} · order {g.sortOrder}
+                    {catName(g.categoryId)} · 🪙 {g.coinPrice}
+                    {availability && <span className="text-white/35"> · {availability}</span>}
                   </p>
                 </div>
                 <button
                   onClick={() => toggleGift(g)}
                   className={cn(
-                    'text-[10px] font-black uppercase tracking-wide rounded-full px-2.5 py-1 border',
+                    'text-[10px] font-black uppercase tracking-wide rounded-full px-2.5 py-1 border shrink-0',
                     g.isActive ? 'bg-emerald-400/15 border-emerald-300/30 text-emerald-300' : 'bg-white/5 border-white/10 text-white/40'
                   )}
                 >
@@ -359,25 +518,54 @@ export function AdminGiftsScreen({ onBack }: { onBack?: () => void } = {}) {
                 </button>
                 <button
                   onClick={() => setGiftForm({
-                    id: g.id, name: g.name, icon: g.iconValue ?? g.emoji, categoryId: g.categoryId ?? '',
-                    priceCoins: String(g.coinPrice), isActive: g.isActive, sortOrder: String(g.sortOrder),
+                    id: g.id,
+                    name: g.name,
+                    description: g.description ?? '',
+                    icon: g.iconValue ?? g.emoji,
+                    categoryId: g.categoryId ?? '',
+                    priceCoins: String(g.coinPrice),
+                    tier: (['premium', 'seasonal'].includes(g.tier) ? g.tier : 'default') as GiftForm['tier'],
+                    availableFrom: isoToDay(g.availableFrom),
+                    availableUntil: isoToDay(g.availableUntil),
+                    isActive: g.isActive,
+                    sortOrder: String(g.sortOrder),
                   })}
-                  className="p-2 rounded-full hover:bg-white/10"
+                  className="p-2 rounded-full hover:bg-white/10 shrink-0"
                   aria-label={`Edit ${g.name}`}
                 >
                   <Pencil className="w-4 h-4 text-white/60" />
                 </button>
               </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {categories.map((c) => (
+            {categories.map((c, i) => (
               <div key={c.id} className="bg-[var(--qk-card)] border border-white/10 rounded-2xl px-3.5 py-3 flex items-center gap-3">
+                <div className="flex flex-col items-center gap-0.5 shrink-0">
+                  <button
+                    onClick={() => void move('category', c.id, 'up')}
+                    disabled={movingId === c.id || i === 0}
+                    className="p-1 rounded-full hover:bg-white/10 disabled:opacity-25"
+                    aria-label={`Move ${c.name} up`}
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[10px] font-black text-white/35">{i + 1}</span>
+                  <button
+                    onClick={() => void move('category', c.id, 'down')}
+                    disabled={movingId === c.id || i === categories.length - 1}
+                    className="p-1 rounded-full hover:bg-white/10 disabled:opacity-25"
+                    aria-label={`Move ${c.name} down`}
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <span className="text-2xl w-9 text-center" aria-hidden>{c.icon}</span>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-sm truncate">{c.name}</p>
-                  <p className="text-[11px] text-white/45 truncate">/{c.slug} · order {c.sortOrder}</p>
+                  <p className="text-[11px] text-white/45 truncate">/{c.slug}</p>
                 </div>
                 <button
                   onClick={() => toggleCategory(c)}

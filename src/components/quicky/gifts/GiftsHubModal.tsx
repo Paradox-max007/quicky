@@ -306,6 +306,7 @@ function GiftSendFlow({
         <GiftIcon icon={gift.icon} iconType={gift.iconType} className="w-12 h-12 text-[32px]" alt={gift.name} />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black truncate">{gift.name}</p>
+          {gift.description && <p className="text-[10.5px] text-white/55 leading-tight line-clamp-2">{gift.description}</p>}
           <p className="text-[11px] font-bold tabular-nums" style={{ color: 'var(--qk-gold)' }}>
             {gift.priceCoins.toLocaleString()} coins each
           </p>

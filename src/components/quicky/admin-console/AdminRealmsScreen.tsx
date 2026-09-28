@@ -13,7 +13,7 @@
 //     a cohort drill-down (live standings) and a manual settlement trigger
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Crown, RefreshCw, ChevronDown, ChevronLeft, Play } from 'lucide-react'
+import { Crown, RefreshCw, ChevronDown, ChevronLeft, Play, Gavel } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -68,6 +68,7 @@ type CycleRow = {
 
 type CohortDetail = {
   id: string
+  cycleId?: string
   realmLevel: number
   isFinalized: boolean
   threshold: number
@@ -155,6 +156,7 @@ export function AdminRealmsScreen() {
   const [rewardFor, setRewardFor] = useState<number | null>(null)
   const [cohortId, setCohortId] = useState<string | null>(null)
   const [cohort, setCohort] = useState<CohortDetail | null>(null)
+  const [finalizing, setFinalizing] = useState(false)
 
   // Editable fields for the open realm row.
   const [thresholdDraft, setThresholdDraft] = useState('')
@@ -321,6 +323,33 @@ export function AdminRealmsScreen() {
       await load()
     } catch {
       toast.error('Settlement failed.')
+    }
+  }
+
+  // admin-console PRD §7 — force-finalize THIS cohort's cycle immediately
+  // (server-authoritative rankings + grants; idempotent SETTLING lock).
+  const finalizeCohort = async () => {
+    if (!cohort || finalizing) return
+    const cycleId = cohort.cycleId
+    if (!cycleId) return toast.error('Missing cycle reference — reload the cohort.')
+    setFinalizing(true)
+    try {
+      const res = await api.admin.realmCycles.forceSettle(cycleId)
+      if (res?.ok) {
+        toast.success('Cycle finalized — rankings, promotions and reward grants are locked in.')
+        // Refresh the drill-down + the cycles dashboard in place.
+        const fresh = await api.admin.realmCycles.cohort(cohort.id).catch(() => null)
+        setCohort(fresh?.cohort ?? null)
+        await load()
+      } else {
+        toast.info('Nothing to finalize — the cycle is already completed (or another worker is finishing it).')
+        const fresh = await api.admin.realmCycles.cohort(cohort.id).catch(() => null)
+        setCohort(fresh?.cohort ?? null)
+      }
+    } catch {
+      toast.error('Finalize failed.')
+    } finally {
+      setFinalizing(false)
     }
   }
 
@@ -648,7 +677,29 @@ export function AdminRealmsScreen() {
       </ConsoleCard>
 
       {cohort && (
-        <ConsoleCard title={`Cohort · ${cohort.realmLevel === 0 ? '' : `Realm level ${cohort.realmLevel}`} · ${cohort.status}`} action={<button onClick={() => setCohort(null)} className="text-[10px] font-bold text-white/50">Close</button>}>
+        <ConsoleCard
+          title={`Cohort · ${cohort.realmLevel === 0 ? '' : `Realm level ${cohort.realmLevel}`} · ${cohort.status}`}
+          action={
+            <div className="flex items-center gap-2">
+              {cohort.status !== 'COMPLETED' && (
+                <button
+                  onClick={() => void finalizeCohort()}
+                  disabled={finalizing}
+                  className="flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-[10px] font-bold text-amber-300 hover:bg-amber-400/20 disabled:opacity-50"
+                  title="Finalize this cycle NOW (admin-console PRD §7): server-authoritative rankings, promotions and reward grants — even before its end time. Idempotent."
+                >
+                  <Gavel className="w-3 h-3" /> {finalizing ? 'Finalizing…' : 'Finalize now'}
+                </button>
+              )}
+              <button onClick={() => setCohort(null)} className="text-[10px] font-bold text-white/50">Close</button>
+            </div>
+          }
+        >
+          {cohort.endAt && (
+            <p className="pb-2 text-[10px] text-white/35">
+              Cycle window ends {new Date(cohort.endAt).toLocaleString()} — "Finalize now" ends it early with the same server-side settlement (rank ≤ 3 + threshold → promotion, rewards granted, points reset).
+            </p>
+          )}
           <div className="flex flex-col gap-1">
             {cohort.members.map((m) => (
               <div key={m.userId} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/8 px-3 py-2">
