@@ -146,11 +146,18 @@ export type MatchPreview = {
 export type ChatMessage = {
   id: string
   senderId: string
-  type: 'text' | 'image' | 'video' | 'voice' | 'quicky' | 'system' | 'sticker'
+  // Dating Chat Games PRD §34 — 'game_activity' is a server-only type
+  // representing a shared memory card inserted when a 1-on-1 game
+  // completes. The payload lives in `metadata` (JSON-encoded).
+  type: 'text' | 'image' | 'video' | 'voice' | 'quicky' | 'system' | 'sticker' | 'game_activity'
   text: string | null
   mediaUrl: string | null
   // Voice message duration in ms
   mediaDuration?: number | null
+  // Game-activity card payload (PRD §34) — present only when type === 'game_activity'.
+  // Shape: { gameType: string; gameName: string; sessionId: string; durationSeconds: number;
+  //         winnerId: string | null; startedAt: string; finishedAt: string }
+  metadata?: string | null
   quickyDuration?: number | null
   quickyOpenedAt?: string | null
   quickyExpiresAt?: string | null

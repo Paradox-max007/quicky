@@ -11,6 +11,7 @@ import {
   TURN_TIMEOUT_MS,
 } from '@/lib/quicky/ludo'
 import { createGamePostsForSession } from '@/lib/quicky/game-posts'
+import { writeGameActivityForSession } from '@/lib/quicky/dating-games/game-activity'
 
 const GAME_TYPES = ['truth_or_dare', 'never_have_i_ever', 'ludo']
 
@@ -365,6 +366,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
     if (state.winner) {
       await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
       const posts = await createGamePostsForSession(session, state.winner)
+      // Dating Chat Games PRD §29, §31, §57 — write the shared game_activity
+      // message into the dating chat (one row, both users see the same card).
+      // Best-effort: never block the win response if the activity-card write
+      // fails (e.g. metadata column not yet migrated). Idempotent.
+      writeGameActivityForSession({ sessionId: session.id, winnerColor: state.winner }).catch(() => {})
       return NextResponse.json({
         ok: true,
         winner: state.winner,
@@ -449,6 +455,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ matchId: 
         await db.gameSession.update({ where: { id: session.id }, data: { status: 'ended' } })
       }
       const posts = winnerColor ? await createGamePostsForSession(session, winnerColor) : null
+      // Dating Chat Games PRD §29, §31, §57 — write the shared game_activity
+      // message into the dating chat on win. Best-effort + idempotent.
+      if (winnerColor) {
+        writeGameActivityForSession({ sessionId: session.id, winnerColor }).catch(() => {})
+      }
       return NextResponse.json({
         ok: true,
         ludoState: state,

@@ -26,6 +26,11 @@ import { TruthOrDareGame } from './TruthOrDareGame'
 import { NeverHaveIEver } from './NeverHaveIEver'
 import { LudoGame } from './LudoGame'
 import { ProfileSheet } from './ProfileSheet'
+// Dating Chat Games PRD §3, §5, §6, §15, §31 — new games menu, mandatory
+// invitation popup, sender waiting screen, and shared game-activity card.
+import { GamesMenuSheet } from './dating-chat-games/GamesMenuSheet'
+import { LudoWaitingScreen } from './dating-chat-games/LudoWaitingScreen'
+import { GameActivityCard } from './dating-chat-games/GameActivityCard'
 
 // Messages arrive from several sources (server list, optimistic sends,
 // realtime broadcasts) — always dedupe by id so React keys stay unique.
@@ -252,6 +257,14 @@ export function ChatView({
   // Game invite flow: when I propose a game the partner gets an in-app popup;
   // I wait for their join/cancel before the game opens on my side.
   const [pendingInviteGame, setPendingInviteGame] = useState<GameInvitePayload['gameType'] | null>(null)
+  // Dating Chat Games PRD §3, §6 — new Games icon → Games menu sheet.
+  const [showGamesMenu, setShowGamesMenu] = useState(false)
+  // PRD §15 — sender waiting screen state. Holds the persisted invitation
+  // id + the partner's display name while the recipient decides.
+  const [ludoWaiting, setLudoWaiting] = useState<{
+    invitationId: string
+    partnerName: string | null
+  } | null>(null)
   const [durationPickerOpen, setDurationPickerOpen] = useState(false)
   const [pickedDuration, setPickedDuration] = useState<number | null>(null)
   const quickyFileRef = useRef<HTMLInputElement>(null)
@@ -517,6 +530,46 @@ export function ChatView({
     })
   }
 
+  // Dating Chat Games PRD §10, §15 — new persisted-invitation flow for Ludo.
+  // 1. POST /games/invitations (create PENDING row, idempotent — PRD §25)
+  // 2. If created (or existing PENDING) → open the LudoWaitingScreen
+  // 3. If existing ACCEPTED → straight into Ludo (the recipient accepted
+  //    while we weren't looking)
+  // 4. Realtime notifyGameInvite is fired by the server route so the
+  //    recipient's DatingGameInvitePopup wakes up instantly (PRD §28).
+  const proposeLudo = async () => {
+    if (!match?.partner?.id || !matchId) return
+    if (!partnerOnline) {
+      toast.error(`${partner?.name ?? 'They'} is offline — games need both players online`)
+      return
+    }
+    try {
+      const res: any = await api.gameInvitations.create({
+        conversationId: matchId,
+        recipientId: match.partner.id,
+        gameType: 'ludo',
+      })
+      if (res?.ok && res?.invitation) {
+        if (res.invitation.status === 'ACCEPTED') {
+          // Already accepted — open Ludo directly.
+          setLudoOpen(true)
+        } else {
+          // PENDING — show the waiting screen.
+          setLudoWaiting({
+            invitationId: res.invitation.id,
+            partnerName: partner?.name ?? null,
+          })
+        }
+      } else if (res?.error === 'game_coming_soon') {
+        toast('Never Have I Ever is coming soon.', { icon: '✨' })
+      } else {
+        toast.error(res?.error ?? 'Failed to start the game')
+      }
+    } catch (e: any) {
+      toast.error(e?.body?.error ?? e?.message ?? 'Failed to start the game')
+    }
+  }
+
   // Hear the partner's join/cancel for a game I proposed
   useEffect(() => {
     if (!meUser?.id) return
@@ -525,6 +578,18 @@ export function ChatView({
         if (!res || res.matchId !== matchId) return
         const game = res.gameType as GameInvitePayload['gameType']
         setPendingInviteGame(null)
+        // Dating Chat Games PRD §16, §17 — for the new Ludo flow, the
+        // waiting screen handles the realtime reaction. If the waiting
+        // screen is open, the accept path opens Ludo + closes it.
+        if (res.accepted && ludoWaiting && res.invitationId === ludoWaiting.invitationId) {
+          setLudoWaiting(null)
+          setLudoOpen(true)
+          return
+        }
+        if (!res.accepted && ludoWaiting && (res as any).invitationId === ludoWaiting.invitationId) {
+          // Decline or cancel — let the waiting screen show its decline UI.
+          return
+        }
         if (res.accepted) {
           openGame(game)
         } else {
@@ -532,7 +597,7 @@ export function ChatView({
         }
       },
     })
-  }, [meUser?.id, matchId])
+  }, [meUser?.id, matchId, ludoWaiting])
 
   // Receiver side: if I joined from the invite popup, the pending game is
   // stashed in sessionStorage — auto-open it once this chat mounts.
@@ -979,6 +1044,23 @@ export function ChatView({
       )
       lastDay = day
     }
+
+    // Dating Chat Games PRD §31-§37 — render the shared game-activity card
+    // for type='game_activity' messages instead of a chat bubble. The card
+    // is a conversation-level event (NOT a per-user message — PRD §57) and
+    // renders identically for both participants.
+    if (m.type === 'game_activity') {
+      rendered.push(
+        <GameActivityCard
+          key={m.id}
+          messageId={m.id}
+          metadata={(m as any).metadata ?? null}
+          meId={me?.id ?? ''}
+        />
+      )
+      return
+    }
+
     rendered.push(
       <MessageBubble
         key={m.id}
@@ -1080,6 +1162,21 @@ export function ChatView({
               <span className="text-[11px] text-white/30">Last seen recently</span>
             )}
           </div>
+        </button>
+        {/* Dating Chat Games PRD §3 — new 🎮 Games icon. Placed BEFORE the
+            3-dot menu per the PRD wireframe (←  User Name  🎮  ⋮). Uses the
+            existing Gamepad2 icon (already imported) and the app's theme
+            tokens — no hardcoded colors (PRD §50). */}
+        <button
+          onClick={() => {
+            setShowGamesMenu(true)
+            haptic()
+          }}
+          className="p-2 hover:bg-white/5 rounded-full"
+          aria-label="Games"
+          data-testid="chat-games-btn"
+        >
+          <Gamepad2 className="w-5 h-5" />
         </button>
         <button
           onClick={() => {
@@ -1538,33 +1635,10 @@ export function ChatView({
                   }}
                   color="white"
                 />
-                <SheetAction
-                  icon={<Sparkles className="w-5 h-5" />}
-                  label="Truth or Dare"
-                  color="lavender"
-                  onClick={() => {
-                    setShowActions(false)
-                    proposeGame('truth_or_dare')
-                  }}
-                />
-                <SheetAction
-                  icon={<Wine className="w-5 h-5" />}
-                  label="Never Have I Ever"
-                  color="lavender"
-                  onClick={() => {
-                    setShowActions(false)
-                    proposeGame('never_have_i_ever')
-                  }}
-                />
-                <SheetAction
-                  icon={<Grid3X3 className="w-5 h-5" />}
-                  label="Ludo"
-                  color="white"
-                  onClick={() => {
-                    setShowActions(false)
-                    proposeGame('ludo')
-                  }}
-                />
+                {/* Dating Chat Games PRD §4 — the three game entries
+                    (Truth or Dare, Never Have I Ever, Ludo) have been
+                    REMOVED from the 3-dot menu. Games are now reachable
+                    only via the new 🎮 Games icon in the header. */}
                 <SheetAction
                   icon={<X className="w-5 h-5" />}
                   label="Unmatch"
@@ -1651,6 +1725,33 @@ export function ChatView({
       {ludoOpen && matchId && (
         <LudoGame matchId={matchId} meId={me?.id ?? ''} partnerName={partner.name} onClose={() => setLudoOpen(false)} />
       )}
+
+      {/* Dating Chat Games PRD §6 — Games menu sheet (opens from the
+          🎮 header icon). Ludo is playable; Never Have I Ever is Coming
+          Soon (no room/invitation/session); Truth or Dare is HIDDEN. */}
+      <GamesMenuSheet
+        open={showGamesMenu}
+        onClose={() => setShowGamesMenu(false)}
+        onPlayLudo={proposeLudo}
+      />
+
+      {/* PRD §15 — sender waiting screen for the new persisted-invitation
+          Ludo flow. Replaces the small inline banner for the Ludo path.
+          (The legacy pendingInviteGame banner below is kept for ToD/NHIE
+          back-compat — those games are no longer reachable from the menu but
+          the components still mount for in-flight sessions.) */}
+      <LudoWaitingScreen
+        open={!!ludoWaiting}
+        partnerName={ludoWaiting?.partnerName ?? null}
+        invitationId={ludoWaiting?.invitationId ?? null}
+        matchId={matchId}
+        onCancel={() => setLudoWaiting(null)}
+        onAccepted={() => {
+          setLudoWaiting(null)
+          setLudoOpen(true)
+        }}
+        onDeclined={() => setLudoWaiting(null)}
+      />
 
       {/* Profile sheet */}
       {showProfile && partner && (

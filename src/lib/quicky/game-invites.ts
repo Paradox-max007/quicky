@@ -16,6 +16,13 @@ export type GameInvitePayload = {
   gameType: 'truth_or_dare' | 'never_have_i_ever' | 'ludo'
   fromId: string
   fromName: string
+  // Dating Chat Games PRD §10/§14 — persisted invitation id (the new
+  // server-side state machine). Optional because the legacy ToD/NHIE flow
+  // doesn't persist (Truth or Dare is HIDDEN, NHIE is COMING_SOON — neither
+  // sends an invitation today). New dating-chat Ludo invitations always
+  // carry this; the popup uses it to call POST /games/invitations/[id]/accept
+  // or /decline.
+  invitationId?: string
 }
 
 export type InviteResponsePayload = {
@@ -24,6 +31,11 @@ export type InviteResponsePayload = {
   gameType: string
   fromId: string
   fromName: string
+  // PRD §14 — sender-cancelled invitations also flow through this channel.
+  // `cancelled: true` means the sender pulled the invitation back; the
+  // recipient's popup should close without offering PLAY_NOW / NOT_NOW.
+  cancelled?: boolean
+  invitationId?: string
 }
 
 const GAME_LABELS: Record<string, string> = {

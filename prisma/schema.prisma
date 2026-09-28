@@ -68,6 +68,10 @@ model User {
   quickyReceives   QuickyEvent[] @relation("RecipientQuicky")
   gameSessionsA    GameSession[] @relation("UserA_GS")
   gameSessionsB    GameSession[] @relation("UserB_GS")
+  // Dating Chat Games PRD §39 — back-relations for the persisted invitation
+  // state machine. A user can be either the sender or the recipient.
+  gameInvitesSent      GameInvitation[] @relation("GameInvitationSender")
+  gameInvitesReceived  GameInvitation[] @relation("GameInvitationRecipient")
   subscriptions    Subscription[]
   reportsFiled     Report[] @relation("Reporter")
   reportsAgainst   Report[] @relation("Reported")
@@ -185,16 +189,26 @@ model Match {
   userB         User       @relation("UserB", fields: [userBId], references: [id], onDelete: Cascade)
   messages      Message[]
   gameSessions  GameSession[]
+  // Dating Chat Games PRD §39 — invitations scoped to this 1:1 conversation.
+  gameInvitations GameInvitation[] @relation("GameInvitationMatch")
 }
 
 model Message {
   id                 String    @id @default(cuid())
   matchId            String
   senderId           String
-  // type: "text" | "image" | "video" | "quicky" | "system"
+  // type: "text" | "image" | "video" | "voice" | "sticker" | "quicky" | "system" | "game_activity"
+  // "game_activity" is server-only (PRD §31-§34, §57) — the completed-game
+  // shared memory card. It is NOT user-sendable via POST /messages; only the
+  // game-completion path writes it. The card payload lives in `metadata`
+  // (JSON-encoded GameActivityPayload — gameType, gameName, sessionId,
+  // durationSeconds, winnerId, startedAt, finishedAt).
   type               String
   text               String?
   mediaUrl           String?
+  // Dating Chat Games PRD §34 — game-activity card payload (JSON-encoded) for
+  // type='game_activity' messages. Unused for other types.
+  metadata           String?
   quickyDuration     Int?
   quickyOpenedAt     DateTime?
   // Set when the Quicky has been viewed — media file is permanently deleted
@@ -1868,6 +1882,64 @@ model GameMonetizationEvent {
 
   @@index([type, createdAt])
   @@index([userId, createdAt])
+}
+
+// ── Dating Chat Games PRD — §14, §39, §40 ────────────────────────────────────
+// Generic, persisted, server-authoritative invitation state machine used by
+// games launched from a 1:1 dating chat (Match). The realtime broadcast in
+// `src/lib/quicky/game-invites.ts` is fire-and-forget; this row is the source
+// of truth that survives realtime dropouts, app backgrounding, and relogin.
+//
+// Status flow (PRD §14, §61):
+//   PENDING ──PLAY_NOW──▶ ACCEPTED ──▶ (game completes) ──▶ COMPLETED
+//   PENDING ──NOT_NOW──▶ DECLINED ──▶ CLOSED
+//   PENDING ──timeout──▶ EXPIRED  ──▶ CLOSED
+//   PENDING ──sender-cancel──▶ CANCELLED ──▶ CLOSED
+//
+// `gameType` is one of: "ludo" | "never_have_i_ever" | "truth_or_dare"
+// (the registry in src/lib/quicky/dating-games/registry.ts gates which of
+// these are user-launchable from the Games menu — currently only Ludo is).
+model GameInvitation {
+  id             String    @id @default(cuid())
+  // The dating-chat conversation this invitation belongs to (PRD §8 — the
+  // private room is scoped to a Match, not a separate Conversation entity).
+  matchId        String
+  gameType       String
+  // The two participants (sender initiates, recipient decides). Enforced by
+  // the API: only these two users may read/act on the invitation.
+  senderId       String
+  recipientId    String
+  // The private game room id (for Ludo this is the GameSession.id that backs
+  // the legacy 2-player LudoGame overlay; for future games it can be a
+  // SpinRoom.id or another room identifier — the field is game-agnostic).
+  roomId         String?
+  // status: PENDING | ACCEPTED | DECLINED | EXPIRED | CANCELLED | COMPLETED | CLOSED
+  status         String    @default("PENDING")
+  // Idempotency / race-safety (PRD §54): every state transition records the
+  // userId that performed it + when. Multiple PLAY_NOW taps resolve to one.
+  respondedAt    DateTime?
+  responderId    String?
+  // Configurable timeout (PRD §27) — the server sweeps PENDING rows whose
+  // `expiresAt` has passed and marks them EXPIRED. Default 5 minutes.
+  expiresAt      DateTime
+  // Optional reason for terminal states (e.g. "timeout", "user_left",
+  // "game_completed"). Free-form, for analytics / debugging only.
+  closeReason    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  match           Match     @relation("GameInvitationMatch", fields: [matchId], references: [id], onDelete: Cascade)
+  sender          User      @relation("GameInvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient       User      @relation("GameInvitationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // Hot lookups: "is there already a PENDING invitation between these two
+  // users for this match+game?" (PRD §25 — prevent duplicate invitations) and
+  // "what is my active invitation right now?" (PRD §53 GET /active).
+  @@unique([matchId, gameType, status])
+  @@index([recipientId, status])
+  @@index([senderId, status])
+  @@index([matchId, status])
+  @@index([expiresAt, status])
 }
 
 

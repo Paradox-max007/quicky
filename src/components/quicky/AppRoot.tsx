@@ -62,7 +62,14 @@ import { useRewardsStore, subscribeRewardsChannel, resetRewardsChannel } from '@
 import { primeMentionSound } from '@/lib/quicky/mention-sound'
 import { MatchCelebration } from './MatchCelebration'
 import { PaywallModal } from './PaywallModal'
-import { GameInvitePopup } from './GameInvitePopup'
+// Dating Chat Games PRD §12 — the new mandatory, non-dismissible invitation
+// popup replaces the legacy GameInvitePopup for the dating-chat Ludo flow.
+// The legacy popup is no longer mounted: it was dismissible (30s auto-dismiss,
+// drag, tap-outside) and the PRD requires the new popup to require an
+// explicit PLAY_NOW / NOT_NOW choice. The realtime channel
+// (src/lib/quicky/game-invites.ts) is unchanged — the new popup subscribes
+// to the same `qk:invites:<userId>` channel.
+import { DatingGameInvitePopup } from './dating-chat-games/DatingGameInvitePopup'
 import { Toaster as SonnerToaster, toast } from 'sonner'
 import { Capacitor } from '@capacitor/core'
 import { useGameChatStore } from '@/store/game-chat'
@@ -629,7 +636,11 @@ export function AppRoot() {
       {/* Overlays */}
       <MatchCelebration />
       <PaywallModal />
-      <GameInvitePopup />
+      {/* Dating Chat Games PRD §11, §12, §13 — mandatory, non-dismissible
+          game-invitation popup. Mounted once globally; wakes up on realtime
+          broadcasts and on app load re-arms from GET /games/invitations
+          (PRD §13 — popup persistence across app sessions). */}
+      <DatingGameInvitePopup />
       {/* game-chat PRD §82: the off-screen decision drawer is a top-level
           overlay — above chat content, composer and keyboard; it only ever
           renders over game-section screens (§53) and never over the table

@@ -126,6 +126,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ matchId: st
         text: m.text,
         // Consumed Quickies are unrecoverable — the URL is gone for good
         mediaUrl: consumed ? null : m.mediaUrl,
+        // Dating Chat Games PRD §34 — game-activity card payload (server-only).
+        // For type='game_activity' the payload is JSON in `metadata`; for all
+        // other types it is null/absent.
+        metadata: (m as any).metadata ?? null,
         quickyDuration: m.quickyDuration,
         quickyOpenedAt: m.quickyOpenedAt,
         quickyConsumedAt: m.quickyConsumedAt,
@@ -182,7 +186,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ matchId: s
   if (blockRow) return NextResponse.json({ error: 'blocked' }, { status: 403 })
 
   const body = await req.json()
-  const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'sticker' | 'system'
+  const type = String(body.type ?? 'text') as 'text' | 'image' | 'video' | 'voice' | 'sticker' | 'system' | 'game_activity'
+  // Dating Chat Games PRD §31-§34, §57 — 'game_activity' is a SERVER-ONLY
+  // message type. Users cannot send it through this route; only the game-
+  // completion path (LudoGame PATCH /matches/[matchId]/game on win) writes
+  // it, so that both participants see a single shared "You played Ludo for
+  // 1h 24m" card. Reject any user-sent game_activity with 400.
+  if (type === 'game_activity') {
+    return NextResponse.json({ error: 'game_activity_is_server_only' }, { status: 400 })
+  }
   if (!['text', 'image', 'video', 'voice', 'sticker'].includes(type)) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
   }

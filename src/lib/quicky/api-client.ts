@@ -236,6 +236,45 @@ export const api = {
         body: JSON.stringify({ sessionId, action, ...payload }),
       }),
   },
+  // ── Dating Chat Games PRD §53 — persisted, server-authoritative game
+  // invitation state machine. See src/lib/quicky/dating-games/invitations.ts.
+  gameInvitations: {
+    /** Create a new PENDING invitation (sender flow). Idempotent —
+     *  returns the existing PENDING/ACCEPTED row if one already exists
+     *  for this (matchId, gameType). */
+    create: (opts: { conversationId: string; recipientId: string; gameType: 'ludo' | 'never_have_i_ever' | 'truth_or_dare' }) =>
+      jsonFetch<{ ok: boolean; invitation: any; created: boolean }>(
+        '/api/quicky/games/invitations',
+        { method: 'POST', body: JSON.stringify(opts) }
+      ),
+    /** Accept — recipient taps PLAY NOW. Idempotent. */
+    accept: (invitationId: string) =>
+      jsonFetch<{ ok: boolean; invitation: any }>(
+        `/api/quicky/games/invitations/${invitationId}/accept`,
+        { method: 'POST' }
+      ),
+    /** Decline — recipient taps NOT NOW. Idempotent. */
+    decline: (invitationId: string) =>
+      jsonFetch<{ ok: boolean; invitation: any }>(
+        `/api/quicky/games/invitations/${invitationId}/decline`,
+        { method: 'POST' }
+      ),
+    /** Cancel — sender pulls the invitation back (PRD §45). Idempotent. */
+    cancel: (invitationId: string) =>
+      jsonFetch<{ ok: boolean; invitation: any }>(
+        `/api/quicky/games/invitations/${invitationId}/cancel`,
+        { method: 'POST' }
+      ),
+    /** Get the active invitation for a specific match (+ optional gameType). */
+    activeForMatch: (matchId: string, gameType?: string) =>
+      jsonFetch<{ invitation: any }>(
+        `/api/quicky/games/invitations?matchId=${encodeURIComponent(matchId)}${gameType ? `&gameType=${encodeURIComponent(gameType)}` : ''}`
+      ),
+    /** List ALL PENDING invitations where I am the recipient (PRD §13 —
+     *  popup persistence across app sessions). */
+    listActive: () =>
+      jsonFetch<{ invitations: any[] }>(`/api/quicky/games/invitations`),
+  },
   gamePosts: {
     list: () => jsonFetch<{ posts: any[] }>('/api/quicky/game-posts'),
     share: (sessionId: string) =>
