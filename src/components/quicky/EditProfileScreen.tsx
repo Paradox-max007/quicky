@@ -5,8 +5,10 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { INTEREST_TAGS, PROFILE_PROMPTS, EDUCATION_OPTIONS, LIFESTYLE_OPTIONS } from '@/lib/quicky/constants'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, Plus, X, Calendar, Ruler } from 'lucide-react'
+import { ArrowLeft, Check, Plus, X, Calendar, Ruler, MapPin, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+// Premium Party Games PRD §B — location capture for the distance filter.
+import { requestLocationPermission, getCurrentPosition } from '@/lib/quicky/device-permissions'
 
 type Step = 'basics' | 'bio' | 'interests' | 'prompts'
 
@@ -39,6 +41,11 @@ export function EditProfileScreen() {
   const [htCm, setHtCm] = useState<number | null>(null)
   const [education, setEducation] = useState('')
   const [lifestyle, setLifestyle] = useState('')
+  // PRD §B — imprecise lat/lng for the discovery distance filter. null =
+  // user hasn't set their location yet.
+  const [lat, setLat] = useState<number | null>(null)
+  const [lng, setLng] = useState<number | null>(null)
+  const [locating, setLocating] = useState(false)
   const [promptTexts, setPromptTexts] = useState<Record<string, string>>({})
 
   // Hydrate from store / API
@@ -62,6 +69,10 @@ export function EditProfileScreen() {
           setHtCm(u.heightCm ?? null)
           setEducation(u.education ?? '')
           setLifestyle(u.lifestyle ?? '')
+          // PRD §B — hydrate the imprecise location from /auth/me so the
+          // "Use my current location" button shows the saved state.
+          setLat(u.lat ?? null)
+          setLng(u.lng ?? null)
           const promptMap: Record<string, string> = {}
           for (const p of u.prompts ?? []) {
             promptMap[p.prompt] = p.answer
@@ -77,6 +88,45 @@ export function EditProfileScreen() {
   }, [setUser])
 
   const step = STEP_ORDER[stepIdx]
+
+  // Premium Party Games PRD §B — "Use my current location" button. Requests
+  // the OS location permission (only when the user taps this button — no
+  // permission prompt on app launch per PRD §35), reads the device GPS,
+  // rounds to ~1km imprecision (see device-permissions.ts `imprecise()`),
+  // and stores into local state. The save handler persists it to the
+  // profile; the discovery distance filter then uses the real haversine.
+  const useMyLocation = async () => {
+    // If we already have a saved location, the button toggles it OFF
+    // (clears lat/lng). The next tap re-captures.
+    if (lat !== null && lng !== null) {
+      setLat(null)
+      setLng(null)
+      toast('Location cleared — discovery will fall back to city-based matching.')
+      return
+    }
+    setLocating(true)
+    try {
+      const perm = await requestLocationPermission()
+      if (perm !== 'granted') {
+        if (perm === 'denied') {
+          toast.error('Location access denied — enable it in your device settings')
+        } else if (perm === 'unavailable') {
+          toast.error('Location unavailable on this device')
+        }
+        return
+      }
+      const coords = await getCurrentPosition()
+      if (!coords) {
+        toast.error('Could not get your location — try again')
+        return
+      }
+      setLat(coords.lat)
+      setLng(coords.lng)
+      toast.success('Location set — discovery will use real distance.')
+    } finally {
+      setLocating(false)
+    }
+  }
 
   const saveAll = async () => {
     setSaving(true)
@@ -102,6 +152,11 @@ export function EditProfileScreen() {
         heightCm: htCm ?? null,
         education: education || undefined,
         lifestyle: lifestyle || undefined,
+        // PRD §B — imprecise location. Send the current lat/lng state so
+        // the user can both set (via the "Use my current location" button)
+        // and clear (by tapping the button again) their saved location.
+        lat,
+        lng,
       }
       const res = await api.auth.update(payload)
       if (res.ok) {
@@ -245,6 +300,35 @@ export function EditProfileScreen() {
                 placeholder="Brooklyn, NY"
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-base placeholder:text-white/30 focus:outline-none focus:border-[var(--qk-accent)]"
               />
+              {/* Premium Party Games PRD §B — "Use my current location"
+                  button. Tapping it requests the OS location permission
+                  (PRD §35: contextual, not on launch), reads the device
+                  GPS, rounds to ~1km imprecision, and stores into local
+                  state. Save persists it; discovery then uses real
+                  haversine distance instead of the legacy RNG fallback. */}
+              <button
+                type="button"
+                onClick={useMyLocation}
+                disabled={locating}
+                className={cn(
+                  'mt-2 w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-all',
+                  'border border-[var(--qk-accent)]/25 bg-[var(--qk-accent)]/8 hover:bg-[var(--qk-accent)]/15',
+                  'text-[var(--qk-accent-light)]',
+                  locating && 'opacity-60'
+                )}
+              >
+                {locating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <MapPin className="w-4 h-4" />
+                )}
+                {lat !== null && lng !== null
+                  ? 'Location saved — tap to clear'
+                  : 'Use my current location'}
+              </button>
+              <p className="text-[10px] text-white/40 mt-1.5 px-1">
+                We use your location to filter nearby matches. Stored imprecisely (~1km) — your exact spot is never saved.
+              </p>
             </Field>
             <Field label="Height">
               <div className="bg-white/5 rounded-2xl p-4 border border-white/8">

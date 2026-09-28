@@ -103,6 +103,15 @@ export function SpinBottleLanding({
         if (res?.roomId) onJoined(res.roomId)
       } catch (e: any) {
         if (cancelledRef.current) return
+        // Premium Party Games PRD §43 — free user → open the paywall instead
+        // of toasting the raw 'premium_required' string. The server returns
+        // 402 + paywall: 'games' on the join route (entitlement gate added
+        // in the previous PR). Also bail out of the matchmaking UI.
+        if (e?.status === 402 && e?.body?.paywall === 'games') {
+          useQuickyStore.getState().showPaywall({ kind: 'games' })
+          setFinding(false)
+          return
+        }
         toast.error(e.message ?? 'Failed to join a room')
         setFinding(false)
       }

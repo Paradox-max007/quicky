@@ -43,6 +43,29 @@ export async function PATCH(req: NextRequest) {
     const education = body.education != null ? String(body.education).slice(0, 60) : null
     const lifestyle = body.lifestyle != null ? String(body.lifestyle).slice(0, 60) : null
 
+    // Premium Party Games PRD §B — location capture during onboarding. The
+    // OnboardingFlow asks the user to share their location (imprecise, ~1km)
+    // so the discovery distance filter has real data. Validate finite +
+    // range; null/undefined skip (location is optional).
+    let lat: number | null | undefined = undefined
+    let lng: number | null | undefined = undefined
+    if (body.lat === null) lat = null
+    else if (body.lat !== undefined) {
+      const v = Number(body.lat)
+      if (!Number.isFinite(v) || v < -90 || v > 90) {
+        return NextResponse.json({ error: 'lat must be -90..90' }, { status: 400 })
+      }
+      lat = v
+    }
+    if (body.lng === null) lng = null
+    else if (body.lng !== undefined) {
+      const v = Number(body.lng)
+      if (!Number.isFinite(v) || v < -180 || v > 180) {
+        return NextResponse.json({ error: 'lng must be -180..180' }, { status: 400 })
+      }
+      lng = v
+    }
+
     const updated = await db.user.update({
       where: { id: me.id },
       data: {
@@ -59,6 +82,9 @@ export async function PATCH(req: NextRequest) {
         ...(heightCm !== undefined ? { heightCm } : {}),
         ...(body.education !== undefined ? { education } : {}),
         ...(body.lifestyle !== undefined ? { lifestyle } : {}),
+        // PRD §B — imprecise location for the distance filter.
+        ...(lat !== undefined ? { lat } : {}),
+        ...(lng !== undefined ? { lng } : {}),
         onboardedAt: new Date(),
         lastActiveAt: new Date(),
       },
@@ -75,6 +101,8 @@ export async function PATCH(req: NextRequest) {
         heightCm: updated.heightCm,
         education: updated.education,
         lifestyle: updated.lifestyle,
+        lat: updated.lat,
+        lng: updated.lng,
         onboardedAt: updated.onboardedAt,
       },
     })

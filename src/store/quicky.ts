@@ -83,6 +83,12 @@ export type QuickyUser = {
   heightCm?: number | null
   education?: string | null
   lifestyle?: string | null
+  // Premium Party Games PRD §B — imprecise (~1km) lat/lng captured during
+  // onboarding or via Edit Profile → "Use my current location". Used by
+  // the discovery distance filter (haversine). null = user hasn't set
+  // their location yet; discovery falls back to the same-city heuristic.
+  lat?: number | null
+  lng?: number | null
   lastActiveAt?: string | null
   settings?: UserSettings
 }

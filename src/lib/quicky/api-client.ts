@@ -126,6 +126,10 @@ export const api = {
       heightCm?: number | null
       education?: string | null
       lifestyle?: string | null
+      // Premium Party Games PRD §B — imprecise lat/lng for the distance
+      // filter. Pass `null` to clear. Server validates -90..90 / -180..180.
+      lat?: number | null
+      lng?: number | null
       discoveryAgeMin?: number
       discoveryAgeMax?: number
       discoveryDistanceKm?: number

@@ -108,6 +108,14 @@ export function LudoLanding({
         setJoining(false)
       }
     } catch (e: any) {
+      // Premium Party Games PRD §43 — free user → open the paywall instead
+      // of toasting the raw 'premium_required' string. The server returns
+      // 402 + paywall: 'games' on the join route.
+      if (e?.status === 402 && e?.body?.paywall === 'games') {
+        useQuickyStore.getState().showPaywall({ kind: 'games' })
+        setJoining(false)
+        return
+      }
       toast.error(e?.message ?? "Couldn't join the table")
       setJoining(false)
     }

@@ -5,8 +5,11 @@ import { useQuickyStore } from '@/store/quicky'
 import { api } from '@/lib/quicky/api-client'
 import { INTEREST_TAGS, PROFILE_PROMPTS } from '@/lib/quicky/constants'
 import { toast } from 'sonner'
-import { ArrowRight, ArrowLeft, Camera, Plus, Check, X } from 'lucide-react'
+import { ArrowRight, ArrowLeft, Camera, Plus, Check, X, MapPin, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+// Premium Party Games PRD §B — location capture during onboarding so the
+// discovery distance filter has real data from day one.
+import { requestLocationPermission, getCurrentPosition } from '@/lib/quicky/device-permissions'
 
 type Step =
   | 'dob'
@@ -35,6 +38,11 @@ export function OnboardingFlow() {
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+  // PRD §B — imprecise lat/lng captured during onboarding (optional; the
+  // user can skip the "Use my current location" button).
+  const [lat, setLat] = useState<number | null>(null)
+  const [lng, setLng] = useState<number | null>(null)
+  const [locating, setLocating] = useState(false)
 
   const step = STEP_ORDER[stepIdx]
 
@@ -72,6 +80,11 @@ export function OnboardingFlow() {
         city,
         interests,
         prompts,
+        // PRD §B — pass the captured imprecise lat/lng. `null` is fine —
+        // the server skips the field; the user can set location later via
+        // Edit Profile → "Use my current location".
+        lat,
+        lng,
       })
       if (res.ok) {
         const me = await api.auth.me()
@@ -94,6 +107,42 @@ export function OnboardingFlow() {
   }
   const back = () => {
     if (stepIdx > 0) setStepIdx(stepIdx - 1)
+  }
+
+  // PRD §B — "Use my current location" button (on the bio step, right
+  // under the City input). Contextual permission request per PRD §35 —
+  // no permission prompt on app launch. Reads the device GPS, rounds to
+  // ~1km imprecision (see device-permissions.ts `imprecise()`), stores
+  // into local state; `finish()` persists it via api.onboarding.complete.
+  // Tapping the button again clears the saved location.
+  const useMyLocation = async () => {
+    if (lat !== null && lng !== null) {
+      setLat(null)
+      setLng(null)
+      return
+    }
+    setLocating(true)
+    try {
+      const perm = await requestLocationPermission()
+      if (perm !== 'granted') {
+        if (perm === 'denied') {
+          toast.error('Location access denied — enable it in your device settings')
+        } else if (perm === 'unavailable') {
+          toast.error('Location unavailable on this device')
+        }
+        return
+      }
+      const coords = await getCurrentPosition()
+      if (!coords) {
+        toast.error('Could not get your location — try again')
+        return
+      }
+      setLat(coords.lat)
+      setLng(coords.lng)
+      toast.success('Location captured — you can change it later in Edit Profile.')
+    } finally {
+      setLocating(false)
+    }
   }
 
   return (
@@ -232,6 +281,33 @@ export function OnboardingFlow() {
               placeholder="Brooklyn, NY"
               className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--qk-accent)]"
             />
+            {/* PRD §B — "Use my current location" button. Reads the device
+                GPS (imprecise ~1km) so the discovery distance filter has
+                real data. Optional — the user can skip; city text alone
+                still works for the same-city heuristic. */}
+            <button
+              type="button"
+              onClick={useMyLocation}
+              disabled={locating}
+              className={cn(
+                'mt-2 w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-all',
+                'border border-[var(--qk-accent)]/25 bg-[var(--qk-accent)]/8 hover:bg-[var(--qk-accent)]/15',
+                'text-[var(--qk-accent-light)]',
+                locating && 'opacity-60'
+              )}
+            >
+              {locating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <MapPin className="w-4 h-4" />
+              )}
+              {lat !== null && lng !== null
+                ? 'Location captured — tap to clear'
+                : 'Use my current location'}
+            </button>
+            <p className="text-[10px] text-white/40 mt-1.5 px-1">
+              We use your location to find nearby matches. Stored imprecisely (~1km) — your exact spot is never saved.
+            </p>
           </StepShell>
         )}
 

@@ -33,6 +33,19 @@ import { ComplaintModal } from '../ComplaintModal'
 import { CosmeticAvatar, NameDecorators, chatBubbleStyle, ChatBubbleFrame, type EquippedCosmetic } from '../cosmetics/Cosmetics'
 import { useQuickyStore } from '@/store/quicky'
 import { useGameChatStore, type GameChatMessage } from '@/store/game-chat'
+// Premium Party Games PRD §28-§34 — central device-permissions service.
+// Replaces the raw getUserMedia call (which gave a false "Microphone
+// unavailable — check permissions" toast on Capacitor after a grant)
+// and routes camera capture through @capacitor/camera on native so
+// Quicky images are taken live from the camera, never picked from the
+// gallery (PRD: "no file directory sharing allowed for Quicky on the
+// Capacitor app").
+import {
+  requestMicrophonePermission,
+  requestCameraPermission,
+  capturePhotoWithNativeCamera,
+} from '@/lib/quicky/device-permissions'
+import { isNative } from '@/lib/capacitor'
 import { StickerPicker } from './StickerPicker'
 import { EmojiReactDrawer } from '../EmojiReactDrawer'
 import { Component, type ReactNode } from 'react'
@@ -376,6 +389,32 @@ function GameChatScreenInner({
     setPreview({ blob, objectUrl: URL.createObjectURL(blob), kind })
   }
 
+  // Premium Party Games PRD §28-§34 + Capacitor Quicky capture: on native
+  // apps, Quicky images must be captured live from the camera (no gallery
+  // access). On web, fall back to the file picker. Regular (non-Quicky)
+  // image sends still use the file picker on both platforms — the camera-
+  // only rule applies to Quicky specifically per the PRD.
+  const openQuickyCapture = async () => {
+    const perm = await requestCameraPermission()
+    if (perm !== 'granted') {
+      if (perm === 'denied') {
+        toast.error('Camera access denied — enable it in your device settings')
+      } else if (perm === 'unavailable') {
+        toast.error('Camera unavailable on this device')
+      }
+      // 'prompt' → user dismissed; silent retry
+      return
+    }
+    if (isNative()) {
+      const blob = await capturePhotoWithNativeCamera()
+      if (!blob) return  // user cancelled — silent
+      const file = new File([blob], `quicky_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' })
+      await onPickImage(file, 'quicky_image')
+      return
+    }
+    quickyInputRef.current?.click()
+  }
+
   // ── Voice (§63-§67): tap mic → record → stop → preview → send/cancel.
   // Browsers without MediaRecorder get a friendly notice, never a crash.
   const canRecord = typeof window !== 'undefined' && typeof (window as any).MediaRecorder !== 'undefined'
@@ -399,6 +438,22 @@ function GameChatScreenInner({
 
   const startRecording = async () => {
     if (recording) return
+    // Premium Party Games PRD §28-§34 — request mic permission via the
+    // central device-permissions service first. The legacy code caught
+    // every getUserMedia failure as "Microphone unavailable — check
+    // permissions", including the transient WebView race that fires AFTER
+    // the user grants permission on Capacitor. The new helper classifies
+    // the error so the toast reflects the actual state.
+    const perm = await requestMicrophonePermission()
+    if (perm !== 'granted') {
+      if (perm === 'denied') {
+        toast.error('Microphone access denied — enable it in your device settings')
+      } else if (perm === 'unavailable') {
+        toast.error('Microphone unavailable on this device')
+      }
+      // 'prompt' → user dismissed the OS dialog; don't toast, let them retry
+      return
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
@@ -821,7 +876,7 @@ function GameChatScreenInner({
                 <div className="px-3 py-2.5 flex flex-col gap-2.5">
                   {/* §68: Quicky Image — the special points-earning send */}
                   <button
-                    onClick={() => quickyInputRef.current?.click()}
+                    onClick={openQuickyCapture}
                     className="flex items-center gap-2.5 rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 hover:bg-white/10 active:scale-[0.99] transition text-left"
                     data-testid="quicky-image-option"
                   >

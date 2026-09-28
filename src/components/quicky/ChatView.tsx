@@ -17,7 +17,19 @@ import { QUICKY } from '@/lib/quicky/constants'
 import { useDoubleTap } from '@/lib/quicky/useDoubleTap'
 import { joinMatchChannel, trackOnline, watchOnline, realtimeConfigured, MatchChannel } from '@/lib/quicky/realtime'
 import { notifyGameInvite, watchGameInvites, GameInvitePayload } from '@/lib/quicky/game-invites'
-import { requestMicPermission, requestCameraPermission } from '@/lib/quicky/media-permissions'
+// Premium Party Games PRD §28-§34 — switched from the legacy media-permissions
+// helper (which misclassified transient WebView errors as 'unavailable'
+// and gave a false "Microphone unavailable" toast after a grant) to the
+// central device-permissions service. On Capacitor the camera path now
+// uses @capacitor/camera (native prompt); the mic path uses WebView
+// getUserMedia with proper error classification; both can be requested
+// contextually per PRD §35.
+import {
+  requestMicrophonePermission as requestMicPermission,
+  requestCameraPermission,
+  capturePhotoWithNativeCamera,
+} from '@/lib/quicky/device-permissions'
+import { isNative } from '@/lib/capacitor'
 import { compressImage } from '@/lib/quicky/image'
 import { StickerPicker } from '@/components/quicky/game-chat/StickerPicker'
 import { EmojiReactDrawer } from './EmojiReactDrawer'
@@ -589,6 +601,13 @@ export function ChatView({
         toast.error(res?.error ?? 'Failed to start the game')
       }
     } catch (e: any) {
+      // Premium Party Games PRD §43 — free user trying to invite to a premium
+      // game (Ludo): the server returns 402 + paywall: 'games'. Open the
+      // paywall instead of toasting the raw 'premium_required' string.
+      if (e?.status === 402 && e?.body?.paywall === 'games') {
+        useQuickyStore.getState().showPaywall({ kind: 'games' })
+        return
+      }
       toast.error(e?.body?.error ?? e?.message ?? 'Failed to start the game')
     }
   }
@@ -803,10 +822,22 @@ export function ChatView({
   const startVoiceRecording = async () => {
     if (recording || !matchId) return
     // Ask for the microphone up front — on mobile this triggers the OS
-    // permission dialog before any recording UI appears.
+    // permission dialog before any recording UI appears. The new helper
+    // (device-permissions.ts) classifies errors correctly — the legacy
+    // helper misclassified transient WebView errors (NotReadableError,
+    // AbortError) as 'unavailable' even AFTER the user granted permission,
+    // producing a false "Microphone unavailable on this device" toast.
     const perm = await requestMicPermission()
     if (perm !== 'granted') {
-      toast.error(perm === 'denied' ? 'Microphone access denied — enable it in your device settings' : 'Microphone unavailable on this device')
+      if (perm === 'denied') {
+        toast.error('Microphone access denied — enable it in your device settings')
+      } else if (perm === 'unavailable') {
+        toast.error('Microphone unavailable on this device')
+      } else {
+        // 'prompt' — the user dismissed the system dialog without choosing.
+        // Don't toast an error; let them tap mic again to re-prompt.
+        return
+      }
       return
     }
     try {
@@ -910,12 +941,47 @@ export function ChatView({
 
   const openQuickyCapture = async () => {
     setShowActions(false)
-    // Camera permission prompt fires before the capture sheet opens
+    // Camera permission prompt fires before the capture sheet opens.
+    // On Capacitor (Android/iOS) we use @capacitor/camera (native prompt +
+    // native camera UI — the user CANNOT pick from the gallery; this is
+    // intentional per the PRD: "image should be captured by the camera at
+    // the moment, no file directory sharing allowed for Quicky on the
+    // Capacitor app"). On web we fall back to the file picker (the
+    // existing <input type="file" accept="image/*"> path).
     const perm = await requestCameraPermission()
     if (perm !== 'granted') {
-      toast.error(perm === 'denied' ? 'Camera access denied — enable it in your device settings' : 'Camera unavailable on this device')
+      toast.error(
+        perm === 'denied'
+          ? 'Camera access denied — enable it in your device settings'
+          : perm === 'unavailable'
+            ? 'Camera unavailable on this device'
+            : 'Camera permission needed to send a Quicky'
+      )
       return
     }
+
+    if (isNative()) {
+      // Native path: open the device camera. The user must take a photo
+      // live; there is no gallery option (CameraSource forced to 'CAMERA'
+      // inside the helper).
+      const blob = await capturePhotoWithNativeCamera()
+      if (!blob) {
+        // User cancelled the camera screen OR capture failed. Silent abort
+        // — cancellation is not an error, don't toast.
+        return
+      }
+      // Wrap the Blob in a File so compressImage (which expects a File |
+      // Blob) and the upload route (which reads `file.name` for the
+      // extension when present) work consistently.
+      const file = new File([blob], `quicky_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' })
+      onQuickyFile(file)
+      return
+    }
+
+    // Web fallback: open the file picker. accept='image/*' so the user
+    // can pick a gallery photo on mobile too — web users don't have the
+    // "live camera only" requirement (the PRD specifically scopes that to
+    // the Capacitor app).
     quickyFileRef.current?.click()
   }
 

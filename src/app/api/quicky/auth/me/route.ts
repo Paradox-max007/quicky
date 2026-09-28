@@ -48,6 +48,11 @@ export async function GET() {
       lookingFor: full.lookingFor,
       bio: full.bio,
       city: full.city,
+      // Premium Party Games PRD §B — expose the user's (imprecise) lat/lng
+      // so the EditProfileScreen + OnboardingFlow can hydrate from /auth/me
+      // and the discovery feed's distance filter has the data it needs.
+      lat: full.lat,
+      lng: full.lng,
       interests: full.interests ? JSON.parse(full.interests) : [],
       prompts: full.prompts ? JSON.parse(full.prompts) : [],
       photos: full.photos.map((p) => ({ id: p.id, url: p.url, isPrimary: p.isPrimary, isPrivate: p.isPrivate, position: p.position, displayHeight: p.displayHeight })),
@@ -166,6 +171,28 @@ export async function PATCH(req: NextRequest) {
     if (body.lifestyle !== undefined) {
       data.lifestyle = body.lifestyle ? String(body.lifestyle).slice(0, 60) : null
     }
+    // Premium Party Games PRD §B — location capture. Accept lat/lng from
+    // the EditProfileScreen "Use my current location" button + the
+    // OnboardingFlow location step. Validate finite + range (lat -90..90,
+    // lng -180..180); null is allowed to clear the field.
+    if (body.lat === null) {
+      data.lat = null
+    } else if (body.lat !== undefined) {
+      const v = Number(body.lat)
+      if (!Number.isFinite(v) || v < -90 || v > 90) {
+        return NextResponse.json({ error: 'lat must be -90..90' }, { status: 400 })
+      }
+      data.lat = v
+    }
+    if (body.lng === null) {
+      data.lng = null
+    } else if (body.lng !== undefined) {
+      const v = Number(body.lng)
+      if (!Number.isFinite(v) || v < -180 || v > 180) {
+        return NextResponse.json({ error: 'lng must be -180..180' }, { status: 400 })
+      }
+      data.lng = v
+    }
     if (body.interests !== undefined) {
       if (!Array.isArray(body.interests)) {
         return NextResponse.json({ error: 'interests must be an array' }, { status: 400 })
@@ -270,6 +297,9 @@ export async function PATCH(req: NextRequest) {
         lookingFor: updated.lookingFor,
         bio: updated.bio,
         city: updated.city,
+        // PRD §B — return the persisted lat/lng so the client store stays in sync.
+        lat: updated.lat,
+        lng: updated.lng,
         interests: updated.interests ? JSON.parse(updated.interests) : [],
         prompts: updated.prompts ? JSON.parse(updated.prompts) : [],
         discoveryAgeMin: updated.discoveryAgeMin,

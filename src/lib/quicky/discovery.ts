@@ -2,6 +2,24 @@
 import { db } from '@/lib/db'
 import { QUICKY } from './constants'
 
+// Premium Party Games PRD §B — haversine distance between two lat/lng
+// points, in kilometers. Used by the discovery distance filter and the
+// per-candidate distance display. Pure function; safe to call from the
+// server (no DOM dependencies).
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  // Mean Earth radius (km) — accurate enough for the discovery filter;
+  // we don't need the WGS84 ellipsoid for a +/-1km imprecise distance.
+  const R = 6371
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
 export type DiscoveryCandidate = {
   id: string
   name: string | null
@@ -108,6 +126,22 @@ export async function buildDiscoveryQueue(opts: {
       if (me.discoveryRecentlyActive) {
         if (!u.lastActiveAt || Date.now() - u.lastActiveAt.getTime() > recentWindowMs) return false
       }
+      // Premium Party Games PRD §B — real distance filter. When BOTH the
+      // viewer and the candidate have lat/lng AND the viewer has set a
+      // discoveryDistanceKm preference, drop candidates beyond the radius.
+      // When coords are missing on either side, fall through (the user
+      // hasn't set their location yet — the queue shouldn't go empty).
+      if (
+        me.discoveryDistanceKm !== null &&
+        me.discoveryDistanceKm !== undefined &&
+        me.lat !== null && me.lat !== undefined &&
+        me.lng !== null && me.lng !== undefined &&
+        u.lat !== null && u.lat !== undefined &&
+        u.lng !== null && u.lng !== undefined
+      ) {
+        const km = haversineKm(me.lat!, me.lng!, u.lat!, u.lng!)
+        if (km > me.discoveryDistanceKm) return false
+      }
       return true
     })
     .map((u) => {
@@ -138,7 +172,21 @@ export async function buildDiscoveryQueue(opts: {
       // small random jitter so order isn't deterministic
       score *= 0.9 + Math.random() * 0.2
 
-      const distance = sameCity ? 1 + Math.random() * 8 : 10 + Math.random() * 80
+      // Premium Party Games PRD §B — real haversine distance when both
+      // the viewer and the candidate have lat/lng. When coords are missing
+      // on either side, fall back to the sameCity heuristic + small random
+      // jitter so the UI doesn't show "—" everywhere (legacy behaviour).
+      let distance: number
+      if (
+        me.lat !== null && me.lat !== undefined &&
+        me.lng !== null && me.lng !== undefined &&
+        u.lat !== null && u.lat !== undefined &&
+        u.lng !== null && u.lng !== undefined
+      ) {
+        distance = haversineKm(me.lat!, me.lng!, u.lat!, u.lng!)
+      } else {
+        distance = sameCity ? 1 + Math.random() * 8 : 10 + Math.random() * 80
+      }
 
       return {
         id: u.id,
