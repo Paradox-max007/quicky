@@ -42,7 +42,7 @@ import { GameChatScreen } from '../game-chat/GameChatScreen'
 import { GameContactsPanel } from '../game-chat/GameContactsPanel'
 import { ChatView } from '../ChatView'
 import { useDatingUnread } from '../game-hub/useDatingUnread'
-import { CoinStoreSheet } from '../CoinStoreSheet'
+import { useGameStoreStore } from '@/store/game-store'
 import { useRoomPlayerToolbox } from '../room-toolbox/useRoomPlayerToolbox'
 import { useRoomKeyboardPop, anyTextFocused } from '../room-toolbox/useRoomKeyboardPop'
 import { GiftSheet } from '../GiftSheet'
@@ -88,7 +88,6 @@ export function LudoRoom({
   // lands FLUSH on the keyboard's top edge via a live rect measurement.
   // The board never changes size (lockedStageHeight below).
   const { kbUp, kbHeightRef } = useRoomKeyboardPop()
-  const [showCoinStore, setShowCoinStore] = useState(false)
   const [isDesktop, setIsDesktop] = useState(false)
   const isNativeCapacitor = Capacitor.isNativePlatform()
   const isDeskShell = useIsDesktopShell() === true
@@ -184,7 +183,7 @@ export function LudoRoom({
     returnView: 'ludo-room',
     onCoinBalance: setCoinBalance,
     onReconcile: () => void useLudoRoomStore.getState().reconcile(),
-    onOpenCoinStore: () => setShowCoinStore(true),
+    onOpenCoinStore: () => useGameStoreStore.getState().openStore('coins'),
     resolveAnchor: (el) => {
       const card = el?.getBoundingClientRect() ?? null
       const stage = stageRef.current?.getBoundingClientRect() ?? null
@@ -241,7 +240,7 @@ export function LudoRoom({
               crowns={me?.isPremium ? 1 : 0}
               gifts={economy.giftsReceived}
               coins={economy.coinBalance}
-              onAddCoins={() => setShowCoinStore(true)}
+              onAddCoins={() => useGameStoreStore.getState().openStore('coins')}
               realm={hudRealm}
               onRealm={openPass}
               onTrophy={openLeaderboard}
@@ -259,7 +258,7 @@ export function LudoRoom({
             gifts={economy.giftsReceived}
             coins={economy.coinBalance}
             onRoomOptions={openExit}
-            onAddCoins={() => setShowCoinStore(true)}
+            onAddCoins={() => useGameStoreStore.getState().openStore('coins')}
             realm={hudRealm}
             onRealm={openPass}
             onTrophy={openLeaderboard}
@@ -461,13 +460,8 @@ export function LudoRoom({
           )}
         </AnimatePresence>
 
-        {/* ═══ Shared economy + interaction surfaces (§37) ═══ */}
-        <CoinStoreSheet
-          open={showCoinStore}
-          onClose={() => setShowCoinStore(false)}
-          coinBalance={economy.coinBalance}
-          onPurchased={(newBalance) => setCoinBalance(newBalance)}
-        />
+        {/* ═══ Game Economy PRD — the coin ＋ chip opens the global GAME STORE
+            overlay (AppRoot). Balance broadcasts keep this room's HUD live. ═══ */}
 
         {/* ═══ THE SHARED PLAYER TOOLBOX surfaces — sheet | popover + gifts.
             Every player surface in this room (yard avatars, HUD chips)

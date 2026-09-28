@@ -18,15 +18,19 @@
 
 import type { Prisma } from '@prisma/client'
 import { getActiveGiftMultiplier } from './gift-multiplier'
+import { resolveGiftBoost, type RealmBoostSnapshot } from './realm-boost'
 import { ensureRealmParticipation, type RealmParticipation } from './realm-cycle'
 import { getOrCreateActiveSeason, seasonEventBoost, awardSeasonPoints } from '@/lib/quicky/season'
 
 export type RealmAwardPlan = {
   giftEventId: string
+  /** COMBINED multiplier: scheduled event × final-hours boost (PRD §17/§22). */
   multiplier: number
   eventId: string | null
   eventName: string | null
   expiresAt: Date | null
+  /** Final-hours boost breakdown (ledger metadata + UI echo, PRD §24-§27). */
+  boost: RealmBoostSnapshot
   senderId: string
   /** Recipients that actually have realm participation (active realm). */
   recipientIds: string[]
@@ -69,7 +73,12 @@ export async function planRealmAward(
 
   // Only users with an active realm participate in point earning.
   const activeRecipients = recipientIds.filter((id) => participants.has(id))
-  const multiplier = active.multiplier
+  // Game Economy PRD §22/§26 — the final-hours boost multiplies the WHOLE
+  // award (server clock only, never client-requested; the scheduled event
+  // and the boost stack). The boost is resolved from the SENDER's realm —
+  // the sender is the one spending coins the boost is incentivizing.
+  const senderLevel = participants.get(senderId)?.realmLevel ?? null
+  const { multiplier, boost } = await resolveGiftBoost(senderLevel, active.multiplier)
 
   // §8 — the canonical formula (per gift unit; coins untouched §74).
   const senderPoints = quantity * activeRecipients.length * multiplier
@@ -81,6 +90,7 @@ export async function planRealmAward(
     eventId: active.eventId,
     eventName: active.eventName,
     expiresAt: active.expiresAt,
+    boost,
     senderId,
     recipientIds: activeRecipients,
     quantity,
@@ -109,7 +119,14 @@ export async function applyRealmAward(
   plan: RealmAwardPlan,
   metadata: Record<string, unknown>
 ): Promise<RealmAwardResult> {
-  const meta = JSON.stringify(metadata).slice(0, 2000)
+  // Ledger metadata carries the boost breakdown (PRD §24/§58 — the audit
+  // trail must be able to answer "why was this award multiplied?").
+  const meta = JSON.stringify({
+    ...metadata,
+    boost: plan.boost.active
+      ? { multiplier: plan.boost.multiplier, hoursBeforeEnd: plan.boost.hoursBeforeEnd, endsAt: plan.boost.endsAt }
+      : null,
+  }).slice(0, 2000)
   const awarded = plan.multiplier >= 1 && (plan.senderPoints > 0 || plan.receiverPointsEach > 0)
 
   // ── 1. Ledger rows (immutable audit trail, §21) ─────────────────────────

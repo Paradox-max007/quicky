@@ -18,6 +18,7 @@ import { artworkGradient } from '../game-hub/types'
 import { GamesFilterBar } from '../game-hub/GamesFilterBar'
 import { PointsBadges } from '../realm/PointsBadges'
 import { CratesBanner } from '../pass/CratesBanner'
+import { GameStoreBanner } from '../game-store/GameStoreBanner'
 
 export function GamesDesktop() {
   const setView = useQuickyStore((s) => s.setView)
@@ -78,6 +79,11 @@ export function GamesDesktop() {
       {/* Crates banner — one tap into the battle-pass modal (desktop) */}
       <div className="w-full">
         <CratesBanner />
+      </div>
+
+      {/* Game Economy PRD §74 — the Game Store banner (Games' own economy) */}
+      <div className="w-full">
+        <GameStoreBanner />
       </div>
 
       {/* ── Featured game (§41) — DB-driven, honest live numbers ─────────── */}

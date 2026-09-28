@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
-import { CoinStoreSheet } from './CoinStoreSheet'
+import { useGameStoreStore } from '@/store/game-store'
 import { AnimatedPlayIcon } from './game-primary/AnimatedPlayIcon'
 import { GamePrimaryScreen } from './game-primary/GamePrimaryScreen'
 import { MatchmakingModal } from './game-primary/MatchmakingModal'
@@ -50,9 +50,6 @@ export function SpinBottleLanding({
   const [rules, setRules] = useState<GameHowItWorksStep[] | null>(null)
   const [ludoStats, setLudoStats] = useState<LudoLandingStats | null>(null)
   const [failed, setFailed] = useState(false)
-  // Refactor PRD §24 — the landing coin chip opens the same CoinStoreSheet
-  // used inside the room; purchases reconcile the landing balance.
-  const [coinStoreOpen, setCoinStoreOpen] = useState(false)
   const [coinBalance, setCoinBalance] = useState(0)
   const [finding, setFinding] = useState(false)
   const cancelledRef = useRef(false)
@@ -135,7 +132,7 @@ export function SpinBottleLanding({
         playDisabled={finding}
         playTestId="spin-play-now"
         coinBalance={coinBalance}
-        onBuyCoins={() => setCoinStoreOpen(true)}
+        onBuyCoins={() => useGameStoreStore.getState().openStore('coins')}
         failed={failed}
         failHint="We couldn't load your stats."
       />
@@ -160,14 +157,6 @@ export function SpinBottleLanding({
           'The bottle is waiting…',
         ]}
         onCancel={cancelMatchmaking}
-      />
-
-      {/* Refactor PRD §24 — Coin Purchase modal (same sheet as in-room). */}
-      <CoinStoreSheet
-        open={coinStoreOpen}
-        onClose={() => setCoinStoreOpen(false)}
-        coinBalance={coinBalance}
-        onPurchased={(nb) => setCoinBalance(nb)}
       />
     </div>
   )

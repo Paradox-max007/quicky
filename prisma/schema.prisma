@@ -140,6 +140,9 @@ model User {
   seasons           UserSeason[]
   cratePasses       UserCrate[]
   crateLevelGrants  CrateLevelGrant[]
+  // ─── Game Store (Game Economy PRD §76) ─────────────────────────────────
+  gamePurchases     GamePurchase[]
+  cratePurchases    CratePurchase[]
 }
 
 model Photo {
@@ -1442,6 +1445,9 @@ model Reward {
   rarity      String   @default("COMMON")
   // ACTIVE | DISABLED
   status      String   @default("ACTIVE")
+  // Game Economy PRD §3/§34 — coin price for the Game Store cosmetics tab.
+  // NULL = not purchasable with coins (realm-exclusive / reward-only).
+  priceCoins  Int?
   metadata    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1710,6 +1716,157 @@ model CrateLevelGrant {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, crateId, level, track])
+  @@index([userId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAME STORE — the Games section's own economy (Game Economy PRD).
+// Four separated value types (PRD §2): REAL MONEY → Coins | Crates; Coins →
+// Gifts/Cosmetics; Realm Points earned via gameplay; Crates are REAL-MONEY
+// ONLY (never coins). The dating-app Premium subscription is a separate
+// system and stays untouched (PRD §71/§72) — this store is branded "Game
+// Store", never "Premium".
+// ─────────────────────────────────────────────────────────────────────────────
+
+// PRD §7/§8 — admin-configurable coin packages (name, coins, bonus, price,
+// badge, featured, order, active). Seeded on first request (self-healing).
+model GameCoinPackage {
+  id          String   @id @default(cuid())
+  name        String
+  coins       Int
+  bonusCoins  Int      @default(0)
+  price       Float    @default(0.99)
+  currency    String   @default("USD")
+  // Small chip label, e.g. "Best value" | "Most popular" | "Hot" (PRD §8).
+  badge       String?
+  featured    Boolean  @default(false)
+  // Legacy parity with the old premium-exclusive coin sets (server-enforced
+  // 403 for non-premium buyers, exactly like the pre-store route).
+  premiumOnly Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+// PRD §13 — every REAL-MONEY game purchase, whatever the product. Statuses:
+// PENDING | PROCESSING | COMPLETED | FAILED | REFUNDED | CANCELLED. The mock
+// provider completes instantly server-side; a real provider (Stripe / Google
+// Play billing / StoreKit) completes via its verified webhook — the client
+// is NEVER the source of truth for crediting (PRD §9/§67).
+model GamePurchase {
+  id                   String    @id @default(cuid())
+  userId               String
+  // GameCoinPackage.id | CrateProduct.id
+  productId            String
+  // COIN_PACK | CRATE
+  productType          String
+  // mock | stripe | google_pay | apple_pay (PRD §10/§12)
+  provider             String    @default("mock")
+  providerTransactionId String?
+  currency             String    @default("USD")
+  amount               Float     @default(0)
+  coins                Int?
+  bonusCoins           Int?
+  status               String    @default("PENDING")
+  createdAt            DateTime  @default(now())
+  completedAt          DateTime?
+  metadata             String?
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerTransactionId])
+  @@index([userId, status])
+  @@index([productType, status])
+  @@index([createdAt])
+}
+
+// PRD §37-§44 — REAL-MONEY crates (a separate premium path; never bought
+// with coins). Contents are admin-configured and clearly disclosed in the
+// store UI (PRD §38/§43): guaranteed realm points, coins, a gift item
+// and/or a cosmetic.
+model CrateProduct {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  // STARTER | PREMIUM | ELITE | REALM (PRD §43)
+  crateType        String   @default("PREMIUM")
+  price            Float    @default(4.99)
+  currency         String   @default("USD")
+  emoji            String   @default("💎")
+  imageUrl         String?
+  // Guaranteed contents (deterministic V1 — no undisclosed odds, PRD §43).
+  realmPoints      Int      @default(0)
+  coins            Int      @default(0)
+  giftItemId       String?
+  giftQuantity     Int      @default(1)
+  cosmeticRewardId String?
+  // Optional bonus line shown on the card (e.g. "+ bonus stickers").
+  bonusLabel       String?
+  featured         Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  purchases CratePurchase[]
+
+  @@index([isActive, sortOrder])
+}
+
+// PRD §46 — purchase (payment verified → entitlement OWNED) is SEPARATE from
+// open (rewards granted → OPENED). If the app dies right after payment, the
+// owned crate is recovered on next store visit (sync endpoint). Opening is
+// idempotent: status OWNED → OPENED exactly once (conditional update).
+model CratePurchase {
+  id              String    @id @default(cuid())
+  userId          String
+  crateProductId  String
+  purchaseId      String?
+  // OWNED (paid, unopened) | OPENED (rewards granted)
+  status          String    @default("OWNED")
+  // SNAPSHOT of the granted rewards (display + audit): { realmPoints, coins,
+  // gift: { itemId, name, emoji, quantity }, cosmetic: { rewardId, name, ... } }
+  rewards         String?
+  openedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crateProduct    CrateProduct @relation(fields: [crateProductId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+// PRD §22-§24/§64/§65 — the FINAL-HOURS realm boost. Default row
+// (realmLevel NULL) applies to every realm; a per-realm row overrides it
+// (e.g. Realm 5 → 4×). The multiplier is resolved on the SERVER clock only
+// (PRD §27): active when now ∈ [cycleEnd − hoursBeforeEnd, cycleEnd).
+// Never randomized, never client-requested (PRD §24/§28).
+model RealmBoostConfig {
+  id             String   @id @default(cuid())
+  // NULL = the default for all realms (PRD §65).
+  realmLevel     Int?
+  hoursBeforeEnd Float    @default(4)
+  multiplier     Int      @default(2)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([realmLevel])
+}
+
+// PRD §59-§62 — monetization funnel events (fire-and-forget, aggregate-only
+// in the admin dashboard). Types follow the funnel steps: store_opened,
+// coin_package_viewed, checkout_started, purchase_completed, purchase_failed,
+// crate_viewed, crate_opened, boost_seen, insufficient_coins, cosmetics_viewed…
+model GameMonetizationEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
   @@index([userId, createdAt])
 }
 

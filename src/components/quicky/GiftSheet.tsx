@@ -22,9 +22,9 @@
 //
 // Insufficient coins NEVER breaks the flow (§27): the server answers 402 and
 // the sheet shows "Not Enough Coins" with Cancel / Buy Coins — Buy Coins
-// opens the EXISTING coin-purchase modal (CoinStoreSheet), on Web, Capacitor
-// Android and iOS alike. Success shows ONE aggregated confirmation
-// ("🎁 You sent 10 Roses to 11 players", §28).
+// opens the global GAME STORE overlay (coins / crates / cosmetics), on
+// Web, Capacitor Android and iOS alike. Success shows ONE aggregated
+// confirmation ("🎁 You sent 10 Roses to 11 players", §28).
 
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -57,7 +57,7 @@ type Props = {
   meId: string
   coinBalance: number
   onGiftSent?: (newBalance: number) => void
-  /** §27 — opens the EXISTING coin-purchase modal (CoinStoreSheet). */
+  /** §27 — opens the GAME STORE (Buy Coins CTA). */
   onBuyCoins?: () => void
 }
 

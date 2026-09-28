@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
+import { useGameStoreStore } from '@/store/game-store'
 import { SpinBottleLanding } from '../SpinBottleLanding'
 import { LudoLanding } from '../ludo/LudoLanding'
 import { GamePrimaryScreen } from '../game-primary/GamePrimaryScreen'
@@ -102,6 +103,7 @@ function GenericGamePrimary({ slug, onBack }: { slug: string | null; onBack: () 
         onBack={onBack}
         failed={failed}
         failHint="We couldn't load this game."
+        onBuyCoins={() => useGameStoreStore.getState().openStore('coins')}
       />
     </div>
   )

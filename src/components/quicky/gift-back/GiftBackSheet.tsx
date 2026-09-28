@@ -29,7 +29,7 @@ import { useLudoRoomStore } from '@/store/ludo-room'
 import { useGiftBackStore } from '@/store/gift-back'
 import { launchGiftFly } from '@/components/quicky/gift-fly/GiftFlyLayer'
 import { GiftIcon } from '@/components/quicky/GiftIcon'
-import { CoinStoreSheet } from '@/components/quicky/CoinStoreSheet'
+import { useGameStoreStore } from '@/store/game-store'
 import { GiftMultiplierHeader, GiftPointPreview } from '@/components/quicky/realm/RealmProgress'
 import type { CatalogGift } from '@/components/quicky/PlayerInteractionSheet'
 
@@ -48,7 +48,8 @@ export function GiftBackSheet() {
   const [quantity, setQuantity] = useState<number>(1)
   const [sending, setSending] = useState(false)
   const [insufficient, setInsufficient] = useState<{ total: number } | null>(null)
-  const [showCoinStore, setShowCoinStore] = useState(false)
+  // Game Economy PRD — Buy Coins opens the global Game Store overlay; the
+  // purchase broadcast reconciles this sheet's balance on the next open.
 
   // Catalog + fresh balance on open (stale-while-revalidate — instant paint).
   useEffect(() => {
@@ -240,7 +241,7 @@ export function GiftBackSheet() {
               <button
                 onClick={() => {
                   setInsufficient(null)
-                  setShowCoinStore(true)
+                  useGameStoreStore.getState().openStore('coins')
                 }}
                 className="flex-1 rounded-2xl py-3 font-bold text-white bg-coral-gradient glow-coral active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
                 data-testid="giftback-buy-coins"
@@ -325,13 +326,6 @@ export function GiftBackSheet() {
           </>
         )}
       </AnimatePresence>
-
-      <CoinStoreSheet
-        open={showCoinStore}
-        onClose={() => setShowCoinStore(false)}
-        coinBalance={coinBalance}
-        onPurchased={(newBalance) => setCoinBalance(newBalance)}
-      />
     </>
   )
 }

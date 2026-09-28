@@ -51,6 +51,9 @@ import { RealmDetails } from './realm/RealmDetails'
 import { RealmResult } from './realm/RealmResult'
 import { RealmLeaderboardScreen } from './realm/RealmLeaderboardScreen'
 import { RealmPassScreen } from './pass/RealmPassScreen'
+import { GameStoreModal } from './game-store/GameStoreModal'
+import { useGameStoreStore } from '@/store/game-store'
+import { resetMonetizationPrompts } from '@/lib/quicky/monetization'
 import { initPushSession } from '@/lib/quicky/push-client'
 import { RewardCollectPopup } from './rewards/RewardCollectPopup'
 import { useRealmStore } from '@/store/realm'
@@ -154,6 +157,17 @@ export function AppRoot() {
         // (e.g. a LIVE game room) must stay untouched, never be left.
         // Same for the Realm Pass stack (crown → crate store → details →
         // claim modal): back unwinds one layer at a time, innermost first.
+        // Game Economy PRD — the Game Store stack unwinds the same way:
+        // crate reveal modal → the store itself, before anything else.
+        const gs = useGameStoreStore.getState()
+        if (gs.reveal || gs.openingCrateId) {
+          gs.closeReveal()
+          return
+        }
+        if (gs.open) {
+          gs.closeStore()
+          return
+        }
         const pass = usePassStore.getState()
         if (pass.claimTarget) {
           pass.closeClaim()
@@ -226,6 +240,12 @@ export function AppRoot() {
   useEffect(() => {
     applyThemeToDOM(user?.settings?.theme)
   }, [user?.settings?.theme])
+
+  // ─── Monetization prompt budget (Game Economy PRD §48) ───────────────────
+  // Session-scoped frequency caps for proactive Buy-Coins nudges.
+  useEffect(() => {
+    resetMonetizationPrompts()
+  }, [user?.id])
 
   // ─── Realm progression (realm PRD §68) ──────────────────────────────────
   // Signed in → fetch the authoritative realm snapshot once per session:
@@ -620,6 +640,12 @@ export function AppRoot() {
           the 100-level prize track (screen 2). Sliding screens on mobile
           web/Capacitor, a centered modal on desktop web. */}
       <RealmPassScreen />
+
+      {/* Game Economy PRD — the GAME STORE (Games' own economy: coins, real-
+          money crates, coin cosmetics, featured). Sliding screen on mobile
+          web/Capacitor, centered modal on desktop; the crate reveal modal
+          stacks on top of it. */}
+      <GameStoreModal />
 
       {/* Admin-console PRD §12 — the reward-collection popup: pending grants
           from settled realm cycles (online push + offline return). */}

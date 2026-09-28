@@ -21,7 +21,7 @@ import { X, ArrowLeft, ArrowRight, Trophy, Crown, Play, TrendingUp } from 'lucid
 import { useRealmStore } from '@/store/realm'
 import { useIsDesktopShell } from '@/hooks/useIsDesktopShell'
 import { formatCompact } from '@/lib/quicky/format'
-import { RealmCycleTimer } from './RealmProgress'
+import { RealmCycleTimer, RealmBoostBadge } from './RealmProgress'
 import { RewardedAdModal } from '../RewardedAdModal'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -67,6 +67,11 @@ export function RealmLeaderboardScreen() {
                 <b className="text-[var(--qk-gold)] tabular-nums">{threshold.toLocaleString()} pts</b> to qualify for{' '}
                 <b>{nextRealmName ?? 'the next realm'}</b>.
               </p>
+            </div>
+            {/* Game Economy PRD §26 — the leaderboard explicitly shows the
+                final-hours boost + countdown while it runs. */}
+            <div className="mt-2">
+              <RealmBoostBadge compact />
             </div>
           </div>
 

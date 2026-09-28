@@ -25,6 +25,7 @@ import type { RealmHudData } from '@/components/quicky/RoomTopHud'
 export function useRoomRealm() {
   const snapshot = useRealmStore((s) => s.snapshot)
   const multiplier = useRealmStore((s) => s.multiplier)
+  const boost = useRealmStore((s) => s.boost)
   const loaded = useRealmStore((s) => s.loaded)
   const refresh = useRealmStore((s) => s.refresh)
   const openDetails = useRealmStore((s) => s.openDetails)
@@ -62,11 +63,22 @@ export function useRoomRealm() {
         expiresAt: multiplier.expiresAt,
       })
     }
+    // Game Economy PRD §25 — the final-hours boost rides the rotation with
+    // its exact multiplier + countdown (server-resolved; shown BEFORE the
+    // user spends coins on gifts).
+    if (boost.active && boost.multiplier > 1 && boost.endsAt) {
+      list.push({
+        kind: 'multiplier',
+        emoji: '🔥',
+        title: `${boost.multiplier}× realm boost`,
+        expiresAt: boost.endsAt,
+      })
+    }
     const cycleEndsAt = snapshot?.cycle?.endsAt
     if (cycleEndsAt && new Date(cycleEndsAt).getTime() - Date.now() < 24 * 60 * 60 * 1000) {
       list.push({
         kind: 'realm',
-        emoji: '🔥',
+        emoji: '🏆',
         title: 'Realm battle',
         sub: 'Cycle ending soon — hold your rank',
         expiresAt: cycleEndsAt,
@@ -74,7 +86,7 @@ export function useRoomRealm() {
     }
     if (list.length === 0) list.push(tonightEvent())
     return list
-  }, [multiplier, snapshot])
+  }, [multiplier, boost, snapshot])
 
   return { hudRealm, seasonPoints, bannerEvents, openDetails, openLeaderboard, openPass, loaded }
 }

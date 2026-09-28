@@ -59,7 +59,7 @@ import { ChatView } from './ChatView'
 import { useDatingUnread } from './game-hub/useDatingUnread'
 import { GameContactsPanel } from './game-chat/GameContactsPanel'
 import { useGameChatStore } from '@/store/game-chat'
-import { CoinStoreSheet } from './CoinStoreSheet'
+import { useGameStoreStore } from '@/store/game-store'
 import { useRoomPlayerToolbox } from './room-toolbox/useRoomPlayerToolbox'
 import './spin-bottle-room.css'
 
@@ -179,8 +179,8 @@ export function SpinBottleRoom({
   // composer up to the table with a huge gap). See useRoomKeyboardPop.ts.
   const { kbUp, kbHeightRef } = useRoomKeyboardPop()
   // ─── v3 state domains (§91): coin store, gift sheet, player interaction —
-  // each isolated so a gift arriving never rebuilds the table.
-  const [showCoinStore, setShowCoinStore] = useState(false)
+  // each isolated so a gift arriving never rebuilds the table. The coin
+  // store itself is now the global Game Store overlay (Game Economy PRD).
   // Web breakpoint (≥1024px) → popover interaction; below → bottom sheet (§82/§83)
   const [isDesktop, setIsDesktop] = useState(false)
   // Layout PRD §76: ONE platform check drives the chat-navigation split —
@@ -415,7 +415,7 @@ export function SpinBottleRoom({
     returnView: 'spin-bottle-room',
     onCoinBalance: setCoinBalance,
     onReconcile: () => void useGameRoomStore.getState().reconcile(),
-    onOpenCoinStore: () => setShowCoinStore(true),
+    onOpenCoinStore: () => useGameStoreStore.getState().openStore('coins'),
     // §85: while a duel is on stage the interaction stays disabled — it must
     // never interfere with the round or cover the center cards.
     beforeOpen: () =>
@@ -667,7 +667,7 @@ export function SpinBottleRoom({
               crowns={me?.isPremium ? 1 : 0}
               gifts={economy.giftsReceived}
               coins={economy.coinBalance}
-              onAddCoins={() => setShowCoinStore(true)}
+              onAddCoins={() => useGameStoreStore.getState().openStore('coins')}
               realm={hudRealm}
               onRealm={openPass}
               onTrophy={openLeaderboard}
@@ -686,7 +686,7 @@ export function SpinBottleRoom({
             gifts={economy.giftsReceived}
             coins={economy.coinBalance}
             onRoomOptions={openExit}
-            onAddCoins={() => setShowCoinStore(true)}
+            onAddCoins={() => useGameStoreStore.getState().openStore('coins')}
             realm={hudRealm}
             onRealm={openPass}
             onTrophy={openLeaderboard}
@@ -1184,14 +1184,9 @@ export function SpinBottleRoom({
           )}
         </AnimatePresence>
 
-        {/* ═══ v3 §26-§30 — mock coin store (opened by the ＋ on the chip) ═══ */}
-        <CoinStoreSheet
-          open={showCoinStore}
-          onClose={() => setShowCoinStore(false)}
-          coinBalance={economy.coinBalance}
-          onPurchased={(newBalance) => setCoinBalance(newBalance)}
-        />
-
+        {/* ═══ Game Economy PRD — the coin ＋ chip opens the global GAME STORE
+            overlay (AppRoot): coins / crates / cosmetics / featured. Balance
+            broadcasts keep this room's HUD live. ═══ */}
         {/* ═══ THE SHARED PLAYER TOOLBOX surfaces (v3 §40-§46 revised) —
             interaction sheet (mobile sheet / desktop popover anchored to the
             tapped seat) + the bulk gift sheet + the friend layer — all owned

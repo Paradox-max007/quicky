@@ -35,6 +35,7 @@ import {
   HardHat,
   Badge,
   MessageSquare,
+  ShoppingBag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/quicky/api-client'
@@ -54,6 +55,7 @@ import { AdminSeasonsScreen } from './AdminSeasonsScreen'
 import { AdminSettingsScreen } from './AdminSettingsScreen'
 import { AdminCratesScreen } from './AdminCratesScreen'
 import { AdminMonthlySeasons } from './AdminMonthlySeasons'
+import { AdminGameStoreScreen } from './AdminGameStoreScreen'
 
 type Section =
   | 'overview'
@@ -63,6 +65,7 @@ type Section =
   | 'realms'
   | 'seasons'
   | 'crates'
+  | 'game-store'
   | 'frames'
   | 'hats'
   | 'name-icons'
@@ -84,6 +87,7 @@ const NAV: { key: Section; label: string; icon: typeof LayoutDashboard; group: s
   { key: 'realms', label: 'Realms', icon: Crown, group: 'Content' },
   { key: 'seasons', label: 'Seasons', icon: CalendarRange, group: 'Content' },
   { key: 'crates', label: 'Crates / Pass', icon: Package, group: 'Content' },
+  { key: 'game-store', label: 'Game Store', icon: ShoppingBag, group: 'Content' },
   { key: 'frames', label: 'Frames', icon: Frame, group: 'Content' },
   { key: 'hats', label: 'Hats', icon: HardHat, group: 'Content' },
   { key: 'name-icons', label: 'Name Icons', icon: Badge, group: 'Content' },
@@ -253,6 +257,7 @@ export function AdminConsole({ adminName }: { adminName: string }) {
             </div>
           )}
           {section === 'crates' && <AdminCratesScreen />}
+          {section === 'game-store' && <AdminGameStoreScreen />}
           {section === 'frames' && <AdminCosmeticCatalogScreen kind="PROFILE_FRAME" />}
           {section === 'hats' && <AdminCosmeticCatalogScreen kind="HAT" />}
           {section === 'name-icons' && <AdminCosmeticCatalogScreen kind="NAME_DECORATOR" />}

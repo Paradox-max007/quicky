@@ -100,16 +100,16 @@ export function RealmProgress({
 }
 
 /**
- * ⚡ Gift multiplier header (PRD §14/§15/§72): "3× TIME — Send gifts and
- * earn more points — 01:42:18", driven by the realm store's live snapshot
- * and counting down from the SERVER expiresAt (client ticks are cosmetic).
+ * 🔥 Final-hours boost badge (Game Economy PRD §24/§26): "🔥 2× REALM
+ * BOOST — 03:42:18". Server-resolved (realm store), client ticks are
+ * cosmetic only. Renders nothing while inactive.
  */
-export function GiftMultiplierHeader({ compact }: { compact?: boolean }) {
-  const multiplier = useRealmStore((s) => s.multiplier)
+export function RealmBoostBadge({ compact }: { compact?: boolean }) {
+  const boost = useRealmStore((s) => s.boost)
   const now = useNow(1000)
-  if (multiplier.multiplier <= 1 || !multiplier.expiresAt) return null
+  if (!boost.active || boost.multiplier <= 1) return null
 
-  const remaining = Math.max(0, new Date(multiplier.expiresAt).getTime() - now)
+  const remaining = Math.max(0, new Date(boost.endsAt ?? 0).getTime() - now)
   const totalSec = Math.floor(remaining / 1000)
   const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0')
   const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0')
@@ -119,19 +119,62 @@ export function GiftMultiplierHeader({ compact }: { compact?: boolean }) {
     <div
       className={`flex items-center gap-2 rounded-xl px-3 ${compact ? 'py-1.5' : 'py-2'} border`}
       style={{
-        background: 'color-mix(in srgb, var(--qk-accent) 14%, transparent)',
-        borderColor: 'color-mix(in srgb, var(--qk-accent) 35%, transparent)',
+        background: 'color-mix(in srgb, var(--qk-accent) 18%, transparent)',
+        borderColor: 'color-mix(in srgb, var(--qk-accent) 45%, transparent)',
       }}
-      data-testid="gift-multiplier-header"
+      data-testid="realm-boost-badge"
     >
-      <span className="text-[13px]" aria-hidden>⚡</span>
-      <span className="font-black text-[12px] tabular-nums" style={{ color: 'var(--qk-accent)' }}>
-        {multiplier.multiplier}× TIME
+      <span className="text-[13px]" aria-hidden>🔥</span>
+      <span className="font-black text-[12px]" style={{ color: 'var(--qk-accent)' }}>
+        {boost.multiplier}× REALM BOOST
       </span>
-      {!compact && <span className="text-[11px] font-semibold opacity-75">Send gifts and earn more points</span>}
+      {!compact && <span className="text-[11px] font-semibold opacity-75">Gifts earn {boost.multiplier}× ❤️ points</span>}
       <span className="ml-auto text-[11px] font-black tabular-nums" style={{ color: 'var(--qk-accent)' }}>
         {remaining > 0 ? `${hh}:${mm}:${ss}` : 'ending…'}
       </span>
+    </div>
+  )
+}
+
+/**
+ * ⚡ Gift multiplier header (PRD §14/§15/§72): "3× TIME — Send gifts and
+ * earn more points — 01:42:18", driven by the realm store's live snapshot
+ * and counting down from the SERVER expiresAt (client ticks are cosmetic).
+ * The final-hours boost badge rides along (Game Economy PRD §25) so the
+ * user sees the TOTAL rate before spending.
+ */
+export function GiftMultiplierHeader({ compact }: { compact?: boolean }) {
+  const multiplier = useRealmStore((s) => s.multiplier)
+  const boost = useRealmStore((s) => s.boost)
+  const now = useNow(1000)
+  if (multiplier.multiplier <= 1 || !multiplier.expiresAt) return <RealmBoostBadge compact={compact} />
+
+  const remaining = Math.max(0, new Date(multiplier.expiresAt).getTime() - now)
+  const totalSec = Math.floor(remaining / 1000)
+  const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0')
+  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0')
+  const ss = String(totalSec % 60).padStart(2, '0')
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        className={`flex items-center gap-2 rounded-xl px-3 ${compact ? 'py-1.5' : 'py-2'} border`}
+        style={{
+          background: 'color-mix(in srgb, var(--qk-accent) 14%, transparent)',
+          borderColor: 'color-mix(in srgb, var(--qk-accent) 35%, transparent)',
+        }}
+        data-testid="gift-multiplier-header"
+      >
+        <span className="text-[13px]" aria-hidden>⚡</span>
+        <span className="font-black text-[12px] tabular-nums" style={{ color: 'var(--qk-accent)' }}>
+          {multiplier.multiplier}× TIME
+        </span>
+        {!compact && <span className="text-[11px] font-semibold opacity-75">Send gifts and earn more points</span>}
+        <span className="ml-auto text-[11px] font-black tabular-nums" style={{ color: 'var(--qk-accent)' }}>
+          {remaining > 0 ? `${hh}:${mm}:${ss}` : 'ending…'}
+        </span>
+      </div>
+      {boost.active && boost.multiplier > 1 && <RealmBoostBadge compact={compact} />}
     </div>
   )
 }
@@ -142,7 +185,9 @@ export function GiftMultiplierHeader({ compact }: { compact?: boolean }) {
  */
 export function GiftPointPreview({ quantity, isSelf }: { quantity: number; isSelf: boolean }) {
   const multiplier = useRealmStore((s) => s.multiplier.multiplier) || 1
-  const each = quantity * multiplier
+  const boostMultiplier = useRealmStore((s) => (s.boost.active ? s.boost.multiplier : 1)) || 1
+  const effective = multiplier * boostMultiplier
+  const each = quantity * effective
   const self = each * 2
   return (
     <p className="text-[11px] font-bold opacity-80" data-testid="gift-point-preview">

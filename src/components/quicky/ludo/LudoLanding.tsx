@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 import { Users } from 'lucide-react'
 import { api } from '@/lib/quicky/api-client'
 import { useQuickyStore } from '@/store/quicky'
-import { CoinStoreSheet } from '../CoinStoreSheet'
+import { useGameStoreStore } from '@/store/game-store'
 import { AnimatedPlayIcon } from '../game-primary/AnimatedPlayIcon'
 import { GamePrimaryScreen } from '../game-primary/GamePrimaryScreen'
 import { MatchmakingModal } from '../game-primary/MatchmakingModal'
@@ -43,7 +43,6 @@ export function LudoLanding({
   const [rules, setRules] = useState<{ id: string; title: string; description: string; icon: string }[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [joining, setJoining] = useState(false)
-  const [coinStoreOpen, setCoinStoreOpen] = useState(false)
   const [coinBalance, setCoinBalance] = useState(0)
   // REVISED — the TABLE MODE is chosen BEFORE starting: a 2-player duel
   // (starts the moment the 2nd player joins, 3·2·1) or a full 4-player
@@ -158,7 +157,7 @@ export function LudoLanding({
           </div>
         }
         coinBalance={coinBalance}
-        onBuyCoins={() => setCoinStoreOpen(true)}
+        onBuyCoins={() => useGameStoreStore.getState().openStore('coins')}
         failed={failed}
         failHint="Couldn't load your stats — you can still play."
       />
@@ -185,13 +184,6 @@ export function LudoLanding({
           // request still lands.
           setJoining(false)
         }}
-      />
-
-      <CoinStoreSheet
-        open={coinStoreOpen}
-        onClose={() => setCoinStoreOpen(false)}
-        coinBalance={coinBalance}
-        onPurchased={(nb) => setCoinBalance(nb)}
       />
     </div>
   )

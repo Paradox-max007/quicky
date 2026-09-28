@@ -875,6 +875,34 @@ export const api = {
           body: JSON.stringify({ key, value }),
         }),
     },
+    // ─── Game Economy PRD §63 — the Game Store console (packages, crates,
+    // final-hours boost config + the monetization dashboard §59) ──────────
+    gameStore: {
+      list: () =>
+        jsonFetch<{
+          packages: any[]
+          crates: any[]
+          boosts: { id: string; realmLevel: number | null; hoursBeforeEnd: number; multiplier: number; enabled: boolean }[]
+          stats: any
+          giftOptions: { id: string; name: string; emoji: string; coinPrice: number }[]
+          cosmeticOptions: { id: string; name: string; rewardType: string }[]
+        }>('/api/quicky/admin/game-store'),
+      create: (kind: 'package' | 'crate' | 'boost', data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; row: any }>('/api/quicky/admin/game-store', {
+          method: 'POST',
+          body: JSON.stringify({ kind, data }),
+        }),
+      update: (kind: 'package' | 'crate' | 'boost', id: string | null, data: Record<string, unknown>) =>
+        jsonFetch<{ ok: boolean; row?: any }>('/api/quicky/admin/game-store', {
+          method: 'PATCH',
+          body: JSON.stringify({ kind, id, data }),
+        }),
+      remove: (kind: 'package' | 'crate' | 'boost', id: string, realmLevel?: string) =>
+        jsonFetch<{ ok: boolean; disabled?: boolean }>(
+          `/api/quicky/admin/game-store?kind=${kind}&id=${id}${realmLevel ? `&realmLevel=${realmLevel}` : ''}`,
+          { method: 'DELETE' }
+        ),
+    },
   },
   // ─── GAME CHAT (game-chat PRD §7+) — private player-to-player messaging,
   // fully separate from the Dating Chat (matches) system above.
@@ -1097,7 +1125,12 @@ export const api = {
         body: JSON.stringify({ cycleId }),
       }),
     activeEvents: () =>
-      jsonFetch<{ multiplier: number; multiplierEvent: any; realmCycle: any }>('/api/quicky/events/active'),
+      jsonFetch<{
+        multiplier: number
+        multiplierEvent: any
+        realmCycle: any
+        finalBoost?: { active: boolean; multiplier: number; hoursBeforeEnd: number; endsAt: string | null; realmLevel: number | null }
+      }>('/api/quicky/events/active'),
   },
   // ─── REWARDS (admin-console PRD §12) — popup collection + cosmetics ──
   rewards: {
@@ -1160,4 +1193,60 @@ export const api = {
         body: JSON.stringify({ crateId, level, track }),
       }),
   },
+  // ─── GAME STORE (Game Economy PRD) — the Games section's own economy ────
+  gameStore: {
+    payload: (tab?: string) =>
+      jsonFetch<any>(
+        `/api/quicky/game-store?platform=${clientPlatform()}${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`
+      ),
+    purchaseCoins: (packageId: string) =>
+      jsonFetch<{ ok: boolean; coinBalance: number; coinsAdded: number; bonusCoins: number; purchaseId: string; mock: boolean }>(
+        '/api/quicky/game-store/purchase-coins',
+        { method: 'POST', body: JSON.stringify({ packageId, platform: clientPlatform() }) }
+      ),
+    purchaseCrate: (crateProductId: string) =>
+      jsonFetch<{ ok: boolean; cratePurchaseId: string; purchaseId: string; name: string; emoji: string; mock: boolean }>(
+        '/api/quicky/game-store/purchase-crate',
+        { method: 'POST', body: JSON.stringify({ crateProductId, platform: clientPlatform() }) }
+      ),
+    openCrate: (cratePurchaseId: string) =>
+      jsonFetch<{
+        ok: true
+        rewards: {
+          realmPoints: number
+          coins: number
+          coinBalance: number
+          realmPointsAwarded: boolean
+          gift: { itemId: string; name: string; emoji: string; quantity: number } | null
+          cosmetic: { rewardId: string; name: string; icon: string } | null
+        }
+      }>('/api/quicky/game-store/open-crate', {
+        method: 'POST',
+        body: JSON.stringify({ cratePurchaseId }),
+      }),
+    purchaseCosmetic: (rewardId: string, level = 1) =>
+      jsonFetch<{ ok: boolean; coinBalance: number; priceCoins: number }>(
+        '/api/quicky/game-store/purchase-cosmetic',
+        { method: 'POST', body: JSON.stringify({ rewardId, level }) }
+      ),
+    sync: () =>
+      jsonFetch<{ pending: any[]; ownedCrates: any[] }>('/api/quicky/game-store/purchases'),
+    track: (type: string, metadata?: Record<string, unknown>) =>
+      jsonFetch<{ ok: boolean }>('/api/quicky/game-store/track', {
+        method: 'POST',
+        body: JSON.stringify({ type, metadata }),
+      }),
+  },
+}
+
+/** PRD §12 — the platform the payment adapter routes by (web vs native). */
+function clientPlatform(): 'web' | 'android' | 'ios' {
+  try {
+    const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+    if (cap?.isNativePlatform?.()) {
+      const p = cap.getPlatform?.()
+      return p === 'ios' ? 'ios' : 'android'
+    }
+  } catch {}
+  return 'web'
 }

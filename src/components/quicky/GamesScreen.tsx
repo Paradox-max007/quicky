@@ -15,6 +15,7 @@ import { GameCard } from './game-hub/GameCard'
 import { GamesFilterBar } from './game-hub/GamesFilterBar'
 import { PointsBadges } from './realm/PointsBadges'
 import { CratesBanner } from './pass/CratesBanner'
+import { GameStoreBanner } from './game-store/GameStoreBanner'
 
 export function GamesScreen() {
   const setView = useQuickyStore((s) => s.setView)
@@ -84,6 +85,11 @@ export function GamesScreen() {
         {/* Crates banner — one tap into the battle-pass room (crate screen) */}
         <div className="mb-3">
           <CratesBanner />
+        </div>
+
+        {/* Game Economy PRD §74 — the Game Store banner (Games' own economy) */}
+        <div className="mb-3">
+          <GameStoreBanner />
         </div>
 
         {/* §89 filter chips */}

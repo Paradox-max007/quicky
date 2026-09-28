@@ -56,6 +56,17 @@ export type MultiplierSnapshot = {
   expiresAt: string | null
 }
 
+/** Final-hours boost (Game Economy PRD §22-§27) — resolved on the server
+ *  clock from RealmBoostConfig; surfaced by every gifting surface BEFORE
+ *  coins are spent. */
+export type FinalBoostSnapshot = {
+  active: boolean
+  multiplier: number
+  hoursBeforeEnd: number
+  endsAt: string | null
+  realmLevel: number | null
+}
+
 export type PointHistoryRow = {
   id: string
   sourceType: string
@@ -73,6 +84,7 @@ type RealmState = {
   loading: boolean
   snapshot: RealmSnapshot | null
   multiplier: MultiplierSnapshot
+  boost: FinalBoostSnapshot
   history: PointHistoryRow[]
   historyLoaded: boolean
   /** One-shot optimistic bump from a realm_points_updated push (§45). */
@@ -94,6 +106,7 @@ type RealmState = {
 }
 
 const IDLE_MULTIPLIER: MultiplierSnapshot = { multiplier: 1, eventId: null, name: null, expiresAt: null }
+const IDLE_BOOST: FinalBoostSnapshot = { active: false, multiplier: 1, hoursBeforeEnd: 4, endsAt: null, realmLevel: null }
 
 let channel: RealtimeChannel | null = null
 let channelUserId: string | null = null
@@ -103,6 +116,7 @@ export const useRealmStore = create<RealmState>((set, get) => ({
   loading: false,
   snapshot: null,
   multiplier: IDLE_MULTIPLIER,
+  boost: IDLE_BOOST,
   history: [],
   historyLoaded: false,
   lastAward: null,
@@ -117,12 +131,20 @@ export const useRealmStore = create<RealmState>((set, get) => ({
       const snapshot = (statusRes?.realm ?? null) as RealmSnapshot | null
       const me = snapshot?.leaderboard.find((r) => r.isMe)?.userId ?? null
       const ev = eventsRes?.multiplierEvent
+      const fb = eventsRes?.finalBoost
       set({
         loaded: true,
         snapshot,
         multiplier: ev
           ? { multiplier: Number(eventsRes?.multiplier ?? 1), eventId: ev.id, name: ev.name, expiresAt: ev.expiresAt }
           : { multiplier: Number(eventsRes?.multiplier ?? 1), eventId: null, name: null, expiresAt: null },
+        boost: {
+          active: !!fb?.active,
+          multiplier: Number(fb?.multiplier ?? 1) || 1,
+          hoursBeforeEnd: Number(fb?.hoursBeforeEnd ?? 4),
+          endsAt: fb?.endsAt ?? null,
+          realmLevel: fb?.realmLevel ?? null,
+        },
       })
       subscribeRealmChannel(me)
     } catch {
