@@ -22,16 +22,18 @@ import { motion } from 'framer-motion'
 import { Play, Users, Lock } from 'lucide-react'
 import { artworkGradient, modeLabel, type GameDef } from './types'
 import { useQuickyStore } from '@/store/quicky'
-import { canPlayGameClient, isPremiumPartyGame, type GameId } from '@/lib/quicky/entitlements'
-
-// Slug → GameId (entitlements.ts uses underscore-delimited ids; the
-// GameDefinition table uses hyphen-delimited slugs). One-line transform;
-// unknown slugs fall through to a GameId that the entitlement table
-// defaults to PREMIUM (safe — unknown future games are locked until
-// explicitly added).
-function slugToGameId(slug: string): GameId {
-  return slug.replace(/-/g, '_') as GameId
-}
+// Premium Party Games PRD §7 — uses the canonical `slugToGameId()` helper
+// from entitlements.ts so the GameDefinition catalog slug (e.g.
+// 'spin-the-bottle') is mapped to the canonical entitlement id (e.g.
+// 'spin_bottle') via the GAME_SLUG_ALIASES map. The previous inline
+// `slug.replace(/-/g, '_')` produced 'spin_the_bottle' which was NOT in
+// the entitlement table → `isPremiumPartyGame()` returned false → no
+// lock badge was rendered (the bug).
+import {
+  canPlayGameClient,
+  isPremiumPartyGame,
+  slugToGameId,
+} from '@/lib/quicky/entitlements'
 
 export function GameCard({
   game,

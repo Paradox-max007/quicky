@@ -25,6 +25,18 @@ import type { AuthUser } from './auth'
 // same ids (ludo / truth_or_dare / never_have_i_ever). Spin-the-Bottle is
 // listed here for completeness because the entitlement system is generic
 // over all games, not only the dating-chat ones.
+//
+// IMPORTANT — two different identifiers exist for Spin the Bottle:
+//   • `spin_bottle`       — the canonical id used by SpinRoom.gameType
+//                           (prisma/schema.prisma:633 default value) and by
+//                           the entitlement table below.
+//   • `spin-the-bottle`  — the GameDefinition.slug used by the Games-page
+//                           catalog (seeded in scripts/seed.ts:464 +
+//                           scripts/seed-game-definitions.mjs:11). After
+//                           the `replace(/-/g, '_')` transform this becomes
+//                           `spin_the_bottle`, which is NOT in the
+//                           entitlement table — see `GAME_SLUG_ALIASES`
+//                           below for the mapping.
 export type GameId =
   | 'spin_bottle'
   | 'ludo'
@@ -34,6 +46,35 @@ export type GameId =
 
 // ── Required plan ───────────────────────────────────────────────────────────
 export type RequiredPlan = 'FREE' | 'PREMIUM'
+
+// ── Slug → canonical GameId aliases ─────────────────────────────────────────
+//
+// The Games-page catalog uses `GameDefinition.slug` (hyphen-delimited,
+// seeded in scripts/seed.ts + scripts/seed-game-definitions.mjs). The
+// SpinRoom + GameSession + GameInvitation systems use a separate
+// underscore-delimited id. For most games the two align after a simple
+// `replace(/-/g, '_')` — but Spin the Bottle does NOT: its catalog slug is
+// `spin-the-bottle` (with "the") while the canonical id is `spin_bottle`
+// (without "the"). This alias map bridges the two so `GameCard` can pass
+// the catalog slug through `slugToGameId()` and get the canonical id that
+// the entitlement table is keyed on.
+//
+// Adding a new game with a non-trivial slug → id mapping is a one-liner
+// here; `slugToGameId()` picks it up automatically.
+export const GAME_SLUG_ALIASES: Record<string, GameId> = {
+  'spin-the-bottle': 'spin_bottle',
+  // Future-proof: if a game's catalog slug doesn't transform cleanly to
+  // its canonical id, add it here. e.g.:
+  //   'never-have-i-ever': 'never_have_i_ever',  // (already clean — no alias needed)
+}
+
+/** Convert a GameDefinition.slug (e.g. 'spin-the-bottle') to the canonical
+ *  GameId used by the entitlement table (e.g. 'spin_bottle'). Falls back
+ *  to `slug.replace(/-/g, '_')` for any slug without an explicit alias. */
+export function slugToGameId(slug: string): GameId {
+  if (GAME_SLUG_ALIASES[slug]) return GAME_SLUG_ALIASES[slug]
+  return slug.replace(/-/g, '_') as GameId
+}
 
 // ── Game entitlements config (PRD §45) ─────────────────────────────────────
 //
