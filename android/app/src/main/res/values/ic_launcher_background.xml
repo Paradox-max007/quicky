@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- Fallback launcher background color (adaptive icon background layer
+         is @mipmap/ic_launcher_background — brand gradient #1A1A2E -> #0F0F14) -->
+    <color name="ic_launcher_background">#0F0F14</color>
 </resources>
