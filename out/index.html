@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Quicky</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0F0F14; }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        color: #FF2D55;
+        font-size: 17px;
+        letter-spacing: 0.04em;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Placeholder webDir entry — the native shell loads
+      https://quicky.vercel.app (see capacitor.config.ts → server.url),
+      so assets/public is never actually served. This file only exists so
+      `cap sync`/`cap copy` succeed on a fresh clone (Capacitor requires
+      webDir to exist even when server.url points at a remote origin).
+    -->
+    <noscript>Quicky requires JavaScript.</noscript>
+    Connecting&hellip;
+    <script>
+      // Safety net: if the shell ever lands here, hop to the live app.
+      window.location.replace("https://quicky.vercel.app");
+    </script>
+  </body>
+</html>
