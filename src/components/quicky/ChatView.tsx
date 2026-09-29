@@ -871,8 +871,18 @@ export function ChatView({
         }
       }, 200)
       haptic()
-    } catch {
-      toast.error('Microphone permission denied')
+    } catch (err: any) {
+      // Classify the error so we don't show "Microphone permission denied"
+      // for the transient NotReadableError / AbortError that Capacitor WebView
+      // throws right after the OS permission is granted (hardware-busy race).
+      if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
+        toast.error('Microphone access denied — enable it in your device settings')
+      } else if (err?.name === 'NotFoundError') {
+        toast.error('Microphone unavailable on this device')
+      } else {
+        // NotReadableError / AbortError / unknown — transient; ask to retry
+        toast.error('Could not access microphone — please try again')
+      }
     }
   }
 

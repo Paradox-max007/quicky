@@ -123,6 +123,29 @@ export async function requestMicrophonePermission(): Promise<DevicePermissionSta
     // false-negative toast.
     return isNative() ? 'prompt' : 'unavailable'
   }
+
+  // On Capacitor (Android/iOS), check the stored OS permission state via
+  // navigator.permissions.query FIRST — this avoids calling getUserMedia
+  // purely for permission-priming, which triggers the known WebView race
+  // (NotReadableError / AbortError thrown RIGHT AFTER the user grants
+  // permission because the audio hardware hasn't fully initialised yet).
+  // The previous code mapped those transient errors to 'denied', causing
+  // the "Microphone access denied" toast even when permission WAS granted.
+  if (isNative() && typeof (navigator as any).permissions?.query === 'function') {
+    try {
+      const status = await (navigator as any).permissions.query({ name: 'microphone' })
+      const state = status?.state as string | undefined
+      if (state === 'granted') return 'granted'
+      if (state === 'denied') return 'denied'
+      // 'prompt' — fall through to trigger the OS dialog via getUserMedia
+    } catch {
+      // permissions.query not supported on this WebView — fall through
+    }
+  }
+
+  // Web path (or Capacitor when state is 'prompt'): trigger the browser/OS
+  // native mic prompt by priming a short-lived stream. The stream is
+  // immediately stopped — we just need the permission grant recorded.
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
     stream.getTracks().forEach((t) => t.stop())
@@ -130,11 +153,11 @@ export async function requestMicrophonePermission(): Promise<DevicePermissionSta
   } catch (err: any) {
     if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') return 'denied'
     if (err?.name === 'NotFoundError' || err?.name === 'OverconstrainedError') return 'unavailable'
-    // NotReadableError, AbortError, etc. on Capacitor WebView — treat as
-    // 'denied' so the caller can show "enable in settings" (PRD §34) rather
-    // than the misleading "Microphone unavailable on this device" toast
-    // that fired AFTER the user already granted permission.
-    return 'denied'
+    // NotReadableError, AbortError, etc. on Capacitor WebView — these are
+    // transient hardware-busy errors that can fire right after the OS
+    // dialog is dismissed. Return 'prompt' so the caller retries on the
+    // next tap rather than showing "Microphone access denied" incorrectly.
+    return isNative() ? 'prompt' : 'denied'
   }
 }
 
@@ -222,33 +245,37 @@ export async function capturePhotoWithNativeCamera(): Promise<Blob | null> {
   if (!isNative()) return null
   try {
     const mod = await import('@capacitor/camera')
-    // `Camera.getPhoto` opens the native camera UI. We request JPEG @ 90%
-    // quality (the upload route caps at 20MB so this is comfortable),
-    // `allowEditing: false` (Quicky is meant to be candid), `correctOrientation: true`
-    // (so portrait shots don't arrive sideways). `source: CameraSource.Camera`
-    // forces the camera (NEVER the gallery) — per the PRD: "image should be
-    // captured by the camera at the moment, no file directory sharing allowed
-    // for Quicky on the Capacitor app".
+    // `Camera.getPhoto` opens the native camera UI. We request JPEG via
+    // CameraResultType.DataUrl — this is one of the three valid result types
+    // ('Uri', 'Base64', 'DataUrl'). The previous code used `resultType: 'blob'
+    // as any` which is NOT a valid CameraResultType; the plugin silently
+    // ignored it, photo.blob was always undefined, and the image was lost
+    // (the function returned null → onQuickyFile was never called → picture
+    // vanished after capture with no send option shown).
+    //
+    // DataUrl is preferred over Base64 (avoids the 'data:image/jpeg;base64,'
+    // prefix manual concat) and over Uri (avoids a second file-read step on
+    // Android where the uri path may not be accessible from the WebView).
+    //
+    // `source: CameraSource.Camera` forces the camera (NEVER the gallery)
+    // per the PRD: "image should be captured by the camera at the moment,
+    // no file directory sharing allowed for Quicky on the Capacitor app".
     const photo = await mod.Camera.getPhoto({
       quality: 90,
       allowEditing: false,
-      resultType: 'blob' as any, // Capacitor returns a Blob when `resultType: 'blob'`
-      source: mod.CameraSource.Camera,  // native enum — forces the camera, never the gallery
+      resultType: mod.CameraResultType.DataUrl,
+      source: mod.CameraSource.Camera,
       saveToGallery: false,      // Quickies are disappearing — don't keep them in the user's gallery
       correctOrientation: true,
       presentationStyle: 'fullscreen',
     })
-    // The blob is on `photo.blob` when `resultType: 'blob'` is used.
-    const blob = (photo as any).blob as Blob | undefined
-    if (!blob) {
-      // Fallback: convert the base64 dataUrl to a Blob (some Capacitor
-      // versions return dataUrl even when blob is requested).
-      if ((photo as any).dataUrl) {
-        return dataUrlToBlob((photo as any).dataUrl as string)
-      }
-      return null
+    // photo.dataUrl is the full 'data:image/jpeg;base64,...' string when
+    // CameraResultType.DataUrl is used. Convert it to a Blob for the
+    // upload pipeline (compressImage + uploadWithProgress).
+    if (photo.dataUrl) {
+      return dataUrlToBlob(photo.dataUrl)
     }
-    return blob
+    return null
   } catch {
     // User cancelled the camera screen OR the camera failed — return null
     // silently; callers should abort the Quicky flow without toasting an
