@@ -16,6 +16,7 @@
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { startAndCompletePurchase, getPaymentAdapter, type CompletedPurchase } from '@/lib/quicky/payments'
+import { creditRealmPoints } from '@/lib/quicky/wallet'
 import { awardRealmPoints } from '@/lib/quicky/realm/realm-point-service'
 import { getViewerBoost, type RealmBoostSnapshot } from '@/lib/quicky/realm/realm-boost'
 import { getClient } from '@/lib/quicky/realtime'
@@ -320,6 +321,83 @@ export async function purchaseCoinPackage(
   if (!pack || !pack.isActive) return { ok: false, error: 'invalid_package' }
   if (pack.premiumOnly && !buyer.isPremium) return { ok: false, error: 'premium_only' }
 
+  // ── Monetization PRD §5.1 — the catalog covers three product kinds ────
+  // REALM_POINTS_PACK: sandbox credit through the canonical realm path.
+  if (pack.kind === 'REALM_POINTS_PACK') {
+    const points = pack.realmPoints ?? 0
+    if (points <= 0) return { ok: false, error: 'invalid_package' }
+    const purchase = await startAndCompletePurchase(
+      {
+        userId,
+        productId: pack.id,
+        productType: 'REALM_POINTS_PACK',
+        currency: pack.currency,
+        amount: pack.price,
+        metadata: { packageName: pack.name, realmPoints: points },
+      },
+      platform,
+      async () => ({}) // credit happens below through the canonical realm path
+    )
+    if (!purchase.ok) return { ok: false, error: 'payment_failed' }
+    const credited = await creditRealmPoints(userId, points, `purchase:${purchase.purchaseId}`, {
+      transactionType: 'PURCHASE',
+      source: 'mock',
+      sourceId: purchase.purchaseId,
+      metadata: { packageId: pack.id },
+    })
+    return {
+      ok: true,
+      coinBalance: buyer.coinBalance,
+      coinsAdded: 0,
+      bonusCoins: 0,
+      purchaseId: purchase.purchaseId,
+      provider: purchase.provider,
+      providerTransactionId: purchase.providerTransactionId,
+      status: purchase.status,
+      ...(credited.cyclePoints != null ? { cyclePoints: credited.cyclePoints } : {}),
+    }
+  }
+
+  // SUBSCRIPTION: sandbox grant through the existing premium system
+  // (Monetization PRD §8 — integrate, don't duplicate).
+  if (pack.kind === 'SUBSCRIPTION') {
+    const plan = pack.plan ?? 'monthly'
+    const now = new Date()
+    const expiresAt = new Date(now)
+    if (plan === 'weekly') expiresAt.setDate(expiresAt.getDate() + 7)
+    else if (plan === 'monthly') expiresAt.setMonth(now.getMonth() + 1)
+    else if (plan === 'quarterly') expiresAt.setMonth(now.getMonth() + 3)
+    else expiresAt.setFullYear(now.getFullYear() + 1)
+    const purchase = await startAndCompletePurchase(
+      {
+        userId,
+        productId: pack.id,
+        productType: 'SUBSCRIPTION',
+        currency: pack.currency,
+        amount: pack.price,
+        metadata: { packageName: pack.name, plan },
+      },
+      platform,
+      async (tx: Prisma.TransactionClient) => {
+        await tx.subscription.updateMany({ where: { userId, status: 'active' }, data: { status: 'cancelled' } })
+        await tx.subscription.create({ data: { userId, plan, status: 'active', startedAt: now, expiresAt } })
+        await tx.user.update({ where: { id: userId }, data: { isPremium: true, premiumTier: plan, premiumUntil: expiresAt } })
+        return {}
+      }
+    )
+    if (!purchase.ok) return { ok: false, error: 'payment_failed' }
+    return {
+      ok: true,
+      coinBalance: buyer.coinBalance,
+      coinsAdded: 0,
+      bonusCoins: 0,
+      purchaseId: purchase.purchaseId,
+      provider: purchase.provider,
+      providerTransactionId: purchase.providerTransactionId,
+      status: purchase.status,
+    }
+  }
+
   // Legacy premium parity: +20% bonus on standard packs for premium members.
   const premiumBonus = buyer.isPremium && !pack.premiumOnly ? Math.round(pack.coins * PREMIUM_COIN_BONUS_PCT) : 0
   const totalCoins = pack.coins + pack.bonusCoins + premiumBonus
@@ -336,7 +414,7 @@ export async function purchaseCoinPackage(
       metadata: { packageName: pack.name, baseCoins: pack.coins, packBonus: pack.bonusCoins, premiumBonus },
     },
     platform,
-    async (tx: Prisma.TransactionClient) => {
+    async (tx: Prisma.TransactionClient, purchaseId: string) => {
       const updated = await tx.user.update({
         where: { id: userId },
         data: { coinBalance: { increment: totalCoins } },
@@ -350,6 +428,21 @@ export async function purchaseCoinPackage(
           meta: JSON.stringify({ purchaseType: 'COIN_PACK', packageId: pack.id, coins: totalCoins, baseCoins: pack.coins, bonusCoins: pack.bonusCoins, premiumBonus, mock: true }),
         },
       })
+      // Monetization PRD §6 — the unified wallet ledger row (idempotent by
+      // purchase id; catch keeps legacy-DB compat if the table is missing).
+      await tx.walletTransaction.create({
+        data: {
+          userId,
+          currencyType: 'COINS',
+          amount: totalCoins,
+          transactionType: 'PURCHASE',
+          source: getPaymentAdapter(platform).provider,
+          sourceId: purchaseId,
+          idempotencyKey: `purchase:${purchaseId}`,
+          balanceAfter: updated.coinBalance,
+          metadata: JSON.stringify({ purchaseType: 'COIN_PACK', packageId: pack.id, coins: totalCoins, premiumBonus }),
+        },
+      }).catch(() => {})
       await tx.gameMonetizationEvent
         .create({ data: { userId, type: 'purchase_completed', metadata: JSON.stringify({ productId: pack.id, productType: 'COIN_PACK', coins: totalCoins }) } })
         .catch(() => {})

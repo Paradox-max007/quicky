@@ -15,6 +15,7 @@ import { Play, Check, Crown, Flame, Sparkles } from 'lucide-react'
 import { useGameStoreStore } from '@/store/game-store'
 import { useQuickyStore } from '@/store/quicky'
 import { cn } from '@/lib/utils'
+import { purchaseStoreProduct } from '@/lib/quicky/payments/client'
 import { RewardedAdModal } from '../RewardedAdModal'
 import { GiftIcon } from '../GiftIcon'
 
@@ -23,7 +24,6 @@ import { GiftIcon } from '../GiftIcon'
 export function CoinsTab() {
   const payload = useGameStoreStore((s) => s.payload)
   const busy = useGameStoreStore((s) => s.busy)
-  const buyCoins = useGameStoreStore((s) => s.buyCoins)
   const setTab = useGameStoreStore((s) => s.setTab)
   const refresh = useGameStoreStore((s) => s.refresh)
   const isPremium = useQuickyStore((s) => s.user?.isPremium ?? false)
@@ -32,8 +32,13 @@ export function CoinsTab() {
   const packs = payload?.coinPackages ?? []
 
   const buy = async (id: string) => {
-    const ok = await buyCoins(id)
-    if (!ok) toast.error('Purchase failed — nothing was charged.')
+    // Platform-routed purchase (Monetization PRD §5.4): Stripe on web,
+    // Google Play in the Android shell, sandbox instant in dev.
+    const res = await purchaseStoreProduct(id)
+    if (!res.ok && res.error !== 'apple_pending') {
+      toast.error(res.message || 'Purchase failed — nothing was charged.')
+    }
+    if (res.ok && res.mode === 'completed') await refresh()
   }
 
   return (
@@ -55,7 +60,7 @@ export function CoinsTab() {
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-[13px] font-bold">Watch an ad — free coins or points</span>
-          <span className="block text-[10.5px] text-white/50">Random reward of 1 to 1,000 — collect after the ad</span>
+          <span className="block text-[10.5px] text-white/50">Pick your reward type, watch to the end, collect 10–100</span>
         </span>
       </button>
 
@@ -378,8 +383,14 @@ export function FeaturedTab() {
   const payload = useGameStoreStore((s) => s.payload)
   const setTab = useGameStoreStore((s) => s.setTab)
   const busy = useGameStoreStore((s) => s.busy)
-  const buyCoins = useGameStoreStore((s) => s.buyCoins)
   const buyCrate = useGameStoreStore((s) => s.buyCrate)
+
+  const buyFeatured = async (id: string) => {
+    const res = await purchaseStoreProduct(id)
+    if (!res.ok && res.error !== 'apple_pending') {
+      toast.error(res.message || 'Purchase failed — nothing was charged.')
+    }
+  }
 
   const featuredPack = payload?.coinPackages.find((p) => p.featured) ?? payload?.coinPackages[payload.coinPackages.length - 1] ?? null
   const featuredCrate = payload?.crates.find((c) => c.featured) ?? payload?.crates[0] ?? null
@@ -411,7 +422,7 @@ export function FeaturedTab() {
       {/* 🪙 Featured coin pack */}
       {featuredPack && (
         <button
-          onClick={() => void buyCoins(featuredPack.id)}
+          onClick={() => void buyFeatured(featuredPack.id)}
           disabled={!!busy}
           className="rounded-2xl border border-[var(--qk-gold)]/30 bg-[var(--qk-gold)]/10 p-4 flex items-center gap-3 text-left hover:bg-[var(--qk-gold)]/16 transition-colors active:scale-[0.99] disabled:opacity-60"
           data-testid="game-store-featured-pack"

@@ -1167,13 +1167,85 @@ export const api = {
         body: JSON.stringify({ token }),
       }),
   },
-  // ─── REWARDED ADS (coin store + realm leaderboard entries) ──────────
-  ads: {
-    reward: () =>
-      jsonFetch<{ ok: boolean; kind: 'COINS' | 'POINTS'; amount: number; coinBalance: number | null; cyclePoints: number | null }>(
-        '/api/quicky/ads/reward',
-        { method: 'POST' }
+  // ─── MONETIZATION: wallet + rewarded-ad sessions (Monetization PRD §7) ──
+  wallet: {
+    get: () =>
+      jsonFetch<{ wallet: { coins: number; realmPoints: number | null; lifetimeRealmPoints: number | null } }>('/api/quicky/wallet'),
+  },
+  rewardedAds: {
+    status: (platform: 'web' | 'android' | 'ios') =>
+      jsonFetch<{
+        canWatch: boolean
+        reason: string | null
+        provider: 'admob' | 'web_ad' | 'mock' | null
+        nextAdAtMs: number | null
+        cooldownRemainingMs: number | null
+        adsToday: number | null
+        dailyLimit: number
+        config: { minReward: number; maxReward: number; coinsEnabled: boolean; pointsEnabled: boolean; cooldownSeconds: number }
+      }>(`/api/quicky/rewards/status?platform=${platform}`),
+    createSession: (rewardType: 'coins' | 'realm_points', platform: 'web' | 'android' | 'ios') =>
+      jsonFetch<{ sessionId: string; status: 'pending'; rewardType: 'COINS' | 'REALM_POINTS'; provider: string; expiresAt: string }>(
+        '/api/quicky/rewards/session',
+        { method: 'POST', body: JSON.stringify({ rewardType, platform }) }
       ),
+    getSession: (sessionId: string) =>
+      jsonFetch<{
+        session: {
+          sessionId: string
+          status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'EXPIRED' | 'CANCELLED'
+          rewardType: 'COINS' | 'REALM_POINTS'
+          provider: string
+          rewardAmount: number | null
+          coinBalance: number | null
+          cyclePoints: number | null
+        }
+      }>(`/api/quicky/rewards/session/${sessionId}`),
+    cancelSession: (sessionId: string) =>
+      jsonFetch<{ ok: boolean; cancelled: boolean }>(`/api/quicky/rewards/session/${sessionId}`, { method: 'DELETE' }),
+    mockComplete: (sessionId: string) =>
+      jsonFetch<{ ok: boolean; rewardAmount: number; rewardType: 'COINS' | 'REALM_POINTS'; coinBalance: number | null; cyclePoints: number | null }>(
+        '/api/quicky/rewards/mock-complete',
+        { method: 'POST', body: JSON.stringify({ sessionId }) }
+      ),
+  },
+  // ─── MONETIZATION: store + real payments (Monetization PRD §5/§7) ────────
+  store: {
+    products: (platform: 'web' | 'android' | 'ios') =>
+      jsonFetch<{
+        platform: string
+        products: Array<{
+          id: string
+          name: string
+          kind: 'COIN_PACK' | 'REALM_POINTS_PACK' | 'SUBSCRIPTION'
+          coins: number
+          bonusCoins: number
+          realmPoints: number | null
+          plan: string | null
+          price: number
+          currency: string
+          badge: string | null
+          featured: boolean
+          purchaseProvider: 'stripe' | 'google_play' | 'apple_pending' | 'mock' | 'unavailable'
+        }>
+      }>(`/api/quicky/store/products?platform=${platform}`),
+  },
+  payments: {
+    stripeCheckout: (productId: string) =>
+      jsonFetch<{ url: string; purchaseId: string }>('/api/quicky/payments/stripe/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ productId }),
+      }),
+    googlePlayVerify: (productId: string, purchaseToken: string) =>
+      jsonFetch<{ ok: boolean; alreadyCompleted?: boolean; kind?: string; coinBalance?: number | null; cyclePoints?: number | null }>(
+        '/api/quicky/payments/google-play/verify',
+        { method: 'POST', body: JSON.stringify({ productId, purchaseToken }) }
+      ),
+    history: () =>
+      jsonFetch<{
+        purchases: Array<{ id: string; productType: string; provider: string; currency: string; amount: number; coins: number | null; bonusCoins: number | null; status: string; createdAt: string }>
+        walletTransactions: Array<{ id: string; currencyType: string; amount: number; transactionType: string; source: string; balanceAfter: number | null; createdAt: string }>
+      }>('/api/quicky/payments/history'),
   },
   // ─── REALM PROGRESSION (realm PRD §61) — shared across every game ─────
   realm: {

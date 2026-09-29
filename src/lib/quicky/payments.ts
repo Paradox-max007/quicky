@@ -24,7 +24,7 @@ import type { Prisma } from '@prisma/client'
 
 export type PaymentPlatform = 'web' | 'android' | 'ios'
 export type PaymentProviderId = 'mock' | 'stripe' | 'google_pay' | 'apple_pay'
-export type PurchaseProductType = 'COIN_PACK' | 'CRATE'
+export type PurchaseProductType = 'COIN_PACK' | 'CRATE' | 'REALM_POINTS_PACK' | 'SUBSCRIPTION'
 
 export type PurchaseDraft = {
   userId: string

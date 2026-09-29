@@ -140,6 +140,8 @@ model User {
   // ─── FCM push + rewarded ads ──────────────────────────────────────────────
   pushTokens        PushToken[]
   adRewards         AdRewardEvent[]
+  walletTransactions WalletTransaction[]
+  rewardAdSessions RewardAdSession[]
   // ─── Monthly Season + Crates (realm pass) ──────────────────────────────
   seasons           UserSeason[]
   cratePasses       UserCrate[]
@@ -1758,6 +1760,19 @@ model GameCoinPackage {
   bonusCoins  Int      @default(0)
   price       Float    @default(0.99)
   currency    String   @default("USD")
+  // ─── Monetization PRD §5.1 — the store catalog is the AUTHORITATIVE product
+  // list for coins, realm points AND subscriptions. One internal product can
+  // carry per-platform purchase identifiers while keeping a stable Quicky id.
+  // COIN_PACK (default) | REALM_POINTS_PACK | SUBSCRIPTION
+  kind            String   @default("COIN_PACK")
+  // REALM_POINTS_PACK: points granted on fulfillment
+  realmPoints     Int?
+  // SUBSCRIPTION: weekly | monthly | quarterly | annual (existing premium plans)
+  plan            String?
+  // Provider mappings — prices themselves live in the provider dashboards;
+  // these ids let the server pick the right purchase flow per platform.
+  stripePriceId       String?
+  googlePlayProductId String?
   // Small chip label, e.g. "Best value" | "Most popular" | "Hot" (PRD §8).
   badge       String?
   featured    Boolean  @default(false)
@@ -1772,17 +1787,88 @@ model GameCoinPackage {
   @@index([isActive, sortOrder])
 }
 
-// PRD §13 — every REAL-MONEY game purchase, whatever the product. Statuses:
-// PENDING | PROCESSING | COMPLETED | FAILED | REFUNDED | CANCELLED. The mock
-// provider completes instantly server-side; a real provider (Stripe / Google
-// Play billing / StoreKit) completes via its verified webhook — the client
-// is NEVER the source of truth for crediting (PRD §9/§67).
+// ─── MONETIZATION (Rewarded Ads & Real Payments PRD §6.2) ───────────────────
+
+// Unified, immutable WALLET LEDGER — one row for every coins/points balance
+// change made by the monetization systems (ads, purchases, refunds, admin).
+// Legacy CoinLedger/RealmPointLedger keep their game-economy roles; THIS table
+// is the audit + idempotency spine for real-money-adjacent flows.
+model WalletTransaction {
+  id             String   @id @default(cuid())
+  userId         String
+  // COINS | REALM_POINTS
+  currencyType   String
+  // Signed: positive = credit, negative = debit
+  amount         Int
+  // AD_REWARD | PURCHASE | REFUND | ADMIN_ADJUST | SYSTEM
+  transactionType String
+  // admob | web_ad | mock | stripe | google_play | admin
+  source         String
+  // Provider/order/session reference (GamePurchase.id, RewardAdSession.id, ...)
+  sourceId       String?
+  // Every wallet mutation carries ONE unique key — retries are no-ops (PRD §6.1)
+  idempotencyKey String   @unique
+  // Balance snapshot AFTER applying amount (coins) — null for realm points
+  balanceAfter   Int?
+  metadata       String?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([source, sourceId])
+}
+
+// One row per attempted rewarded ad (PRD §6.2 reward_sessions). The reward
+// amount is generated ONCE at finalization and stored here — a retried
+// completion returns the same result, never a new roll (PRD §3.2).
+model RewardAdSession {
+  id                    String    @id @default(uuid())
+  userId                String
+  // COINS | REALM_POINTS (chosen BEFORE the ad starts)
+  rewardType            String
+  // PENDING | COMPLETED | FAILED | EXPIRED | CANCELLED
+  status                String    @default("PENDING")
+  // admob | web_ad | mock
+  provider              String    @default("admob")
+  // AdMob SSV transaction_id / web provider transaction id — UNIQUE per
+  // provider: a duplicate callback can never double-credit (PRD §6.3)
+  providerTransactionId String?
+  // NULL until the server finalizes; BETWEEN 10 AND 100 (CHECK in migration)
+  rewardAmount          Int?
+  metadata              String?
+  createdAt             DateTime  @default(now())
+  expiresAt             DateTime
+  completedAt           DateTime?
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerTransactionId])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+// Provider webhook/event DEDUP + audit (PRD §6.2 payment_events). Stripe
+// event ids and Google Play notification ids land here exactly once.
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  // stripe | google_play
+  provider        String
+  providerEventId String
+  eventType       String
+  // PROCESSED | IGNORED | REJECTED
+  status          String   @default("PROCESSED")
+  payload         String?
+  processedAt     DateTime @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([provider, processedAt])
+}
+
 model GamePurchase {
   id                   String    @id @default(cuid())
   userId               String
   // GameCoinPackage.id | CrateProduct.id
   productId            String
-  // COIN_PACK | CRATE
+  // COIN_PACK | CRATE | REALM_POINTS_PACK | SUBSCRIPTION (monetization PRD §5.1)
   productType          String
   // mock | stripe | google_pay | apple_pay (PRD §10/§12)
   provider             String    @default("mock")
