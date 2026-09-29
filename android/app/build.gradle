@@ -1,5 +1,23 @@
 apply plugin: 'com.android.application'
 
+// ─── Release signing (Play Store) ───────────────────────────────────────────
+// Reads android/keystore.properties (GITIGNORED — never committed):
+//   storeFile=release.keystore   (path relative to android/app/)
+//   storePassword=...
+//   keyAlias=quicky-upload
+//   keyPassword=...
+// Generate once with: bun scripts/gen-release-keystore.sh  (from repo root)
+// Without keystore.properties the release build falls back to DEBUG signing
+// and prints a warning, so CI machines without the keystore can still build.
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+def keystoreAvailable = keystorePropsFile.exists()
+if (keystoreAvailable) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+} else {
+    logger.warn("WARNING: android/keystore.properties not found — release build will be signed with the DEBUG key (NOT Play Store ready). Run `bun scripts/gen-release-keystore.sh` to create a production keystore.")
+}
+
 android {
     namespace = "com.quicky.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +25,8 @@ android {
         applicationId "com.quicky.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode rootProject.ext.versionCode
+        versionName rootProject.ext.versionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +34,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        release {
+            if (keystoreAvailable) {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystoreAvailable) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 }

@@ -1,4 +1,8 @@
 ext {
+    // App version — bump versionCode (+1) before EVERY Play Store upload;
+    // versionCode must monotonically increase across uploads.
+    versionCode = 1
+    versionName = "1.0.0"
     minSdkVersion = 24
     compileSdkVersion = 36
     targetSdkVersion = 36

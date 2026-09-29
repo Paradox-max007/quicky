@@ -39,6 +39,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Android release signing — NEVER COMMIT THESE.
+# The keystore is the permanent identity of the app on the Play Store;
+# losing or leaking it means losing the ability to update the app.
+android/keystore.properties
+android/keystores/
+
 
 # typescript
 *.tsbuildinfo
