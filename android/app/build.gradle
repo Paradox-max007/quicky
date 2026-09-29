@@ -71,6 +71,10 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // Local first-party plugin — Google Play Billing (Monetization PRD §5.3).
+    // Registers the native "GooglePlayBilling" plugin used by the web app's
+    // purchase router (src/lib/quicky/payments/client.ts).
+    implementation project(':quicky-google-play-billing')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

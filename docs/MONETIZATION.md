@@ -44,6 +44,14 @@ non-negative coin balance, valid enums.
 
 ## 2. Rewarded ads — Google AdMob (Android/iOS)
 
+The native layer is **preinstalled** in this repo:
+`@capacitor-community/admob@8` (npm) is synced into `android/` (gradle) and
+`ios/` (SPM), and both platforms carry Google's official **test App ID** so
+the SDK initializes safely out of the box (the app would crash without an
+App ID — AndroidManifest `APPLICATION_ID` meta-data / iOS `GADApplicationIdentifier`).
+
+Setup when going live:
+
 1. [AdMob console](https://apps.admob.com) → Add app → note the **App ID**
    (`ca-app-pub-…~…`).
 2. Add a **Rewarded** ad unit → note the **Ad unit ID**
@@ -52,24 +60,22 @@ non-negative coin balance, valid enums.
    `https://quicky.vercel.app/api/quicky/rewards/admob/ssv`
    (AdMob appends `signature`, `key_id`, `transaction_id`, … and echoes the
    `custom_data` we set = the reward session id).
-4. Install the Capacitor plugin + sync native:
-   ```bash
-   bun add @capacitor-community/admob
-   bunx cap sync android
-   ```
-   (The provider auto-detects the plugin at runtime — the app builds fine
-   without it, and the Watch Ad UI shows "No ads available".)
-5. `android/app/src/main/AndroidManifest.xml` — inside `<application>`:
-   ```xml
-   <meta-data
-     android:name="com.google.android.gms.ads.APPLICATION_ID"
-     android:value="ca-app-pub-XXXX~YYYY" />
-   ```
-6. Env (see `.env.example`): `ADMOB_APP_ID_ANDROID`,
+4. Replace the TEST App IDs with your real ones:
+   - `android/app/src/main/AndroidManifest.xml` → the
+     `com.google.android.gms.ads.APPLICATION_ID` meta-data (currently
+     `ca-app-pub-3940256099942544~3347511713`)
+   - `ios/App/App/Info.plist` → `GADApplicationIdentifier` (currently
+     `ca-app-pub-3940256099942544~1458002511`)
+   - These are App IDs (`~`), NOT ad-unit ids (`/`) — mixing them up is the
+     classic AdMob crash.
+5. Env (see `.env.example`): `ADMOB_APP_ID_ANDROID`,
    `ADMOB_REWARDED_AD_UNIT_ID_ANDROID`, and the `NEXT_PUBLIC_` mirrors.
    Keep `NEXT_PUBLIC_ADMOB_USE_TEST_ADS=true` in dev/preview — Google's
    test units (`ca-app-pub-3940256099942544/5224354917`) never pay out but
-   exercise the exact same flow (PRD §11).
+   exercise the exact same flow (PRD §11). Unset it for production.
+6. Rebuild the native app (`bun run android:release`) — the plugin is
+   compiled into the APK/IPA; the web bundle detects it at runtime via
+   `window.Capacitor.Plugins.AdMob`.
 
 ### Verification flow (why the client can't cheat)
 
@@ -123,6 +129,14 @@ purchase id) → user pays on Stripe → signed webhook re-checks
 
 ## 5. Google Play Billing (Android)
 
+The native billing plugin is **preinstalled**: a first-party Capacitor
+module at `android/quicky-google-play-billing/` (Play Billing Library 8.x,
+wired via `android/settings.gradle` + `android/app/build.gradle` — both
+hand-edited so `cap sync` never strips it). It registers the runtime plugin
+`GooglePlayBilling` (`window.Capacitor.Plugins.GooglePlayBilling`) and only
+runs the purchase sheet; verification/crediting/acknowledge/consume happen
+server-side. No npm package or third-party account is needed.
+
 1. Play Console → Monetize → Products: create the coin packs / point packs
    (`productId` strings) and subscriptions that mirror the Quicky catalog.
 2. Put the **Play product ids** on the catalog products
@@ -132,8 +146,8 @@ purchase id) → user pays on Stripe → signed webhook re-checks
 4. RTDN: create a Pub/Sub topic, push subscription pointing to
    `https://quicky.vercel.app/api/quicky/payments/google-play/notifications`
    with a bearer token you set as `GOOGLE_PLAY_NOTIFICATIONS_TOKEN`.
-5. In-app: install the Play Billing Capacitor plugin in the native build
-   (runtime auto-detected, same as AdMob).
+5. Rebuild the native app (`bun run android:release`) — the module is
+   compiled into the APK.
 
 Flow: native purchase → client sends `(productId, purchaseToken)` → server
 calls Google's Developer API (`purchases.products.get` /
@@ -182,7 +196,12 @@ on an internal testing track (Play Console) before production.
 
 - [ ] `ALLOW_MOCK_REWARDED_ADS=false`, `ALLOW_MOCK_PAYMENTS=false` (or unset)
 - [ ] Real ad units replace test units; `NEXT_PUBLIC_ADMOB_USE_TEST_ADS` unset
+- [ ] TEST AdMob App IDs swapped for real ones (AndroidManifest + Info.plist)
 - [ ] Stripe webhook signing secret belongs to the PRODUCTION endpoint
 - [ ] Play service account JSON + RTDN token configured in Vercel
 - [ ] `prisma/migration-rewards-payments.sql` applied to the prod database
+- [ ] Native rebuild shipped (`bun run android:release`) with the AdMob +
+      GooglePlayBilling plugins compiled in
 - [ ] Watch a real ad end-to-end on a device and confirm the SSV credit
+- [ ] Buy a real coin pack on an internal testing track and confirm the
+      credit + the consumable becoming re-buyable

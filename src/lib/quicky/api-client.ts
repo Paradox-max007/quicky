@@ -1226,6 +1226,9 @@ export const api = {
           currency: string
           badge: string | null
           featured: boolean
+          premiumOnly?: boolean
+          stripePriceId: string | null
+          googlePlayProductId: string | null
           purchaseProvider: 'stripe' | 'google_play' | 'apple_pending' | 'mock' | 'unavailable'
         }>
       }>(`/api/quicky/store/products?platform=${platform}`),

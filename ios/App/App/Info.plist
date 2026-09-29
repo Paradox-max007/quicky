@@ -39,6 +39,15 @@
         <string>Quicky can save Quickies and profile photos to your photo library.</string>
         <key>NSLocationWhenInUseUsageDescription</key>
         <string>Quicky uses your location to find matches nearby and to show realistic distance.</string>
+        <!-- AdMob — Google Mobile Ads SDK (Monetization PRD §4.1).
+             Like Android's APPLICATION_ID meta-data, the SDK requires this
+             key or the app crashes when ads initialize. The value is Google's
+             official iOS TEST app id (ca-app-pub-3940256099942544~1458002511)
+             — safe everywhere, never serves paid ads. BEFORE LAUNCH: replace
+             with YOUR AdMob App ID (ca-app-pub-XXXX~YYYY) from
+             apps.admob.com. See docs/MONETIZATION.md §2. -->
+        <key>GADApplicationIdentifier</key>
+        <string>ca-app-pub-3940256099942544~1458002511</string>
         <key>UIApplicationSceneManifest</key>
         <dict>
                 <key>UIApplicationSupportsMultipleScenes</key>

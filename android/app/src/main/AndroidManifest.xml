@@ -33,6 +33,18 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- AdMob — Google Mobile Ads SDK (Monetization PRD §4.1).
+             The SDK REQUIRES this meta-data; the app crashes at startup
+             without it. The value below is Google's official TEST app id
+             (ca-app-pub-3940256099942544~3347511713) — it never serves
+             paid ads and works everywhere, so it is the safe default.
+             BEFORE LAUNCH: replace with YOUR AdMob App ID
+             (ca-app-pub-XXXX~YYYY — App ID, NOT an ad-unit id) from
+             apps.admob.com. See docs/MONETIZATION.md §2. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
     </application>
 
     <!-- Permissions -->

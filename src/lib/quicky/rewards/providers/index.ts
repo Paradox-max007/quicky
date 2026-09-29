@@ -15,10 +15,22 @@
 // The provider decides ONLY whether an ad was SHOWN. The server decides
 // whether currency moves (session + SSV/web callback verification).
 //
-// Native setup (documented in docs/MONETIZATION.md):
-//   bun add @capacitor-community/admob && bunx cap sync android
-//   AndroidManifest: <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ADMOB_APP_ID_ANDROID"/>
+// Native wiring is PREINSTALLED in this repo (Monetization PRD §4.1):
+//   · @capacitor-community/admob@8 (npm) — synced into android/ + ios/ via
+//     `bunx cap sync` (see android/capacitor.settings.gradle, CapApp-SPM)
+//   · AndroidManifest carries the AdMob APPLICATION_ID meta-data (Google's
+//     official TEST app id — swap for the real one before launch)
 //   env: ADMOB_APP_ID_ANDROID, ADMOB_REWARDED_AD_UNIT_ID_ANDROID (test ids while developing)
+//
+// Plugin API (@capacitor-community/admob v8.1.0):
+//   initialize({}) → resolves when MobileAds is ready
+//   prepareRewardVideoAd({ adId, ssv: { customData, userId } }) → resolves
+//     when the ad LOADS; rejects on load failure; sets SSV custom data
+//   showRewardVideoAd() → resolves ONLY when the user EARNS the reward
+//     (OnUserEarnedRewardListener); early dismissal never resolves it — the
+//     onRewardedVideoAdDismissed listener settles that case.
+//   events: onRewardedVideoAdReward / onRewardedVideoAdDismissed /
+//     onRewardedVideoAdFailedToShow / onRewardedVideoAdFailedToLoad
 
 import { isNative, getPlatform } from '@/lib/capacitor'
 import type { RewardType } from '@/lib/quicky/rewards/sessions'
@@ -45,7 +57,7 @@ export type RewardedAdProvider = {
 type AdMobPluginProxy = {
   initialize(opts?: Record<string, unknown>): Promise<unknown>
   prepareRewardVideoAd(opts?: Record<string, unknown>): Promise<unknown>
-  showRewardVideoAd(): Promise<unknown>
+  showRewardVideoAd(opts?: Record<string, unknown>): Promise<unknown>
   addListener?(event: string, cb: (payload: unknown) => void): { remove: () => void }
 }
 
@@ -105,37 +117,65 @@ export class NativeAdMobProvider implements RewardedAdProvider {
     const settle = (e: RewardAdEvent) => {
       if (!settled) settled = e
     }
-    let listener: { remove: () => void } | null = null
-    try {
-      listener = plugin.addListener?.('onRewardedVideoEvent', (payload: unknown) => {
-        const p = payload as { type?: string; reason?: string }
-        if (p?.type === 'rewarded' || p?.type === 'completed') settle({ type: 'completed' })
-        else if (p?.type === 'dismissed') settle({ type: 'dismissed' })
-        else if (p?.type === 'failedToShow' || p?.type === 'failedToLoad') settle({ type: 'failed', reason: p?.reason })
-      }) ?? null
-    } catch {
-      listener = null
+    const listeners: Array<{ remove: () => void }> = []
+    const on = (event: string, fn: (payload: unknown) => void) => {
+      try {
+        const l = plugin.addListener?.(event, fn)
+        if (l) listeners.push(l)
+      } catch {
+        /* listener registration is best-effort */
+      }
     }
+    const cleanup = () => listeners.forEach((l) => l.remove?.())
+
+    // v8.1.0 event names (RewardAdPluginEvents.kt). The Reward event fires
+    // when the user earns the reward — BEFORE Dismissed on a full watch — so
+    // a completed watch settles on Reward and the trailing Dismissed is a
+    // no-op (settled already). An early close fires Dismissed alone.
+    on('onRewardedVideoAdReward', () => settle({ type: 'completed' }))
+    on('onRewardedVideoAdDismissed', () => settle({ type: 'dismissed' }))
+    on('onRewardedVideoAdFailedToShow', (payload) => {
+      const p = payload as { message?: string; code?: number }
+      settle({ type: 'failed', reason: p?.message ?? `admob_show_failed_${p?.code ?? 'unknown'}` })
+    })
+    on('onRewardedVideoAdFailedToLoad', (payload) => {
+      const p = payload as { message?: string; code?: number }
+      settle({ type: 'failed', reason: p?.message ?? `admob_load_failed_${p?.code ?? 'unknown'}` })
+    })
 
     try {
-      // SSV association: Google's callback echoes custom_data — our session id.
+      // LOAD (resolves when loaded, rejects on failure). SSV association:
+      // Google's callback echoes custom_data — our session id.
       await plugin.prepareRewardVideoAd({
         adId: adUnit,
         ssv: { customData: input.rewardSessionId, userId: input.rewardSessionId },
       })
-      await plugin.showRewardVideoAd()
     } catch (e) {
-      listener?.remove?.()
-      return { type: 'failed', reason: e instanceof Error ? e.message : 'admob_error' }
+      cleanup()
+      return settled ?? { type: 'failed', reason: e instanceof Error ? e.message : 'admob_load_failed' }
     }
 
-    // Native rewarded ads resolve showRewardVideoAd when the full-screen ad
-    // closes; the event listener decides completed vs dismissed.
-    const deadline = Date.now() + 15 * 60 * 1000
+    try {
+      // SHOW — resolves ONLY on reward earned (the plugin's own resolve
+      // path is OnUserEarnedRewardListener). Early dismissal never resolves
+      // it; the Dismissed listener above settles that case instead.
+      await plugin.showRewardVideoAd()
+      settle({ type: 'completed' })
+    } catch (e) {
+      settle({ type: 'failed', reason: e instanceof Error ? e.message : 'admob_error' })
+    }
+    if (settled) {
+      cleanup()
+      return settled
+    }
+
+    // Waiting for a terminal event (dismissed / failed). Safety deadline so
+    // a wedged SDK can never hang the flow forever.
+    const deadline = Date.now() + 10 * 60 * 1000
     while (!settled && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 250))
     }
-    listener?.remove?.()
+    cleanup()
     return settled ?? { type: 'dismissed' }
   }
 }
